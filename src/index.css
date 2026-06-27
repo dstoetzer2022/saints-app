@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --paper: #f4f2ec;
+    --navy: #0e253a;
+    --gold: #c6b583;
+    --ink: #1a1a1a;
+    --border-base: #cdc8bd;
+    --row-divider: #eeeeee;
+    --bg-tint: #faf9f5;
+
+    /* shadcn compat */
+    --background: 40 20% 93%;
+    --foreground: 210 50% 14%;
+    --card: 40 20% 93%;
+    --card-foreground: 210 50% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 50% 14%;
+    --primary: 210 63% 15%;
+    --primary-foreground: 42 42% 64%;
+    --secondary: 40 15% 88%;
+    --secondary-foreground: 210 50% 14%;
+    --muted: 40 15% 88%;
+    --muted-foreground: 210 10% 50%;
+    --accent: 42 42% 64%;
+    --accent-foreground: 210 63% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 12% 78%;
+    --input: 0 0% 100%;
+    --ring: 42 42% 64%;
+    --radius: 0.375rem;
+  }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: 'Archivo', sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select, textarea, button {
+    font-family: 'Archivo', sans-serif;
+  }
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--paper); }
+::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 3px; }
+
+*:focus-visible {
+  outline: 2px solid var(--gold) !important;
+  outline-offset: 1px !important;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  header { display: none !important; }
+}

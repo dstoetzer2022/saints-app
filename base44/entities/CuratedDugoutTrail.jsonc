@@ -1,0 +1,84 @@
+{
+  "name": "CuratedDugoutTrail",
+  "type": "object",
+  "properties": {
+    "pitcher_name": {
+      "type": "string",
+      "description": "Last, First format"
+    },
+    "pitcher_team": {
+      "type": "string",
+      "description": "Trackman team code"
+    },
+    "pitcher_hand": {
+      "type": "string"
+    },
+    "pitch_type": {
+      "type": "string",
+      "description": "Canonical pitch type (one per pitcher)"
+    },
+    "display_label": {
+      "type": "string",
+      "description": "Label shown in 3D overlay"
+    },
+    "display_order": {
+      "type": "number",
+      "description": "Sort order for cycling"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    },
+    "trail_color": {
+      "type": "string",
+      "description": "Hex color for 3D trail"
+    },
+    "source_game_id": {
+      "type": "string"
+    },
+    "source_pitch_no": {
+      "type": "number"
+    },
+    "rel_speed": {
+      "type": "number"
+    },
+    "spin_rate": {
+      "type": "number"
+    },
+    "spin_axis": {
+      "type": "number"
+    },
+    "horz_break": {
+      "type": "number"
+    },
+    "induced_vert_break": {
+      "type": "number"
+    },
+    "plate_loc_height": {
+      "type": "number"
+    },
+    "plate_loc_side": {
+      "type": "number"
+    },
+    "rel_height": {
+      "type": "number"
+    },
+    "rel_side": {
+      "type": "number"
+    },
+    "extension": {
+      "type": "number"
+    },
+    "vert_rel_angle": {
+      "type": "number"
+    },
+    "horz_rel_angle": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "pitcher_name",
+    "pitcher_team",
+    "pitch_type"
+  ]
+}
