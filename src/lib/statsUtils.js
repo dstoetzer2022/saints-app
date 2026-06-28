@@ -135,6 +135,70 @@ export function isFastballVeloType(pitchType) {
   return FB_VELO_TYPES.includes(pitchType);
 }
 
+// ── Batted-ball + spray helpers (single source of truth) ──────────────────────
+// Shared by the dugout hitter view / spray chart. Like the classifiers above,
+// the field readers accept snake_case (stored) OR PascalCase (raw Trackman).
+function _hitDistance(r) { return parseFloat(r && (r.hit_distance ?? r.Distance)); }
+function _bearing(r)     { return parseFloat(r && (r.bearing ?? r.Bearing ?? r.Direction)); }
+function _exitSpeed(r)   { return parseFloat(r && (r.exit_speed ?? r.ExitSpeed)); }
+function _launchAngle(r) { return parseFloat(r && (r.launch_angle ?? r.Angle)); }
+
+// A real ball in play for spray/EV purposes. Drops Trackman noise and check-swing
+// nubbers (e.g. LA -75 / 0.5ft, 20mph / 8ft) that should never plot or count.
+export function isValidBattedBall(r) {
+  if (callOf(r) !== 'InPlay') return false;
+  const d = _hitDistance(r), la = _launchAngle(r), ev = _exitSpeed(r);
+  if (!isFinite(d) || !isFinite(la) || !isFinite(ev)) return false;
+  if (d < 10) return false;             // sub-10ft = nubber/noise
+  if (la < -45 || la > 90) return false; // implausible launch
+  if (ev < 30) return false;            // sub-30mph EV not a real BIP
+  return true;
+}
+
+// Spray third, handedness-aware. VERIFIED bearing convention against live data
+// (RHB home runs cluster at negative bearing): bearing negative = LEFT field
+// (3B side), positive = RIGHT field (1B side), catcher's perspective. Pull/oppo
+// therefore flip by hand: RHB pull = LF (neg); LHB pull = RF (pos).
+// Middle = |bearing| <= 15deg. hand is 'R' | 'L' | 'S'; switch/unknown -> null.
+const SPRAY_MIDDLE_DEG = 15;
+export function sprayThird(bearingVal, hand) {
+  const b = parseFloat(bearingVal);
+  if (!isFinite(b)) return null;
+  if (Math.abs(b) <= SPRAY_MIDDLE_DEG) return 'middle';
+  const toLeftField = b < 0;
+  if (hand === 'R') return toLeftField ? 'pull' : 'oppo';
+  if (hand === 'L') return toLeftField ? 'oppo' : 'pull';
+  return null;
+}
+
+// Pull/middle/oppo distribution over a hitter's VALID batted balls (uses their
+// hand). Percentages exclude 'unknown' (switch/unrated hand or bad bearing).
+export function sprayDistribution(rows, hand) {
+  const valid = (rows || []).filter(isValidBattedBall);
+  const t = { pull: 0, middle: 0, oppo: 0, unknown: 0 };
+  for (const r of valid) {
+    const z = sprayThird(_bearing(r), hand);
+    if (z) t[z]++; else t.unknown++;
+  }
+  const total = t.pull + t.middle + t.oppo;
+  return {
+    ...t, total,
+    pullPct: total ? t.pull / total : 0,
+    midPct:  total ? t.middle / total : 0,
+    oppoPct: total ? t.oppo / total : 0,
+  };
+}
+
+// Normalize batter hand: "Right"/"R" -> "R", "Left"/"L" -> "L", switch -> "S".
+export function normHand(h) {
+  if (!h) return '';
+  const s = String(h).toLowerCase();
+  if (s.startsWith('r')) return 'R';
+  if (s.startsWith('l')) return 'L';
+  if (s.startsWith('s') || s.startsWith('b')) return 'S';
+  return '';
+}
+
 export function mean(arr) {
   if (!arr || arr.length === 0) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;

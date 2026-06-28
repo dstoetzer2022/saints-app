@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
+import { canonicalNameKey, normHand } from '@/lib/statsUtils';
+import { ZoneHeatmap, SprayChart } from './HitterViz';
 
 const NAVY = '#0e253a';
 const GOLD = '#b8860b';
@@ -212,6 +214,25 @@ export default function HitterBaserunnerSection({ gameId, isLive }) {
   const [newRunnerKeys,  setNewRunnerKeys]  = useState(new Set());
   const initialized      = useRef(false);
 
+  // TrackmanPitch rows for the current batter (drives heatmap + spray).
+  // Refetches only when the batter changes — NOT on every poll.
+  const [batterRows, setBatterRows] = useState([]);
+  useEffect(() => {
+    if (!currentBatter?.hitter_name || !currentBatter?.hitter_team) { setBatterRows([]); return; }
+    let cancelled = false;
+    (async () => {
+      // TrackmanPitch.batter_team is the FULL team name and matches HitterObservation.hitter_team.
+      // Join by canonical name client-side (never by team code).
+      const rows = await base44.entities.TrackmanPitch
+        .filter({ batter_team: currentBatter.hitter_team }, '-date', 1000)
+        .catch(() => []);
+      if (cancelled) return;
+      const key = canonicalNameKey(currentBatter.hitter_name);
+      setBatterRows((rows || []).filter(r => canonicalNameKey(r.batter_name) === key));
+    })();
+    return () => { cancelled = true; };
+  }, [currentBatter?.hitter_name, currentBatter?.hitter_team]);
+
   const pollData = useCallback(() => {
     if (!gameId) return;
     Promise.all([
@@ -335,6 +356,20 @@ export default function HitterBaserunnerSection({ gameId, isLive }) {
             animKey={hitterAnimKey}
             isTransitioning={isTransitioning}
           />
+        )}
+
+        {/* Trackman visuals — heatmap + spray for the current batter */}
+        {currentBatter && batterRows.length > 0 && (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ flex: '1 1 240px', minWidth: 220, background: '#fff', border: `1.5px solid ${GOLD}55`, borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2, color: NAVY, fontFamily: FONT, marginBottom: 6 }}>Damage Zones · SLG</div>
+              <ZoneHeatmap rows={batterRows} viewMode="pitcher" />
+            </div>
+            <div style={{ flex: '1 1 260px', minWidth: 240, background: '#fff', border: `1.5px solid ${GOLD}55`, borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2, color: NAVY, fontFamily: FONT, marginBottom: 6 }}>Spray</div>
+              <SprayChart rows={batterRows} hand={normHand(currentBatter.hitter_hand)} />
+            </div>
+          </div>
         )}
 
         {/* Diamond + runners */}

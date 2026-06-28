@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
+import HitterBaserunnerSection from '@/components/dugout/HitterBaserunnerSection';
 
 const FONT = "'Archivo', system-ui, sans-serif";
 const pitchHex = t => colorFor(t || '');
@@ -354,6 +355,7 @@ export default function DugoutView({ setScreen }) {
   const [seasonRates, setSeasonRates] = useState(null);
   const [curatedTrails, setCuratedTrails] = useState([]);
   const [liveGameId, setLiveGameId] = useState(null);
+  const [dugoutMode, setDugoutMode] = useState('pitcher'); // 'pitcher' | 'hitter' — controlled remotely
   const [activeArsenalIdx, setActiveArsenalIdx] = useState(0);
 
   const livePollingRef = useRef(null);
@@ -481,6 +483,10 @@ export default function DugoutView({ setScreen }) {
     ]);
     const gameId = liveGames?.[0]?.id || null;
     setLiveGameId(gameId);
+    // Display mode is controlled REMOTELY (e.g. Live Scout writes Game.dugout_display_mode).
+    // The TV only reads it. Default to 'pitcher' when unset. Never error the view on a missing field.
+    const mode = liveGames?.[0]?.dugout_display_mode;
+    if (mode === 'hitter' || mode === 'pitcher') setDugoutMode(mode);
 
     if (obsResults && obsResults.length > 0) {
       const obs = obsResults[0];
@@ -552,7 +558,7 @@ export default function DugoutView({ setScreen }) {
       </div>
 
       {/* PITCHER TAB */}
-      {(
+      {dugoutMode === 'pitcher' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
           {/* Pitcher header */}
@@ -633,6 +639,13 @@ export default function DugoutView({ setScreen }) {
             {/* Count splits — full width below, always visible */}
             <CountSplitsPanel arsenal={seasonArsenal} />
           </div>
+        </div>
+      )}
+
+      {/* HITTER TAB — controlled remotely via Game.dugout_display_mode */}
+      {dugoutMode === 'hitter' && (
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <HitterBaserunnerSection gameId={liveGameId} isLive={true} />
         </div>
       )}
     </div>
