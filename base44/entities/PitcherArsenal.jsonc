@@ -1,0 +1,101 @@
+{
+  "name": "PitcherArsenal",
+  "type": "object",
+  "properties": {
+    "pitcher_name": {
+      "type": "string"
+    },
+    "pitcher_id_trackman": {
+      "type": "string"
+    },
+    "pitcher_team": {
+      "type": "string"
+    },
+    "pitcher_hand": {
+      "type": "string"
+    },
+    "game_id": {
+      "type": "string",
+      "description": "Game ID or 'season' for cumulative"
+    },
+    "pitch_type": {
+      "type": "string"
+    },
+    "count": {
+      "type": "number"
+    },
+    "usage_pct": {
+      "type": "number"
+    },
+    "velo_mean": {
+      "type": "number"
+    },
+    "velo_std": {
+      "type": "number"
+    },
+    "velo_max": {
+      "type": "number"
+    },
+    "spin_mean": {
+      "type": "number"
+    },
+    "spin_std": {
+      "type": "number"
+    },
+    "spin_axis_mean": {
+      "type": "number",
+      "description": "Circular mean of spin_axis in degrees"
+    },
+    "horz_break_mean": {
+      "type": "number"
+    },
+    "horz_break_std": {
+      "type": "number"
+    },
+    "vert_break_mean": {
+      "type": "number"
+    },
+    "vert_break_std": {
+      "type": "number"
+    },
+    "rel_height_mean": {
+      "type": "number",
+      "description": "Mean release height (ft)"
+    },
+    "rel_side_mean": {
+      "type": "number",
+      "description": "Mean release side (ft)"
+    },
+    "extension_mean": {
+      "type": "number",
+      "description": "Mean extension (ft)"
+    },
+    "whiff_pct": {
+      "type": "number"
+    },
+    "zone_pct": {
+      "type": "number"
+    },
+    "ahead_count": {
+      "type": "number"
+    },
+    "even_count": {
+      "type": "number"
+    },
+    "behind_count": {
+      "type": "number"
+    },
+    "total_pitches": {
+      "type": "number"
+    },
+    "strike_pct": {
+      "type": "number",
+      "description": "Strike percentage (StrikeCalled + StrikeSwinging + FoulBall + InPlay) / total"
+    }
+  },
+  "required": [
+    "pitcher_name",
+    "pitcher_team",
+    "pitch_type"
+  ]
+}

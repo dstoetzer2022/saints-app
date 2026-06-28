@@ -1,0 +1,84 @@
+{
+  "name": "PitcherObservation",
+  "type": "object",
+  "properties": {
+    "game_id": {
+      "type": "string"
+    },
+    "pitcher_name": {
+      "type": "string"
+    },
+    "pitcher_team": {
+      "type": "string"
+    },
+    "pitcher_hand": {
+      "type": "string",
+      "enum": [
+        "L",
+        "R"
+      ],
+      "description": "Throwing hand"
+    },
+    "jersey_number": {
+      "type": "string"
+    },
+    "is_current_pitcher": {
+      "type": "boolean",
+      "default": true
+    },
+    "time_to_plate_1b": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Time to plate readings with runner on 1st (seconds)"
+    },
+    "time_to_plate_2b": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Time to plate readings with runner on 2nd (seconds)"
+    },
+    "time_to_plate_slide": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Slide step time readings (seconds)"
+    },
+    "slide_step_notes": {
+      "type": "string"
+    },
+    "pickoff_moves": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ucla_hold_start": {
+      "type": "string",
+      "description": "UCLA hold position with runner on 1st"
+    },
+    "ucla_hold_2b": {
+      "type": "string",
+      "description": "UCLA hold position with runner on 2nd"
+    },
+    "ucla_hold_end": {
+      "type": "string",
+      "enum": [
+        "U",
+        "C",
+        "L",
+        "A"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "pitcher_name",
+    "pitcher_team"
+  ]
+}

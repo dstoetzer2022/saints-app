@@ -1,0 +1,148 @@
+{
+  "name": "TrackmanPitch",
+  "type": "object",
+  "properties": {
+    "game_id": {
+      "type": "string",
+      "description": "Reference to Game record"
+    },
+    "pitch_no": {
+      "type": "number"
+    },
+    "date": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string"
+    },
+    "pitcher_name": {
+      "type": "string"
+    },
+    "pitcher_id_trackman": {
+      "type": "string"
+    },
+    "pitcher_team": {
+      "type": "string"
+    },
+    "pitcher_hand": {
+      "type": "string"
+    },
+    "batter_name": {
+      "type": "string"
+    },
+    "batter_id_trackman": {
+      "type": "string"
+    },
+    "batter_team": {
+      "type": "string"
+    },
+    "batter_hand": {
+      "type": "string"
+    },
+    "inning": {
+      "type": "number"
+    },
+    "top_bottom": {
+      "type": "string"
+    },
+    "outs": {
+      "type": "number"
+    },
+    "balls": {
+      "type": "number"
+    },
+    "strikes": {
+      "type": "number"
+    },
+    "pitch_type": {
+      "type": "string"
+    },
+    "pitch_call": {
+      "type": "string"
+    },
+    "tagged_pitch_type": {
+      "type": "string"
+    },
+    "rel_speed": {
+      "type": "number",
+      "description": "Release speed mph"
+    },
+    "spin_rate": {
+      "type": "number"
+    },
+    "spin_axis": {
+      "type": "number"
+    },
+    "horz_break": {
+      "type": "number",
+      "description": "Horizontal break inches"
+    },
+    "induced_vert_break": {
+      "type": "number",
+      "description": "Induced vertical break inches"
+    },
+    "plate_loc_height": {
+      "type": "number"
+    },
+    "plate_loc_side": {
+      "type": "number"
+    },
+    "zone_speed": {
+      "type": "number"
+    },
+    "vert_rel_angle": {
+      "type": "number"
+    },
+    "horz_rel_angle": {
+      "type": "number"
+    },
+    "rel_height": {
+      "type": "number"
+    },
+    "rel_side": {
+      "type": "number"
+    },
+    "extension": {
+      "type": "number"
+    },
+    "exit_speed": {
+      "type": "number",
+      "description": "Exit velocity mph"
+    },
+    "launch_angle": {
+      "type": "number"
+    },
+    "hit_distance": {
+      "type": "number"
+    },
+    "bearing": {
+      "type": "number"
+    },
+    "hang_time": {
+      "type": "number"
+    },
+    "play_result": {
+      "type": "string"
+    },
+    "kor_bb": {
+      "type": "string"
+    },
+    "pa_result": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "runners_on": {
+      "type": "string"
+    },
+    "count_category": {
+      "type": "string",
+      "description": "ahead/even/behind"
+    }
+  },
+  "required": [
+    "pitcher_name",
+    "pitcher_team"
+  ]
+}
