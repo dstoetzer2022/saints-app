@@ -16,7 +16,7 @@ const TABS = [
   { key: 'BASERUNNERS', label: 'Runners' },
 ];
 
-function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub }) {
+function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode }) {
   return (
     <div style={{ background: NAVY_DARK, borderBottom: `1px solid rgba(198,181,131,0.18)`, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
       <img src={opponent?.logo_url || CCL_LOGO} alt="" style={{ width: 40, height: 40, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.6))' }} />
@@ -25,6 +25,22 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub }) {
         <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 1 }}>{game?.date}</div>
       </div>
       <span style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#4ade80', borderRadius: 4, padding: '3px 9px', fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8 }}>● LIVE</span>
+      {/* Dugout view mode toggle — writes Game.dugout_display_mode */}
+      <button
+        onClick={onToggleDugout}
+        disabled={togglingMode}
+        style={{
+          background: dugoutMode === 'hitter' ? 'rgba(59,130,246,0.18)' : 'rgba(198,181,131,0.12)',
+          border: `1px solid ${dugoutMode === 'hitter' ? 'rgba(59,130,246,0.5)' : 'rgba(198,181,131,0.3)'}`,
+          color: dugoutMode === 'hitter' ? '#93c5fd' : GOLD,
+          borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5,
+          cursor: togglingMode ? 'wait' : 'pointer',
+          fontFamily: \"'Archivo', sans-serif\",
+          whiteSpace: 'nowrap', transition: 'all 0.15s',
+          opacity: togglingMode ? 0.6 : 1,
+        }}>
+        {togglingMode ? '…' : dugoutMode === 'hitter' ? '● HITTER VIEW' : '○ PITCHER VIEW'}
+      </button>
       <button onClick={onToggleSub}
         style={{ background: showSub ? 'rgba(239,68,68,0.18)' : 'rgba(198,181,131,0.12)', border: `1px solid ${showSub ? 'rgba(239,68,68,0.45)' : 'rgba(198,181,131,0.3)'}`, color: showSub ? '#f87171' : GOLD, borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: "'Archivo', sans-serif", whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
         {showSub ? '✕ Cancel' : '⇄ Sub'}
@@ -235,6 +251,8 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [dugoutMode, setDugoutMode] = useState(game?.dugout_display_mode || 'pitcher');
+  const [togglingMode, setTogglingMode] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -317,6 +335,20 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
     );
   }
 
+  async function toggleDugoutMode() {
+    if (togglingMode) return;
+    setTogglingMode(true);
+    const next = dugoutMode === 'pitcher' ? 'hitter' : 'pitcher';
+    try {
+      await base44.entities.Game.update(game.id, { dugout_display_mode: next });
+      setDugoutMode(next);
+    } catch (e) {
+      console.error('Failed to set dugout mode:', e);
+    } finally {
+      setTogglingMode(false);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#0b1d2e' }}>
       <style>{`
@@ -328,7 +360,7 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
       `}</style>
 
       {/* Top banner */}
-      <HubBanner opponent={opponent} game={game} onCompleteGame={() => setConfirmEnd(true)} onToggleSub={() => setShowSub(s => !s)} showSub={showSub} />
+      <HubBanner opponent={opponent} game={game} onCompleteGame={() => setConfirmEnd(true)} onToggleSub={() => setShowSub(s => !s)} showSub={showSub} dugoutMode={dugoutMode} onToggleDugout={toggleDugoutMode} togglingMode={togglingMode} />
 
       {/* Tab bar — top */}
       <div style={{ background: NAVY_DARK, display: 'flex', borderBottom: `2px solid rgba(198,181,131,0.15)`, flexShrink: 0 }}>
