@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
-import HitterBaserunnerSection from '@/components/dugout/HitterBaserunnerSection';
+import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
 
 const FONT = "'Archivo', system-ui, sans-serif";
 const pitchHex = t => colorFor(t || '');
@@ -645,7 +645,7 @@ export default function DugoutView({ setScreen }) {
       {/* HITTER TAB — controlled remotely via Game.dugout_display_mode */}
       {dugoutMode === 'hitter' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <HitterBaserunnerSection gameId={liveGameId} isLive={true} />
+          <HitterDugoutPanel gameId={liveGameId} />
         </div>
       )}
     </div>
