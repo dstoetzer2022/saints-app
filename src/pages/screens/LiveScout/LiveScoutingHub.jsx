@@ -35,7 +35,7 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
           color: dugoutMode === 'hitter' ? '#93c5fd' : GOLD,
           borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5,
           cursor: togglingMode ? 'wait' : 'pointer',
-          fontFamily: \"'Archivo', sans-serif\",
+          fontFamily: "'Archivo', sans-serif",
           whiteSpace: 'nowrap', transition: 'all 0.15s',
           opacity: togglingMode ? 0.6 : 1,
         }}>
