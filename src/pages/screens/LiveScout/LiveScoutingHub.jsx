@@ -12,8 +12,7 @@ const CCL_LOGO = 'https://res.cloudinary.com/dpsbfigoq/image/upload/v1781817535/
 const TABS = [
   { key: 'PITCHER', label: 'Pitcher' },
   { key: 'CATCHER', label: 'Catcher' },
-  { key: 'HITTERS', label: 'Hitters' },
-  { key: 'BASERUNNERS', label: 'Runners' },
+  { key: 'LINEUP',  label: 'Lineup'  },
 ];
 
 function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode }) {
@@ -55,7 +54,234 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
   );
 }
 
-// ── Hitters tab ───────────────────────────────────────────────
+// ── Consolidated Lineup + Runners tab ────────────────────────
+// Single source-of-truth for the operator during a game:
+//  • Set current batter (writes HitterObservation.is_current_batter)
+//  • NEXT → advances batter automatically
+//  • Inline 1B / 2B / 3B / × base controls (creates BaserunnerObservation on demand)
+//  • Expand chevron → full RunnerScoutPanel scouting detail
+
+const CANON = n => n ? n.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ') : '';
+const GRADE_LABEL = { plus_plus: '++', plus: '+', average: 'AVG', below: '-', well_below: '--' };
+const SPD_COLOR   = { fast: '#4ade80', average: '#facc15', slow: '#f87171' };
+const AGGR_COLOR  = { aggressive: '#4ade80', average: '#facc15', passive: '#94a3b8' };
+
+function InlineBaseControls({ obs, saving, onSetBase, onClear }) {
+  if (!obs) {
+    return (
+      <div style={{ display: 'flex', gap: 4 }}>
+        {['1B','2B','3B'].map(b => (
+          <button key={b} onClick={() => onSetBase(b)} disabled={saving}
+            style={{ padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(198,181,131,0.25)',
+              background: 'rgba(198,181,131,0.08)', color: 'rgba(198,181,131,0.55)',
+              fontFamily: "'Archivo',sans-serif", fontSize: 11, fontWeight: 800,
+              cursor: 'pointer', opacity: saving ? 0.4 : 1 }}>
+            {b}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      {['1B','2B','3B'].map(b => {
+        const active = obs.is_on_base && obs.current_base === b;
+        return (
+          <button key={b} onClick={() => active ? onClear() : onSetBase(b)} disabled={saving}
+            style={{ padding: '4px 9px', borderRadius: 5, border: 'none',
+              background: active ? GOLD : 'rgba(198,181,131,0.12)',
+              color: active ? '#07111c' : 'rgba(198,181,131,0.55)',
+              fontFamily: "'Archivo',sans-serif", fontSize: 11, fontWeight: 900,
+              cursor: 'pointer', opacity: saving ? 0.4 : 1,
+              boxShadow: active ? '0 0 8px rgba(198,181,131,0.4)' : 'none',
+              transition: 'all 0.12s' }}>
+            {b}
+          </button>
+        );
+      })}
+      {obs.is_on_base && (
+        <button onClick={onClear} disabled={saving}
+          style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid rgba(239,68,68,0.3)',
+            background: 'rgba(239,68,68,0.1)', color: '#f87171',
+            fontFamily: "'Archivo',sans-serif", fontSize: 11, fontWeight: 800,
+            cursor: 'pointer', opacity: saving ? 0.4 : 1 }}>
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function LineupAndRunnersTab({ hitterObs, runnerObs, lineup, onSetCurrentBatter, onAdvanceBatter, onSetBase, onRunnerSaved }) {
+  const [expandedKey, setExpandedKey] = useState(null);
+  const [saving, setSaving]           = useState(null); // id being saved
+
+  const sortedHitters = [...hitterObs].sort((a,b) => (a.lineup_position||99)-(b.lineup_position||99));
+  const currentBatter = sortedHitters.find(h => h.is_current_batter);
+
+  // Build merged rows: lineup slots joined with hitterObs + runnerObs
+  const lineupRows = sortedHitters.map(h => {
+    const slot = lineup.find(s => CANON(s.name) === CANON(h.hitter_name)) || {};
+    const obs  = runnerObs.find(r => CANON(r.runner_name) === CANON(h.hitter_name)) || null;
+    return { key: h.id, h, slot, obs };
+  });
+  // Orphan runner obs (not in hitter lineup)
+  const hitterNames = new Set(sortedHitters.map(h => CANON(h.hitter_name)));
+  const orphans = runnerObs
+    .filter(r => !hitterNames.has(CANON(r.runner_name)))
+    .map((obs, i) => ({ key: 'orphan-'+i, h: null, slot: {}, obs }));
+
+  const allRows = [...lineupRows, ...orphans];
+
+  if (!allRows.length) {
+    return (
+      <div style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', textAlign: 'center', padding: 40, fontSize: 13 }}>
+        No lineup data yet. Add players via Substitution.
+      </div>
+    );
+  }
+
+  const handleSetBase = async (row, base) => {
+    setSaving(row.key);
+    const updated = await onSetBase(row.h?.hitter_name || row.obs?.runner_name, base);
+    if (updated && onRunnerSaved) onRunnerSaved(updated);
+    setSaving(null);
+  };
+
+  const handleClear = async (row) => {
+    if (!row.obs) return;
+    setSaving(row.key);
+    const updated = await onSetBase(row.h?.hitter_name || row.obs?.runner_name, null);
+    if (updated && onRunnerSaved) onRunnerSaved(updated);
+    setSaving(null);
+  };
+
+  const handleSetCurrent = async (row) => {
+    if (!row.h) return;
+    setSaving(row.key + '-bat');
+    await onSetCurrentBatter(row.h);
+    setSaving(null);
+  };
+
+  return (
+    <div>
+      {/* Next batter strip */}
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+        {currentBatter && (
+          <div style={{ flex: 1, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 6px #4ade80', display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#4ade80', fontFamily: "'Archivo',sans-serif" }}>
+              {currentBatter.lineup_position}. {currentBatter.hitter_name}
+            </span>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'Archivo',sans-serif" }}>at bat</span>
+          </div>
+        )}
+        <button
+          onClick={onAdvanceBatter}
+          style={{ background: GOLD, color: '#07111c', border: 'none', borderRadius: 8, padding: '9px 16px',
+            fontFamily: "'Archivo',sans-serif", fontSize: 12, fontWeight: 900,
+            cursor: 'pointer', letterSpacing: 0.3, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          NEXT →
+        </button>
+      </div>
+
+      {/* Lineup rows */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(198,181,131,0.13)', borderRadius: 10, overflow: 'hidden' }}>
+        {allRows.map((row, ri) => {
+          const { h, slot, obs } = row;
+          const isCurrent  = !!h?.is_current_batter;
+          const isOnBase   = obs?.is_on_base;
+          const isExpanded = expandedKey === row.key;
+          const isSaving   = saving === row.key || saving === row.key+'-bat';
+          const name       = h?.hitter_name || obs?.runner_name || '—';
+          const jersey     = h?.jersey_number || slot?.jersey || obs?.jersey_number;
+          const hand       = h?.hitter_hand   || slot?.hand   || obs?.bats;
+          const pos        = h?.lineup_position;
+
+          return (
+            <div key={row.key} style={{ borderBottom: ri < allRows.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+              background: isCurrent ? 'rgba(34,197,94,0.05)' : 'transparent',
+              borderLeft: isCurrent ? '3px solid #4ade80' : '3px solid transparent',
+              transition: 'background 0.15s' }}>
+
+              {/* Main row */}
+              <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Order */}
+                <span style={{ fontWeight: 800, fontSize: 12, color: isCurrent ? '#4ade80' : 'rgba(255,255,255,0.25)', minWidth: 16 }}>
+                  {pos ?? '—'}
+                </span>
+                {/* Jersey */}
+                {jersey && <span style={{ fontWeight: 700, fontSize: 11, color: GOLD, minWidth: 28 }}>#{jersey}</span>}
+
+                {/* Name + badges */}
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: isCurrent ? '#ffffff' : '#f0ece0', fontFamily: "'Archivo',sans-serif" }}>{name}</span>
+                    {hand && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(255,255,255,0.08)', borderRadius: 3, padding: '1px 5px', color: 'rgba(255,255,255,0.45)' }}>{hand}</span>}
+                    {isOnBase && <span style={{ fontSize: 9, fontWeight: 900, padding: '1px 6px', borderRadius: 3, background: 'rgba(198,181,131,0.2)', color: GOLD }}>● {obs.current_base}</span>}
+                  </div>
+                  {/* Speed / aggression mini-badges */}
+                  {(obs?.speed_rating || obs?.aggression_rating || h?.approach) && (
+                    <div style={{ display: 'flex', gap: 5, marginTop: 3, flexWrap: 'wrap' }}>
+                      {obs?.speed_rating    && <span style={{ fontSize: 9, fontWeight: 700, color: SPD_COLOR[obs.speed_rating]  || GOLD }}>{obs.speed_rating}</span>}
+                      {obs?.aggression_rating && <span style={{ fontSize: 9, fontWeight: 700, color: AGGR_COLOR[obs.aggression_rating] || GOLD }}>{obs.aggression_rating}</span>}
+                      {h?.approach          && <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(198,181,131,0.5)' }}>{h.approach}</span>}
+                      {h?.bat_speed_grade   && <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>Spd {GRADE_LABEL[h.bat_speed_grade]}</span>}
+                      {h?.contact_grade     && <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>Con {GRADE_LABEL[h.contact_grade]}</span>}
+                      {h?.power_grade       && <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>Pwr {GRADE_LABEL[h.power_grade]}</span>}
+                      {obs?.steal_attempts > 0 && <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>{obs.steals_successful||0}/{obs.steal_attempts} SB</span>}
+                    </div>
+                  )}
+                </div>
+
+                {/* At bat button */}
+                {h && (
+                  <button
+                    disabled={isCurrent || isSaving}
+                    onClick={() => handleSetCurrent(row)}
+                    style={{ padding: '5px 10px', borderRadius: 5, border: 'none',
+                      fontFamily: "'Archivo',sans-serif", fontSize: 10, fontWeight: 900,
+                      cursor: isCurrent ? 'default' : 'pointer',
+                      background: isCurrent ? 'rgba(34,197,94,0.15)' : 'rgba(198,181,131,0.15)',
+                      color: isCurrent ? '#4ade80' : GOLD,
+                      opacity: isSaving ? 0.5 : 1, flexShrink: 0 }}>
+                    {isSaving && saving === row.key+'-bat' ? '…' : isCurrent ? '✓ AT BAT' : 'SET'}
+                  </button>
+                )}
+
+                {/* Base buttons */}
+                <InlineBaseControls
+                  obs={obs}
+                  saving={isSaving && saving === row.key}
+                  onSetBase={b => handleSetBase(row, b)}
+                  onClear={() => handleClear(row)}
+                />
+
+                {/* Expand chevron (runner scout detail) */}
+                {obs && (
+                  <button onClick={() => setExpandedKey(isExpanded ? null : row.key)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: 'rgba(255,255,255,0.25)', fontSize: 14, padding: '2px 4px',
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+                    ▾
+                  </button>
+                )}
+              </div>
+
+              {/* Expanded runner detail */}
+              {isExpanded && obs && (
+                <div style={{ borderTop: '1px solid rgba(198,181,131,0.1)', background: 'rgba(0,0,0,0.2)', padding: 12 }}>
+                  <RunnerScoutPanel key={obs.id} obs={obs} onSaved={updated => onRunnerSaved && onRunnerSaved(updated)} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function HittersTab({ hitterObs, onSetCurrentBatter }) {
   const [saving, setSaving] = useState(null);
   const sorted = [...hitterObs].sort((a, b) => (a.lineup_position || 99) - (b.lineup_position || 99));
@@ -327,6 +553,48 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
     onBack();
   }
 
+  // Ensure a BaserunnerObservation row exists for a named player; create on demand
+  async function ensureRunnerObs(name) {
+    const existing = runnerObs.find(r => CANON(r.runner_name) === CANON(name));
+    if (existing) return existing;
+    // Find lineup slot for jersey/hand
+    const slot = lineup.find(s => CANON(s.name) === CANON(name)) || {};
+    const newObs = await base44.entities.BaserunnerObservation.create({
+      game_id: game.id,
+      runner_name: name,
+      runner_team: opponent?.name || '',
+      jersey_number: slot.jersey || null,
+      bats: slot.hand || null,
+    });
+    setRunnerObs(prev => [...prev, newObs]);
+    return newObs;
+  }
+
+  // Set or clear a runner's base (creates obs if needed)
+  async function handleSetBase(name, base) {
+    const obs = await ensureRunnerObs(name);
+    const patch = base
+      ? { is_on_base: true, current_base: base }
+      : { is_on_base: false, current_base: null };
+    const updated = await base44.entities.BaserunnerObservation.update(obs.id, patch);
+    setRunnerObs(prev => prev.map(r => r.id === updated.id ? updated : r));
+    return updated;
+  }
+
+  // Advance to the next batter in lineup order
+  async function advanceBatter() {
+    const sorted = [...hitterObs].sort((a,b) => (a.lineup_position||99)-(b.lineup_position||99));
+    if (!sorted.length) return;
+    const curIdx  = sorted.findIndex(h => h.is_current_batter);
+    const nextIdx = (curIdx + 1) % sorted.length;
+    const next    = sorted[nextIdx];
+    await Promise.all(sorted.filter(h => h.is_current_batter).map(h =>
+      base44.entities.HitterObservation.update(h.id, { is_current_batter: false })
+    ));
+    await base44.entities.HitterObservation.update(next.id, { is_current_batter: true });
+    setHitterObs(prev => prev.map(h => ({ ...h, is_current_batter: h.id === next.id })));
+  }
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: NAVY_DARK }}>
@@ -449,17 +717,14 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
             : <div style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', textAlign: 'center', padding: 40, fontSize: 13 }}>No catcher observation. Add via lineup or substitution.</div>
         )}
 
-        {tab === 'HITTERS' && (
-          <HittersTab
+        {tab === 'LINEUP' && (
+          <LineupAndRunnersTab
             hitterObs={hitterObs}
-            onSetCurrentBatter={setCurrentBatter}
-          />
-        )}
-
-        {tab === 'BASERUNNERS' && (
-          <RunnersLineupList
-            lineup={lineup}
             runnerObs={runnerObs}
+            lineup={lineup}
+            onSetCurrentBatter={setCurrentBatter}
+            onAdvanceBatter={advanceBatter}
+            onSetBase={handleSetBase}
             onRunnerSaved={updated => setRunnerObs(prev => prev.map(r => r.id === updated.id ? updated : r))}
           />
         )}
