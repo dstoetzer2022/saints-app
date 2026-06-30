@@ -280,19 +280,21 @@ function abbrPitch(pt) {
 
 function CountSplitsPanel({ arsenal }) {
   const splits = arsenal
-    .filter(p => p.pitch_type && ((p.ahead_count || 0) + (p.even_count || 0) + (p.behind_count || 0)) > 0)
+    .filter(p => p.pitch_type && ((p.ahead_count || 0) + (p.even_count || 0) + (p.behind_count || 0) + (p.first_pitch_count || 0)) > 0)
     .sort((a, b) => (b.ahead_count || 0) + (b.even_count || 0) + (b.behind_count || 0)
                   - ((a.ahead_count || 0) + (a.even_count || 0) + (a.behind_count || 0)));
 
   if (!splits.length) return null;
 
   const totals = {
+    firstPitch: splits.reduce((s, p) => s + (p.first_pitch_count || 0), 0),
     ahead:  splits.reduce((s, p) => s + (p.ahead_count  || 0), 0),
     even:   splits.reduce((s, p) => s + (p.even_count   || 0), 0),
     behind: splits.reduce((s, p) => s + (p.behind_count || 0), 0),
   };
 
   const rows = [
+    { label: '1ST PITCH', sub: '0-0 count',     key: 'first_pitch_count', total: totals.firstPitch, accent: '#93c5fd', dim: 'rgba(147,197,253,.12)' },
     { label: 'AHEAD',  sub: 'More strikes',  key: 'ahead_count',  total: totals.ahead,  accent: '#4ade80', dim: 'rgba(74,222,128,.12)' },
     { label: 'EVEN',   sub: 'Balls = strikes', key: 'even_count',   total: totals.even,   accent: '#c6b583', dim: 'rgba(198,181,131,.12)' },
     { label: 'BEHIND', sub: 'More balls',    key: 'behind_count', total: totals.behind, accent: '#f87171', dim: 'rgba(248,113,113,.12)' },
@@ -435,8 +437,12 @@ export default function DugoutView({ setScreen }) {
           const strikes = rs.filter(r=>STRIKE_CALLS.includes(r.pitch_call)).length;
           const swings = rs.filter(r=>isSwing(r.pitch_call)).length;
           const whiffs = rs.filter(r=>r.pitch_call==='StrikeSwinging').length;
-          let ahead_count=0, even_count=0, behind_count=0;
-          for (const r of rs) { const b=r.balls??0,s=r.strikes??0; if(s>b)ahead_count++; else if(b>s)behind_count++; else even_count++; }
+          let ahead_count=0, even_count=0, behind_count=0, first_pitch_count=0;
+          for (const r of rs) {
+            const b=r.balls??0, s=r.strikes??0;
+            if (b===0 && s===0) first_pitch_count++;
+            if (s>b) ahead_count++; else if (b>s) behind_count++; else even_count++;
+          }
           return {
             pitch_type, count: rs.length,
             usage_pct: rs.length/total*100,
@@ -449,7 +455,7 @@ export default function DugoutView({ setScreen }) {
             strike_pct: rs.length?strikes/rs.length*100:null,
             whiff_pct: swings?whiffs/swings*100:null,
             zone_pct: total?rs.filter(inZone).length/rs.length*100:null,
-            ahead_count, even_count, behind_count,
+            ahead_count, even_count, behind_count, first_pitch_count,
           };
         }).filter(r=>r.usage_pct>2).sort((a,b)=>b.usage_pct-a.usage_pct);
 

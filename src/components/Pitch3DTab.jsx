@@ -361,204 +361,7 @@ function toLastFirst(name) {
 const fmt1c = v => v != null ? Number(v).toFixed(1) : '—';
 const fmtIntc = v => v != null ? Math.round(v) : '—';
 
-function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'#fff',border:`1px solid ${GOLD}44`,borderRadius:7,marginBottom:5}}>
-      <div style={{width:10,height:10,borderRadius:'50%',background:trail.trail_color||'#888',flexShrink:0}}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:12,fontWeight:800,color:INK,fontFamily:FONT}}>{trail.display_label||trail.pitch_type}</div>
-        <div style={{fontSize:10,color:INK_SOFT,fontFamily:FONT}}>{fmt1c(trail.rel_speed)} mph · {fmtIntc(trail.spin_rate)} rpm</div>
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:1}}>
-        <button onClick={onMoveUp} disabled={isFirst} style={{border:'none',background:'none',cursor:isFirst?'not-allowed':'pointer',color:isFirst?'#ccc':NAVY,padding:'1px 3px'}}><ChevronUp size={12}/></button>
-        <button onClick={onMoveDown} disabled={isLast} style={{border:'none',background:'none',cursor:isLast?'not-allowed':'pointer',color:isLast?'#ccc':NAVY,padding:'1px 3px'}}><ChevronDown size={12}/></button>
-      </div>
-      {confirming ? (
-        <div style={{display:'flex',gap:4,alignItems:'center'}}>
-          <button onClick={()=>{setConfirming(false);onRemove();}} style={{background:'#c0392b',color:'#fff',border:'none',borderRadius:4,padding:'3px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:FONT}}>Yes</button>
-          <button onClick={()=>setConfirming(false)} style={{background:'#eee',color:NAVY,border:'none',borderRadius:4,padding:'3px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:FONT}}>No</button>
-        </div>
-      ) : (
-        <button onClick={()=>setConfirming(true)} style={{background:'none',border:`1px solid #ddd`,borderRadius:5,padding:'4px 6px',cursor:'pointer',color:'#c0392b'}}><Trash2 size={12}/></button>
-      )}
-    </div>
-  );
-}
-
-function PitchGroupCuration({ pitchType, pitches, curatedPitchTypes, onAdd, adding }) {
-  const [open, setOpen] = useState(false);
-  const hasCurated = curatedPitchTypes.has(pitchType);
-  const color = trailColorFor(pitchType);
-  return (
-    <div style={{marginBottom:6,border:`1px solid ${GOLD}33`,borderRadius:7,overflow:'hidden'}}>
-      <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:hasCurated?'#f0f9f5':'#faf9f5',border:'none',cursor:'pointer',fontFamily:FONT,textAlign:'left'}}>
-        <div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>
-        <span style={{fontSize:12,fontWeight:800,color:INK,flex:1}}>{pitchType}</span>
-        <span style={{fontSize:10,color:INK_SOFT}}>{pitches.length}</span>
-        {hasCurated&&<span style={{fontSize:9,fontWeight:800,color:'#0F6E56',background:'#E1F5EE',borderRadius:3,padding:'1px 5px'}}>✓</span>}
-        <span style={{fontSize:9,color:'#aaa'}}>{open?'▲':'▼'}</span>
-      </button>
-      {open && (
-        <div style={{borderTop:`0.5px solid ${GOLD}22`,maxHeight:200,overflowY:'auto'}}>
-          {pitches.slice(0,80).map(p=>(
-            <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px 6px 18px',background:'#fff',borderBottom:`0.5px solid ${GOLD}11`}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:10,fontWeight:700,color:INK,fontFamily:FONT}}>#{p.pitch_no} <span style={{fontWeight:400,color:'#888',fontSize:9}}>{(p.game_id||'').slice(-6)}</span></div>
-                <div style={{fontSize:10,color:'#555',fontFamily:FONT}}>{fmt1c(p.rel_speed)} mph · {fmtIntc(p.spin_rate)} rpm · {fmtIntc(p.spin_axis)}° · {fmt1c(p.induced_vert_break)} IVB</div>
-              </div>
-              <button onClick={()=>onAdd(p)} disabled={adding===p.id}
-                style={{background:hasCurated?'#BA7517':NAVY,color:'#fff',border:'none',borderRadius:5,padding:'4px 8px',fontSize:10,fontWeight:700,cursor:adding===p.id?'wait':'pointer',fontFamily:FONT,opacity:adding===p.id?0.6:1,whiteSpace:'nowrap'}}>
-                {hasCurated?'Replace':'Add'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TrailCurationPanel({ pitcherName }) {
-  const [curated, setCurated] = useState([]);
-  const [pitchGroups, setPitchGroups] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState(null);
-  const [toast, setToast] = useState(null);
-
-  const lfName = useMemo(() => toLastFirst(pitcherName||''), [pitcherName]);
-
-  useEffect(() => {
-    if (!lfName) return;
-    setLoading(true);
-    setCurated([]); setPitchGroups({});
-    Promise.all([
-      base44.entities.CuratedDugoutTrail.filter({pitcher_name: lfName},'display_order',50).catch(()=>[]),
-      base44.entities.TrackmanPitch.filter({pitcher_name: lfName},'-created_date',500).catch(()=>[]),
-    ]).then(([curatedRows, pitchRows]) => {
-      setCurated(curatedRows||[]);
-      const groups = {};
-      for (const r of (pitchRows||[])) {
-        const pt = r.tagged_pitch_type||r.pitch_type||'Unknown';
-        if (!groups[pt]) groups[pt]=[];
-        groups[pt].push({...r, source_game_id_short:(r.game_id||'').slice(-6)});
-      }
-      setPitchGroups(groups);
-      setLoading(false);
-    }).catch(()=>setLoading(false));
-  }, [lfName]);
-
-  const handleRemove = async (trail) => {
-    await base44.entities.CuratedDugoutTrail.delete(trail.id).catch(()=>{});
-    setCurated(prev=>prev.filter(t=>t.id!==trail.id));
-  };
-  const handleMoveUp = async (idx) => {
-    if (idx===0) return;
-    const updated=[...curated];
-    const a=updated[idx-1],b=updated[idx];
-    await Promise.all([
-      base44.entities.CuratedDugoutTrail.update(a.id,{display_order:b.display_order}),
-      base44.entities.CuratedDugoutTrail.update(b.id,{display_order:a.display_order}),
-    ]).catch(()=>{});
-    updated[idx-1]={...a,display_order:b.display_order};
-    updated[idx]={...b,display_order:a.display_order};
-    updated.sort((x,y)=>(x.display_order||0)-(y.display_order||0));
-    setCurated(updated);
-  };
-  const handleAdd = async (pitch, pitchType) => {
-    setAdding(pitch.id);
-    try {
-      const existing = curated.find(t=>t.pitch_type===pitchType);
-      if (existing) await base44.entities.CuratedDugoutTrail.delete(existing.id).catch(()=>{});
-      const newTrail = await base44.entities.CuratedDugoutTrail.create({
-        pitcher_name: lfName,
-        pitcher_team: pitch.pitcher_team||'',
-        pitcher_hand: pitch.pitcher_hand||'',
-        pitch_type: pitchType,
-        display_label: pitchType,
-        display_order: existing?(existing.display_order??curated.length):curated.length,
-        active: true,
-        trail_color: trailColorFor(pitchType),
-        source_game_id: pitch.game_id||'',
-        source_pitch_no: pitch.pitch_no||null,
-        rel_speed: pitch.rel_speed!=null?parseFloat(pitch.rel_speed):null,
-        spin_rate: pitch.spin_rate!=null?parseFloat(pitch.spin_rate):null,
-        spin_axis: pitch.spin_axis!=null?parseFloat(pitch.spin_axis):null,
-        horz_break: pitch.horz_break!=null?parseFloat(pitch.horz_break):null,
-        induced_vert_break: pitch.induced_vert_break!=null?parseFloat(pitch.induced_vert_break):null,
-        plate_loc_height: pitch.plate_loc_height!=null?parseFloat(pitch.plate_loc_height):null,
-        plate_loc_side: pitch.plate_loc_side!=null?parseFloat(pitch.plate_loc_side):null,
-        rel_height: pitch.rel_height!=null?parseFloat(pitch.rel_height):null,
-        rel_side: pitch.rel_side!=null?parseFloat(pitch.rel_side):null,
-        extension: pitch.extension!=null?parseFloat(pitch.extension):null,
-        vert_rel_angle: pitch.vert_rel_angle!=null?parseFloat(pitch.vert_rel_angle):null,
-        horz_rel_angle: pitch.horz_rel_angle!=null?parseFloat(pitch.horz_rel_angle):null,
-      });
-      setCurated(prev=>{
-        const next=existing?prev.filter(t=>t.id!==existing.id).concat(newTrail):prev.concat(newTrail);
-        return [...next].sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-      });
-      setToast(existing?`Replaced ${pitchType}`:`Added ${pitchType}`);
-    } finally { setAdding(null); }
-  };
-
-  const curatedPitchTypes = new Set(curated.map(t=>t.pitch_type));
-
-  return (
-    <div style={{borderTop:`2px solid ${GOLD}`,background:'#f7f5f0'}}>
-      <div style={{padding:'10px 12px',background:NAVY_2}}>
-        <div style={{fontSize:9,fontWeight:800,letterSpacing:2,textTransform:'uppercase',color:GOLD,marginBottom:1,fontFamily:FONT}}>Trail Curation</div>
-        <div style={{fontSize:10,color:'rgba(198,181,131,.55)',fontFamily:FONT}}>Select representative pitches for dugout display</div>
-      </div>
-      <div style={{padding:'10px 12px',maxHeight:500,overflowY:'auto'}}>
-        {loading && <div style={{textAlign:'center',padding:16,color:INK_SOFT,fontSize:12,fontFamily:FONT}}>Loading…</div>}
-        {!loading && (
-          <>
-            {/* Curated list */}
-            <div style={{fontSize:9,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:GOLD_DK,marginBottom:6,fontFamily:FONT}}>
-              Curated Trails ({curated.length})
-            </div>
-            {curated.length===0 && (
-              <div style={{padding:'10px 0',fontSize:11,color:INK_SOFT,fontStyle:'italic',fontFamily:FONT}}>No curated trails yet — add from pitches below</div>
-            )}
-            {curated.map((trail,idx)=>(
-              <CuratedRow key={trail.id} trail={trail} isFirst={idx===0} isLast={idx===curated.length-1}
-                onRemove={()=>handleRemove(trail)}
-                onMoveUp={()=>handleMoveUp(idx)}
-                onMoveDown={()=>handleMoveUp(idx+1)}
-              />
-            ))}
-            {curated.length>0 && (
-              <div style={{marginBottom:12,padding:'6px 10px',background:'rgba(15,110,86,.08)',border:'1px solid rgba(15,110,86,.2)',borderRadius:6,fontSize:10,color:'#0F6E56',fontWeight:600,fontFamily:FONT}}>
-                ✓ Dugout will use these {curated.length} trail{curated.length!==1?'s':''}
-              </div>
-            )}
-            {/* Available pitches */}
-            <div style={{fontSize:9,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:GOLD_DK,marginBottom:6,marginTop:4,fontFamily:FONT}}>
-              Available Pitches
-            </div>
-            {Object.keys(pitchGroups).length===0 && (
-              <div style={{fontSize:11,color:INK_SOFT,fontStyle:'italic',fontFamily:FONT}}>No Trackman pitches found</div>
-            )}
-            {Object.entries(pitchGroups).sort((a,b)=>b[1].length-a[1].length).map(([pt,pitches])=>(
-              <PitchGroupCuration key={pt} pitchType={pt} pitches={pitches}
-                curatedPitchTypes={curatedPitchTypes}
-                onAdd={p=>handleAdd(p,pt)} adding={adding}
-              />
-            ))}
-          </>
-        )}
-      </div>
-      {toast && (
-        <div style={{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',background:'#0F6E56',color:'#E1F5EE',padding:'8px 16px',borderRadius:7,fontSize:12,fontWeight:700,fontFamily:FONT,zIndex:999,boxShadow:'0 4px 16px rgba(0,0,0,.4)'}}>
-          {toast}
-          <button onClick={()=>setToast(null)} style={{marginLeft:10,background:'none',border:'none',color:'#E1F5EE',cursor:'pointer',fontSize:14}}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ── Main ────────────────────────────────────────────────────────────────────
 export default function Pitch3DTab({ pitcherName, gameId, canvasOnly }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -574,10 +377,48 @@ export default function Pitch3DTab({ pitcherName, gameId, canvasOnly }) {
       .catch(e => { setError(e.message); setLoading(false); });
   }, [pitcherName, gameId]);
 
+  // Curated trails (set via the Trail Curation tab on the player profile) —
+  // when present for this pitcher, these REPLACE the auto-computed
+  // average-per-type trails below as what the 3D view actually displays.
+  const [curatedTrails, setCuratedTrails] = useState([]);
+  useEffect(() => {
+    if (!pitcherName) { setCuratedTrails([]); return; }
+    let cancelled = false;
+    base44.entities.CuratedDugoutTrail
+      .filter({ pitcher_name: toLastFirst(pitcherName), active: true }, 'display_order', 50)
+      .then(rows => { if (!cancelled) setCuratedTrails(rows || []); })
+      .catch(() => { if (!cancelled) setCuratedTrails([]); });
+    return () => { cancelled = true; };
+  }, [pitcherName]);
+
   const pitcher = useMemo(() => {
     if (!rows.length || !pitcherName) return null;
     return buildPitcher(rows, pitcherName);
   }, [rows, pitcherName]);
+
+  // Build trail entries directly from curated rows using the same flight-path
+  // physics (pathFromRow) the auto-computed trails use, so curated and
+  // auto-computed trails render identically — just sourced from a hand-picked
+  // example pitch instead of a season-average.
+  const curatedArsenal = useMemo(() => {
+    if (!curatedTrails.length) return null;
+    return curatedTrails.map(t => {
+      const { path, tflight } = pathFromRow(t);
+      return {
+        type: t.display_label || t.pitch_type,
+        count: 1, usage: null, strikePct: null, whiffPct: null, avgEV: null,
+        speed: t.rel_speed != null ? +parseFloat(t.rel_speed).toFixed(1) : 0,
+        maxSpeed: t.rel_speed != null ? +parseFloat(t.rel_speed).toFixed(1) : 0,
+        spin: t.spin_rate != null ? Math.round(parseFloat(t.spin_rate)) : 0,
+        ivb: t.induced_vert_break != null ? +parseFloat(t.induced_vert_break).toFixed(1) : 0,
+        hb:  t.horz_break != null ? +parseFloat(t.horz_break).toFixed(1) : 0,
+        spinAxis: t.spin_axis != null ? +parseFloat(t.spin_axis).toFixed(0) : null,
+        tilt: axisToTilt(t.spin_axis != null ? parseFloat(t.spin_axis) : null),
+        path, tflight,
+        members: [{ idx:0, pitchNo: t.source_pitch_no, speed: t.rel_speed != null ? parseFloat(t.rel_speed) : 0, count:null, result:'Other', resultLabel:'Curated', path, tflight }],
+      };
+    });
+  }, [curatedTrails]);
 
   const [aIdx, setAIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -589,13 +430,14 @@ export default function Pitch3DTab({ pitcherName, gameId, canvasOnly }) {
   const [pickByType, setPickByType] = useState({});
   const [pickerOpenType, setPickerOpenType] = useState(null);
   const [tunnelMode, setTunnelMode] = useState(false);
-  const [curationOpen, setCurationOpen] = useState(false);
   const sceneApiRef = useRef(null);
 
   useEffect(()=>{setAIdx(0);setPlaying(false);setDone(false);setHiddenSet(new Set());setMode("avg");setPIdx2(0);setPickByType({});setPickerOpenType(null);setTunnelMode(false);},[pitcherName]);
   const camAngle = "catcher";
 
-  const arsenalRaw = pitcher?.pitches ?? [];
+  // Curated trails take priority when they exist for this pitcher;
+  // otherwise fall back to the season-average arsenal as before.
+  const arsenalRaw = curatedArsenal ?? (pitcher?.pitches ?? []);
   const arsenal = useMemo(()=>arsenalRaw.map(p=>{const pick=pickByType[p.type];if(pick!=null&&p.members?.[pick]){const m=p.members[pick];return{...p,path:m.path,tflight:m.tflight};}return p;}),[arsenalRaw,pickByType]);
   const allPitches = pitcher?.allPitches ?? [];
   const visibleArr = useMemo(()=>arsenal.map((_,i)=>!hiddenSet.has(i)),[arsenal.length,hiddenSet]);
@@ -788,16 +630,6 @@ export default function Pitch3DTab({ pitcherName, gameId, canvasOnly }) {
               </>
             )}
           </div>
-        </div>
-
-        {/* Trail curation toggle + panel */}
-        <div style={{flexShrink:0,borderTop:`2px solid ${GOLD}`}}>
-          <button onClick={()=>setCurationOpen(o=>!o)}
-            style={{width:'100%',padding:'9px 12px',background:curationOpen?NAVY_2:CARD,border:'none',cursor:'pointer',fontFamily:FONT,display:'flex',alignItems:'center',gap:8,borderBottom:curationOpen?`1px solid ${GOLD}44`:'none'}}>
-            <span style={{fontSize:10,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:curationOpen?GOLD:GOLD_DK}}>Trail Curation</span>
-            <span style={{marginLeft:'auto',fontSize:10,color:curationOpen?GOLD:INK_SOFT}}>{curationOpen?'▲':'▼'}</span>
-          </button>
-          {curationOpen && <TrailCurationPanel pitcherName={pitcherName}/>}
         </div>
       </div>
     </div>

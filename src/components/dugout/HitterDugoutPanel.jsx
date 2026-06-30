@@ -25,27 +25,53 @@ const AB_RES  = ['Single','Double','Triple','HomeRun','Out','Error','FieldersCho
 const HIT_RES = ['Single','Double','Triple','HomeRun'];
 const TB_MAP  = { Single:1, Double:2, Triple:3, HomeRun:4 };
 
+// End-of-plate-appearance detection: a strikeout/walk/HBP is never
+// pitch_call === 'InPlay', so identifying them requires reading the
+// pre-pitch ball/strike count (same balls/strikes fields already relied on
+// for the pitcher dugout's ahead/even/behind and 1st-pitch splits).
+//   • Strikeout: pitch_call is a called/swinging strike AND strikes was 2
+//   • Walk:      pitch_call is BallCalled AND balls was 3
+//   • HBP:       pitch_call === 'HitByPitch'
+// NOTE: sac flies aren't tracked in this data, so AB/PA below are a
+// standard simplified version (matches the existing OBP convention already
+// used elsewhere: HBP in both numerator and denominator, no SF term).
 function computeStats(rows) {
-  let swings=0, whiffs=0, contacts=0, AB=0, H=0, tb=0;
+  let swings=0, whiffs=0, contacts=0, ballsInPlayAB=0, H=0, tb=0, BB=0, K=0, HBP=0;
   const evs = [];
   for (const r of rows) {
     if (isSwing(r))  swings++;
     if (isWhiff(r))  whiffs++;
     if (isSwing(r) && !isWhiff(r)) contacts++;
+
+    const b = r.balls ?? 0, s = r.strikes ?? 0;
+
     if (r.pitch_call === 'InPlay') {
       const ev = parseFloat(r.exit_speed);
       if (isFinite(ev) && ev > 30) evs.push(ev);
-      if (AB_RES.includes(r.play_result))  AB++;
+      if (AB_RES.includes(r.play_result))  ballsInPlayAB++;
       if (HIT_RES.includes(r.play_result)) { H++; tb += TB_MAP[r.play_result]||0; }
+    } else if (r.pitch_call === 'HitByPitch') {
+      HBP++;
+    } else if ((r.pitch_call === 'StrikeCalled' || r.pitch_call === 'StrikeSwinging') && s === 2) {
+      K++;
+    } else if (r.pitch_call === 'BallCalled' && b === 3) {
+      BB++;
     }
   }
+  // Strikeouts count as at-bats (a real-baseball rule the old InPlay-only
+  // AB calc was missing) — fixes AVG/SLG being inflated by excluding K's.
+  const AB = ballsInPlayAB + K;
+  const PA = AB + BB + HBP;
   return {
-    pitches: rows.length, AB, H,
+    pitches: rows.length, AB, H, BB, K, HBP,
     avgEV:      evs.length ? evs.reduce((a,b)=>a+b,0)/evs.length : null,
     maxEV:      evs.length ? Math.max(...evs) : null,
     contactPct: swings ? (swings-whiffs)/swings : null,
-    BA:  AB ? H/AB  : null,
-    SLG: AB ? tb/AB : null,
+    BA:    AB ? H/AB  : null,
+    SLG:   AB ? tb/AB : null,
+    OBP:   PA ? (H+BB+HBP)/PA : null,
+    BBpct: PA ? BB/PA : null,
+    Kpct:  PA ? K/PA  : null,
   };
 }
 
@@ -84,13 +110,28 @@ const fmtAvg = v => v == null ? '—' : v.toFixed(3).replace(/^0/,'');
 const fmtPct = v => v == null ? '—' : Math.round(v*100)+'%';
 const fmtEV  = v => v == null ? '—' : v.toFixed(1);
 
-function StatPill({ label, value, accent }) {
+// t (0..1) drives a blue-white-red background tint behind the value, same
+// scale used everywhere else in dugout view (Hot Zones, pitch-type table,
+// pitcher season rates). null t = no color (used for raw counts like Pitches,
+// which aren't a rate/performance stat).
+function StatPill({ label, value, t }) {
+  const bg = t != null ? rgba(t, 0.32) : 'transparent';
   return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'4px 14px', borderRight:`1px solid ${NAVY_L}` }}>
-      <span style={{ fontSize:18, fontWeight:800, color:accent||TEXT, fontFamily:FONT, fontVariantNumeric:'tabular-nums', lineHeight:1.15 }}>{value}</span>
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'4px 14px', borderRight:`1px solid ${NAVY_L}`, background:bg, transition:'background 0.3s' }}>
+      <span style={{ fontSize:18, fontWeight:800, color:TEXT, fontFamily:FONT, fontVariantNumeric:'tabular-nums', lineHeight:1.15 }}>{value}</span>
       <span style={{ fontSize:9, letterSpacing:'1px', textTransform:'uppercase', color:TEXTF, fontWeight:700, marginTop:2, fontFamily:FONT }}>{label}</span>
     </div>
   );
+}
+
+// Maps a stat value onto the 0..1 blue-white-red scale using (lo, hi) anchors:
+// lo -> blue(0), hi -> red(1). For "lower is better" stats (e.g. K%), pass
+// lo as the WORSE/bigger number and hi as the BETTER/smaller number — the
+// inversion falls out of the math automatically, no special-casing needed.
+// Thresholds are college-summer-ball ballpark calibration; easy to retune.
+function statT(value, lo, hi) {
+  if (value == null) return null;
+  return Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
 }
 
 // ── Section title — centered, large, readable from across the dugout ──────────
@@ -100,6 +141,16 @@ function SectionTitle({ children }) {
       {children}
     </div>
   );
+}
+
+// Opposing team's logo badge — same circular treatment as Pitcher Dugout View,
+// falls back to team initials if no logo URL or the image fails to load.
+function TeamLogo({ logoUrl, teamName, size = 54 }) {
+  const [failed, setFailed] = useState(false);
+  const initials = teamName ? teamName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : '?';
+  const st = { width: size, height: size, borderRadius: '50%', background: '#13314e', border: '2px solid #b8860b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: GOLDM, fontFamily: FONT, fontWeight: 800, flexShrink: 0, objectFit: 'contain' };
+  if (failed || !logoUrl) return <div style={st}>{initials}</div>;
+  return <img src={logoUrl} alt={teamName} onError={() => setFailed(true)} style={st} />;
 }
 
 // ── Pitch-type production table ───────────────────────────────────────────────
@@ -246,6 +297,17 @@ export default function HitterDugoutPanel({ gameId }) {
     return () => { cancelled = true; };
   }, [currentBatter?.hitter_name, currentBatter?.hitter_team]);
 
+  // Resolve opposing team logo — matches Pitcher Dugout View's lookup pattern
+  const [teamLogoUrl, setTeamLogoUrl] = useState(null);
+  useEffect(() => {
+    if (!currentBatter?.hitter_team) { setTeamLogoUrl(null); return; }
+    let cancelled = false;
+    base44.entities.Team.filter({ name: currentBatter.hitter_team }, '-created_date', 1)
+      .then(rows => { if (!cancelled) setTeamLogoUrl(rows?.[0]?.logo_url || null); })
+      .catch(() => { if (!cancelled) setTeamLogoUrl(null); });
+    return () => { cancelled = true; };
+  }, [currentBatter?.hitter_team]);
+
   if (!gameId) return null;
 
   const hand      = normHand(currentBatter?.hitter_hand);
@@ -260,6 +322,9 @@ export default function HitterDugoutPanel({ gameId }) {
       {/* ── BATTER HEADER ─────────────────────────────────────── */}
       <div style={{ background:NAVY, borderBottom:`1px solid ${NAVY_L}`, flexShrink:0, display:'flex', alignItems:'stretch', minHeight:68 }}>
         <div style={{ padding:'10px 20px', display:'flex', alignItems:'center', gap:12, flex:'0 0 auto' }}>
+          {currentBatter && (
+            <TeamLogo logoUrl={teamLogoUrl} teamName={currentBatter.hitter_team} size={48} />
+          )}
           {currentBatter ? (
             <>
               {currentBatter.jersey_number && (
@@ -282,11 +347,14 @@ export default function HitterDugoutPanel({ gameId }) {
         <div style={{ width:1, background:NAVY_L, flexShrink:0, alignSelf:'stretch', margin:'8px 0' }} />
         <div style={{ display:'flex', alignItems:'stretch', flex:1, overflow:'hidden' }}>
           <StatPill label="Pitches"  value={stats.pitches||'—'} />
-          <StatPill label="AVG"      value={fmtAvg(stats.BA)} />
-          <StatPill label="SLG"      value={fmtAvg(stats.SLG)} accent={GOLD} />
-          <StatPill label="Avg EV"   value={fmtEV(stats.avgEV)} />
-          <StatPill label="Max EV"   value={stats.maxEV ? Math.round(stats.maxEV)+'' : '—'} accent={stats.maxEV>=95 ? GOOD : undefined} />
-          <StatPill label="Contact%" value={fmtPct(stats.contactPct)} />
+          <StatPill label="AVG"      value={fmtAvg(stats.BA)}   t={statT(stats.BA,      0.220, 0.330)} />
+          <StatPill label="OBP"      value={fmtAvg(stats.OBP)}  t={statT(stats.OBP,     0.300, 0.430)} />
+          <StatPill label="SLG"      value={fmtAvg(stats.SLG)}  t={statT(stats.SLG,     0.350, 0.580)} />
+          <StatPill label="BB%"      value={fmtPct(stats.BBpct)} t={statT(stats.BBpct,  0.04,  0.16)} />
+          <StatPill label="K%"       value={fmtPct(stats.Kpct)}  t={statT(stats.Kpct,   0.32,  0.12)} />
+          <StatPill label="Avg EV"   value={fmtEV(stats.avgEV)} t={statT(stats.avgEV,   72,    90)} />
+          <StatPill label="Max EV"   value={stats.maxEV ? Math.round(stats.maxEV)+'' : '—'} t={statT(stats.maxEV, 82, 100)} />
+          <StatPill label="Contact%" value={fmtPct(stats.contactPct)} t={statT(stats.contactPct, 0.60, 0.88)} />
         </div>
       </div>
 
@@ -294,7 +362,7 @@ export default function HitterDugoutPanel({ gameId }) {
       <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
 
         {/* LEFT — hot zones */}
-        <div style={{ flex:'0 0 46%', maxWidth:'46%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ flex:'0 0 42%', maxWidth:'42%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <SectionTitle>HOT ZONES</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
@@ -318,7 +386,7 @@ export default function HitterDugoutPanel({ gameId }) {
         </div>
 
         {/* CENTER — pitch type production table */}
-        <div style={{ flex:'0 0 19%', maxWidth:'19%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ flex:'0 0 25%', maxWidth:'25%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <SectionTitle>By Pitch Type</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? <PitchTypeTable rows={batterRows} /> : (

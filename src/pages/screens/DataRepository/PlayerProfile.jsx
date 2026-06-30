@@ -10,6 +10,7 @@ import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
 import { lazy, Suspense } from 'react';
 const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
+import PasswordGate from '@/components/shared/PasswordGate';
 
 // ── Design tokens ─────────────────────────────────────────────
 const C = {
@@ -703,7 +704,9 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
               </Suspense>
             )}
             {tab === 'trailcuration' && isPitcher && (
-              <TrailCurationTab pitcherName={trackmanName} />
+              <PasswordGate>
+                <TrailCurationTab pitcherName={trackmanName} />
+              </PasswordGate>
             )}
             {tab === 'gamelog' && (
               <GameLog playerName={player.name} isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} />
