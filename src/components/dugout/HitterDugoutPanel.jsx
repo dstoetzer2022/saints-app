@@ -54,7 +54,7 @@ const fmtEV  = v => v == null ? '—' : v.toFixed(1);
 
 function StatPill({ label, value, accent }) {
   return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'4px 14px', borderRight:`1px solid ${NAVY_L}` }}>
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'4px 14px', borderRight:`1px solid ${NAVY_L}` }}>
       <span style={{ fontSize:18, fontWeight:800, color:accent||TEXT, fontFamily:FONT, fontVariantNumeric:'tabular-nums', lineHeight:1.15 }}>{value}</span>
       <span style={{ fontSize:9, letterSpacing:'1px', textTransform:'uppercase', color:TEXTF, fontWeight:700, marginTop:2, fontFamily:FONT }}>{label}</span>
     </div>
