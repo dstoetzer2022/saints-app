@@ -103,7 +103,7 @@ function shadowPoints(zone, mirror) {
 }
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
-  const mirror = viewMode === 'pitcher'; // pitcher's view: positive side → LEFT
+  const mirror = viewMode === 'catcher'; // pitcher's view: mirror=false → negative (3B/RHB) → LEFT ✓
   const cells = [];
   for (const z of [11,12,13,14]) {
     const sp=shadowPoints(z,mirror), zr=zoneRows(rows,z), st=calcStats(zr), col=slgColor(st.SLG,st.AB);
@@ -140,13 +140,11 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
         preserveAspectRatio="xMidYMax meet"
       />
     ) : (
-      <g transform={`scale(-1,1) translate(-${ZV.W},0)`}>
-        <image
-          href={`data:image/png;base64,${SIL_LHB}`}
-          x={0} y={silY} width={silW} height={silH}
-          preserveAspectRatio="xMidYMax meet"
-        />
-      </g>
+      <image
+        href={`data:image/png;base64,${SIL_LHB}`}
+        x={ZV.W - silW} y={silY} width={silW} height={silH}
+        preserveAspectRatio="xMidYMax meet"
+      />
     )
   ) : null;
 
