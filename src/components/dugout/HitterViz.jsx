@@ -64,20 +64,32 @@ const KDE_NX = 32, KDE_NY = 30, KDE_SIGMA = 32;
 // independent of the contact/EV score driving its color.
 function buildDamageGrid(rows, mirror) {
   const pts = [];
+  let totalSwings=0, totalContacts=0, totalBip=0, totalEvSum=0;
   for (const r of rows) {
     const s = parseFloat(r.plate_loc_side), h = parseFloat(r.plate_loc_height);
     if (!isFinite(s) || !isFinite(h)) continue;
     const swung = isSwing(r);
     const whiffed = isWhiff(r);
+    const contact = swung && !whiffed;
     const ev = parseFloat(r.exit_speed);
     const isBip = r.pitch_call === 'InPlay' && isFinite(ev) && ev > 30;
-    pts.push({
-      px: mapX(s, mirror), py: mapY(h),
-      swung, contact: swung && !whiffed,
-      isBip, ev: isBip ? ev : null,
-    });
+    if (swung) { totalSwings++; if (contact) totalContacts++; }
+    if (isBip) { totalBip++; totalEvSum += ev; }
+    pts.push({ px: mapX(s, mirror), py: mapY(h), swung, contact, isBip, ev: isBip ? ev : null });
   }
   if (!pts.length) return null;
+
+  // College Trackman samples are small (often 20-50 pitches per batter), so a
+  // raw local ratio at each of ~960 grid cells is dominated by 1-2 nearby
+  // pitches — a single whiff or single bomb would swing a cell to a hard 0
+  // or 1. Bayesian shrinkage pulls sparse cells toward the batter's OVERALL
+  // contact rate / avg EV (a stable prior), only letting a cell diverge once
+  // enough real local data supports it. This is the statistically correct
+  // fix for sparse-sample noise — blur alone just smears the noise around.
+  const globalContactRate = totalSwings > 0 ? totalContacts/totalSwings : 0.65;
+  const globalAvgEV       = totalBip    > 0 ? totalEvSum/totalBip       : 82;
+  const K_CONTACT = 6; // pseudo-swings of shrinkage strength
+  const K_EV      = 4; // pseudo-batted-balls of shrinkage strength
 
   const cellW = ZV.plotW / KDE_NX, cellH = ZV.plotH / KDE_NY;
   const raw = [];
@@ -102,17 +114,16 @@ function buildDamageGrid(rows, mirror) {
   if (maxTotal <= 0) return null;
 
   const scored = raw.map(c => {
-    const coverage   = c.totalD / maxTotal;
-    const contactRate = c.swingD > 1e-6 ? c.contactD / c.swingD : 0;
-    const avgEV       = c.bipD   > 1e-6 ? c.evSum / c.bipD      : null;
-    const evNorm      = avgEV != null ? Math.max(0, Math.min(1, (avgEV - 65) / 35)) : null;
-    const score        = evNorm != null ? 0.5*contactRate + 0.5*evNorm : contactRate;
+    const coverage    = c.totalD / maxTotal;
+    const contactRate = (c.contactD + K_CONTACT*globalContactRate) / (c.swingD + K_CONTACT);
+    const avgEV        = (c.evSum    + K_EV*globalAvgEV)            / (c.bipD   + K_EV);
+    const evNorm        = Math.max(0, Math.min(1, (avgEV - 65) / 35));
+    const score          = 0.5*contactRate + 0.5*evNorm;
     return { x:c.x, y:c.y, w:c.w, h:c.h, score, coverage };
   });
 
-  // Stretch score range to full 0..1 using only cells with a meaningful
-  // sample (coverage > 5% of the busiest cell), so a handful of noisy
-  // near-empty cells can't compress the whole color scale toward the middle.
+  // Contrast-stretch across well-covered cells so the color scale still uses
+  // its full range rather than bunching near the shrinkage prior.
   const visible = scored.filter(c => c.coverage > 0.05);
   const pool = visible.length >= 4 ? visible : scored;
   let minS = Infinity, maxS = -Infinity;
