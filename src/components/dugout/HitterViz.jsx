@@ -72,28 +72,17 @@ function inCellRect(z, mirror) {
   const col=(z-1)%3, rowFromBot=Math.floor((z-1)/3);
   return plateRect(SZ.LEFT+col*COL, SZ.LEFT+(col+1)*COL, SZ.BOT+rowFromBot*ROW, SZ.BOT+(rowFromBot+1)*ROW, mirror);
 }
-function shadowPoints(zone, mirror) {
-  const midX=(SZ.LEFT+SZ.RIGHT)/2, midY=(SZ.BOT+SZ.TOP)/2;
-  let qx0,qx1,qy0,qy1;
-  if(zone===11){qx0=OUTB.LEFT;qx1=midX;qy0=midY;qy1=OUTB.TOP;}
-  if(zone===12){qx0=midX;qx1=OUTB.RIGHT;qy0=midY;qy1=OUTB.TOP;}
-  if(zone===13){qx0=OUTB.LEFT;qx1=midX;qy0=OUTB.BOT;qy1=midY;}
-  if(zone===14){qx0=midX;qx1=OUTB.RIGHT;qy0=OUTB.BOT;qy1=midY;}
-  const ix0=Math.max(qx0,SZ.LEFT),ix1=Math.min(qx1,SZ.RIGHT);
-  const iy0=Math.max(qy0,SZ.BOT),iy1=Math.min(qy1,SZ.TOP);
-  const q=plateRect(qx0,qx1,qy0,qy1,mirror);
-  const bite=plateRect(ix0,ix1,iy0,iy1,mirror);
-  const qX0=q.x,qX1=q.x+q.w,qY0=q.y,qY1=q.y+q.h;
-  const bX0=bite.x,bX1=bite.x+bite.w,bY0=bite.y,bY1=bite.y+bite.h;
-  const biteLeft=Math.abs(bX0-qX0)<Math.abs(bX1-qX1);
-  const biteTop=Math.abs(bY0-qY0)<Math.abs(bY1-qY1);
-  let pts;
-  if(biteLeft&&biteTop)       pts=[[qX0,bY1],[bX1,bY1],[bX1,qY0],[qX1,qY0],[qX1,qY1],[qX0,qY1]];
-  else if(!biteLeft&&biteTop) pts=[[qX0,qY0],[bX0,qY0],[bX0,bY1],[qX1,bY1],[qX1,qY1],[qX0,qY1]];
-  else if(biteLeft&&!biteTop) pts=[[qX0,qY0],[qX1,qY0],[qX1,qY1],[bX1,qY1],[bX1,bY0],[qX0,bY0]];
-  else                        pts=[[qX0,qY0],[qX1,qY0],[qX1,bY0],[bX0,bY0],[bX0,qY1],[qX0,qY1]];
-  const lx=biteLeft?qX1-18:qX0+18, ly=biteTop?qY1-13:qY0+15;
-  return { path:'M '+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L ')+' Z', lx, ly };
+
+// Shadow corners simplified to clean true-corner squares (OUTB↔SZ gap on
+// both axes) rather than the old L-shaped "bite" polygons — easier to read
+// as a card, and the data backing each one is still the exact same
+// getZone()-assigned aggregate, just drawn as a simple rounded square
+// instead of an L.
+function cornerRect(zone, mirror) {
+  if (zone===11) return plateRect(OUTB.LEFT, SZ.LEFT, SZ.TOP, OUTB.TOP, mirror); // upper-left
+  if (zone===12) return plateRect(SZ.RIGHT, OUTB.RIGHT, SZ.TOP, OUTB.TOP, mirror); // upper-right
+  if (zone===13) return plateRect(OUTB.LEFT, SZ.LEFT, OUTB.BOT, SZ.BOT, mirror); // lower-left
+  return plateRect(SZ.RIGHT, OUTB.RIGHT, OUTB.BOT, SZ.BOT, mirror); // lower-right (14)
 }
 
 // Simple per-region aggregation — no spatial kernel, no smoothing math.
@@ -111,8 +100,17 @@ function zoneDamageStats(rows) {
 }
 
 const ALL_ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14];
-const K_CONTACT = 6; // pseudo-swings of shrinkage strength toward this batter's overall rate
-const K_EV      = 4; // pseudo-batted-balls of shrinkage strength
+const K_CONTACT = 6;  // pseudo-swings of shrinkage strength toward this batter's overall rate
+const K_EV      = 4;  // pseudo-batted-balls of shrinkage strength
+const LOW_SAMPLE_N = 3; // zones with fewer pitches than this get hatched as "thin sample"
+const CARD_GAP = 4;     // gap between cards, in canvas px
+const CARD_R   = 9;     // corner radius for core cells
+const CORNER_R = 7;     // corner radius for the 4 shadow corner cards
+
+// Inset a rect by `g` on all sides — creates the visible gap between cards
+function inset(r, g) {
+  return { x:r.x+g, y:r.y+g, w:Math.max(0,r.w-2*g), h:Math.max(0,r.h-2*g) };
+}
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   const mirror = viewMode === 'pitcher';
@@ -140,36 +138,44 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   });
 
   const maxN = Math.max(1, ...zoneData.map(zd => zd.st.n));
-  // Contrast-stretch using only zones that actually saw a pitch
   const withData = zoneData.filter(zd => zd.st.n > 0);
   const pool = withData.length >= 2 ? withData : zoneData;
   let minS=Infinity, maxS=-Infinity;
   for (const zd of pool) { if (zd.score<minS) minS=zd.score; if (zd.score>maxS) maxS=zd.score; }
   const range = (maxS-minS) || 1;
 
-  // Two layers: fillShapes get blurred into the soft "shadow" blob look;
-  // labelTexts (the auditable pitch counts) render crisp on top, unblurred,
-  // so the numbers stay legible and checkable no matter how soft the blur is.
-  const fillShapes = [];
+  const cards = [];
   const labelTexts = [];
   for (const zd of zoneData) {
     const { z, st, score } = zd;
     const t = Math.max(0, Math.min(1, (score-minS)/range));
     const coverage = st.n / maxN;
-    // Zero-data zones render near-transparent rather than a false color
-    const alpha = st.n === 0 ? 0.06 : Math.max(0.35, Math.min(0.92, 0.30 + 0.62*coverage));
+    const alpha = st.n === 0 ? 0.08 : Math.max(0.35, Math.min(0.92, 0.30 + 0.62*coverage));
     const fill = rgba(t, alpha);
     const isShadow = z >= 11;
-    if (isShadow) {
-      const sp = shadowPoints(z, mirror);
-      fillShapes.push(<path key={'z'+z} d={sp.path} fill={fill} stroke="none" />);
-      labelTexts.push(<text key={'zt'+z} x={sp.lx} y={sp.ly} textAnchor="middle" fontSize={8} fill="rgba(14,37,58,0.9)" stroke="rgba(232,238,245,0.55)" strokeWidth={2.2} paintOrder="stroke" fontFamily={FONT} fontWeight={800}>{st.n}p</text>);
-    } else {
-      const r = inCellRect(z, mirror);
-      fillShapes.push(<rect key={'z'+z} x={r.x} y={r.y} width={r.w} height={r.h} fill={fill} stroke="none" />);
-      const cx=r.x+r.w/2, cy=r.y+r.h/2;
-      labelTexts.push(<text key={'zt'+z} x={cx} y={cy} textAnchor="middle" fontSize={10} fill="rgba(14,37,58,0.9)" stroke="rgba(232,238,245,0.55)" strokeWidth={2.5} paintOrder="stroke" fontFamily={FONT} fontWeight={800}>{st.n}p</text>);
+    const rawRect = isShadow ? cornerRect(z, mirror) : inCellRect(z, mirror);
+    const r = inset(rawRect, CARD_GAP/2);
+    const rx = isShadow ? CORNER_R : CARD_R;
+    const lowSample = st.n > 0 && st.n < LOW_SAMPLE_N;
+
+    cards.push(
+      <rect key={'z'+z} x={r.x} y={r.y} width={r.w} height={r.h} rx={rx} ry={rx}
+        fill={fill} stroke="rgba(232,238,245,0.18)" strokeWidth={1} />
+    );
+    if (lowSample) {
+      cards.push(
+        <rect key={'zh'+z} x={r.x} y={r.y} width={r.w} height={r.h} rx={rx} ry={rx}
+          fill="url(#lowSampleHatch)" stroke="none" />
+      );
     }
+    const cx=r.x+r.w/2, cy=r.y+r.h/2;
+    labelTexts.push(
+      <text key={'zt'+z} x={cx} y={cy} textAnchor="middle" fontSize={isShadow?9:11}
+        fill="rgba(12,30,48,0.92)" stroke="rgba(232,238,245,0.6)" strokeWidth={2.4}
+        paintOrder="stroke" fontFamily={FONT} fontWeight={800}>
+        {st.n}p
+      </text>
+    );
   }
 
   const szb  = plateRect(SZ.LEFT, SZ.RIGHT, SZ.BOT, SZ.TOP, mirror);
@@ -199,18 +205,17 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   return (
     <svg width="100%" viewBox={`0 0 ${ZV.W} ${ZV.H}`} style={{ display:'block' }} xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <filter id="hotZoneBlur" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="7" />
-        </filter>
+        <pattern id="lowSampleHatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="7" stroke="rgba(232,238,245,0.4)" strokeWidth="2.5" />
+        </pattern>
       </defs>
       {silhouette}
-      {/* Blurred fills only — softens hard rectangle edges into the "shadow"
-          blob look. The data driving the color is still the exact same
-          verified 13-region aggregation; only the rendering is blurred. */}
-      <g filter="url(#hotZoneBlur)">{fillShapes}</g>
-      {/* Crisp, unblurred — the auditable pitch-count numbers always stay legible */}
+      {/* Crisp rounded cards — no blur. Each card's color comes from the same
+          verified per-zone contact+EV aggregation; the only "softening" here
+          is rounded corners and a gap between cards, not pixel blur. */}
+      {cards}
       {labelTexts}
-      <rect x={szb.x} y={szb.y} width={szb.w} height={szb.h} fill="none" stroke="rgba(232,238,245,0.75)" strokeWidth={1.75} />
+      <rect x={szb.x} y={szb.y} width={szb.w} height={szb.h} fill="none" stroke="rgba(232,238,245,0.75)" strokeWidth={1.75} rx={2} />
       <path d={plateD} fill="rgba(232,238,245,0.1)" stroke="rgba(232,238,245,0.55)" strokeWidth={1.2} strokeLinejoin="round" />
       <text x={pcx} y={ZV.plotY-22} textAnchor="middle" fontSize={10} fill="rgba(198,181,131,0.75)" fontFamily={FONT} fontWeight={700} letterSpacing={1}>{viewLabel}</text>
       <text x={ZV.plotX+6} y={szb.y+szb.h/2} textAnchor="start" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{leftLabel}</text>
