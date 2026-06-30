@@ -186,8 +186,10 @@ export default function BaserunnerReport({ team, onClose }) {
   }, [team.name]);
 
   const handlePrint = () => {
-    const SPEED_LABELS = { fast: '🟢 Fast', average: '🟡 Average', slow: '🔴 Slow' };
-    const AGGR_LABELS  = { aggressive: '🟢 Aggressive', average: '🟡 Average', passive: '🔴 Passive' };
+    const SPEED_LABELS = { fast: 'Fast', average: 'Average', slow: 'Slow' };
+    const AGGR_LABELS  = { aggressive: 'Aggressive', average: 'Average', passive: 'Passive' };
+    const SPEED_DOT = { fast: '#1a7a3a', average: '#a8780a', slow: '#b53030' };
+    const AGGR_DOT  = { aggressive: '#1a7a3a', average: '#a8780a', passive: '#b53030' };
 
     const summaryItems = [
       { label: 'Runners',     value: obs.length },
@@ -197,30 +199,31 @@ export default function BaserunnerReport({ team, onClose }) {
       { label: 'Aggressive',  value: obs.filter(o => o.aggression_rating === 'aggressive').length },
     ];
 
-    const cardsHtml = obs.map(o => {
+    // One dense row per runner instead of a stacked card — fits far more
+    // players per printed page while keeping every field readable.
+    const rowsHtml = obs.map(o => {
       const stealPct = o.steal_attempts > 0
         ? Math.round((o.steals_successful || 0) / o.steal_attempts * 100)
         : null;
-      const rows = [
-        o.speed_rating      && `<tr><td class="key">Speed</td><td class="val">${SPEED_LABELS[o.speed_rating] || o.speed_rating}</td></tr>`,
-        o.aggression_rating && `<tr><td class="key">Aggression</td><td class="val">${AGGR_LABELS[o.aggression_rating] || o.aggression_rating}</td></tr>`,
-        o.lead_size_1b      && `<tr><td class="key">Lead (1B)</td><td class="val">${o.lead_size_1b}</td></tr>`,
-        o.steal_attempts > 0 && `<tr><td class="key">Steals</td><td class="val">${o.steals_successful ?? 0}/${o.steal_attempts}${stealPct != null ? ` (${stealPct}%)` : ''}</td></tr>`,
-        o.pickoff_attempts > 0 && `<tr><td class="key">Pickoff Att</td><td class="val">${o.pickoff_attempts}</td></tr>`,
-        o.dirt_ball_advances > 0 && `<tr><td class="key">Dirt Advances</td><td class="val">${o.dirt_ball_advances}</td></tr>`,
-      ].filter(Boolean).join('');
+      const sbCell = o.steal_attempts > 0
+        ? `${o.steals_successful ?? 0}/${o.steal_attempts}${stealPct != null ? ` (${stealPct}%)` : ''}`
+        : '—';
+      const speedDot = o.speed_rating ? `<span class="dot" style="background:${SPEED_DOT[o.speed_rating]||'#999'}"></span>${SPEED_LABELS[o.speed_rating]||o.speed_rating}` : '—';
+      const aggrDot  = o.aggression_rating ? `<span class="dot" style="background:${AGGR_DOT[o.aggression_rating]||'#999'}"></span>${AGGR_LABELS[o.aggression_rating]||o.aggression_rating}` : '—';
 
-      return `
-        <div class="card">
-          <div class="card-header">
-            ${o.jersey_number ? `<span class="jersey">#${o.jersey_number}</span>` : ''}
-            <span class="name">${o.runner_name || '—'}</span>
-            ${o.position ? `<span class="pos">${o.position}</span>` : ''}
-            ${o.bats ? `<span class="pos">${o.bats}HB</span>` : ''}
-          </div>
-          ${rows ? `<table class="stats">${rows}</table>` : ''}
-          ${o.notes ? `<div class="notes">"${o.notes}"</div>` : ''}
-        </div>`;
+      return `<tr>
+        <td class="num">${o.jersey_number || '—'}</td>
+        <td class="name">${o.runner_name || '—'}</td>
+        <td>${o.position || '—'}</td>
+        <td>${o.bats ? o.bats + 'HB' : '—'}</td>
+        <td class="rate">${speedDot}</td>
+        <td class="rate">${aggrDot}</td>
+        <td>${o.lead_size_1b || '—'}</td>
+        <td class="num">${sbCell}</td>
+        <td class="num">${o.pickoff_attempts || '—'}</td>
+        <td class="num">${o.dirt_ball_advances || '—'}</td>
+        <td class="notes">${o.notes || ''}</td>
+      </tr>`;
     }).join('');
 
     const summaryHtml = summaryItems.map(s =>
@@ -235,28 +238,31 @@ export default function BaserunnerReport({ team, onClose }) {
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 28px 32px; font-size: 13px; }
+    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 24px 28px; font-size: 11px; }
     .report-title { font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
-    .team-name { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #000; margin-bottom: 2px; }
-    .meta { font-size: 11px; color: #888; margin-bottom: 14px; }
-    hr { border: none; border-top: 2px solid #000; margin-bottom: 20px; }
-    .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
-    .sum-box { border: 1px solid #ddd; border-radius: 6px; padding: 8px 14px; text-align: center; min-width: 70px; }
-    .sum-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #888; }
-    .sum-val { font-size: 22px; font-weight: 900; color: #000; }
-    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-    .card { border: 1px solid #ddd; border-radius: 7px; padding: 12px 14px; page-break-inside: avoid; break-inside: avoid; }
-    .card-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
-    .jersey { font-size: 13px; font-weight: 900; color: #888; }
-    .name { font-size: 16px; font-weight: 900; color: #000; }
-    .pos { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stats { width: 100%; border-collapse: collapse; }
-    .stats tr { border-bottom: 1px solid #f0f0f0; }
-    .stats tr:last-child { border-bottom: none; }
-    .key { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.8px; padding: 3px 0; width: 100px; }
-    .val { font-size: 13px; font-weight: 800; color: #111; padding: 3px 0; }
-    .notes { margin-top: 9px; font-size: 11px; font-style: italic; color: #555; border-left: 3px solid #c8920c; padding-left: 9px; line-height: 1.5; }
-    @media print { body { padding: 16px 20px; } }
+    .team-name { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; color: #000; margin-bottom: 2px; }
+    .meta { font-size: 11px; color: #888; margin-bottom: 12px; }
+    hr { border: none; border-top: 2px solid #000; margin-bottom: 16px; }
+    .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .sum-box { border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; text-align: center; min-width: 64px; }
+    .sum-label { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.1px; color: #888; }
+    .sum-val { font-size: 18px; font-weight: 900; color: #000; }
+    table.roster { width: 100%; border-collapse: collapse; }
+    table.roster thead { display: table-header-group; } /* repeats on every printed page */
+    table.roster th {
+      font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
+      color: #fff; background: #0e253a; text-align: left; padding: 5px 7px; white-space: nowrap;
+    }
+    table.roster th.num, table.roster td.num { text-align: center; }
+    table.roster td { padding: 5px 7px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 11px; }
+    table.roster tr:nth-child(even) td { background: #fafafa; }
+    table.roster tr { page-break-inside: avoid; break-inside: avoid; }
+    td.name { font-weight: 800; color: #000; white-space: nowrap; }
+    td.rate { white-space: nowrap; }
+    td.notes { font-style: italic; color: #555; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    @page { margin: 14mm 16mm; }
+    @media print { body { padding: 14px 18px; } }
   </style>
 </head>
 <body>
@@ -265,7 +271,16 @@ export default function BaserunnerReport({ team, onClose }) {
   <div class="meta">${obs.length} runner${obs.length !== 1 ? 's' : ''} · Printed ${new Date().toLocaleDateString()}</div>
   <hr/>
   <div class="summary">${summaryHtml}</div>
-  <div class="grid">${cardsHtml}</div>
+  <table class="roster">
+    <thead>
+      <tr>
+        <th class="num">#</th><th>Name</th><th>Pos</th><th>Bats</th>
+        <th>Speed</th><th>Aggression</th><th>Lead (1B)</th>
+        <th class="num">SB</th><th class="num">PO Att</th><th class="num">Dirt Adv</th><th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
   <script>window.onload = function(){ window.print(); }<\/script>
 </body>
 </html>`;

@@ -119,6 +119,7 @@ const ALL_ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14];
 const K_CONTACT = 6;  // pseudo-swings of shrinkage strength toward this batter's overall rate
 const K_EV      = 4;  // pseudo-batted-balls of shrinkage strength
 const LOW_SAMPLE_N = 3; // zones with fewer pitches than this get hatched as "thin sample"
+const ZONE_LIFT = 16; // px the strike zone group is nudged up, off the plate tip
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   const mirror = viewMode === 'pitcher';
@@ -211,13 +212,18 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
         </pattern>
       </defs>
       {silhouette}
-      {cells}
-      {labelTexts}
-      <rect x={szb.x} y={szb.y} width={szb.w} height={szb.h} fill="none" stroke="rgba(232,238,245,0.85)" strokeWidth={2} />
+      {/* Strike zone group lifted slightly off the plate — plate/silhouette
+          positions are computed from the original (unshifted) szb, so only
+          the zone itself moves up, widening the gap to the plate tip. */}
+      <g transform={`translate(0,-${ZONE_LIFT})`}>
+        {cells}
+        {labelTexts}
+        <rect x={szb.x} y={szb.y} width={szb.w} height={szb.h} fill="none" stroke="rgba(232,238,245,0.85)" strokeWidth={2} />
+        <text x={pcx} y={ZV.plotY-22} textAnchor="middle" fontSize={10} fill="rgba(198,181,131,0.75)" fontFamily={FONT} fontWeight={700} letterSpacing={1}>{viewLabel}</text>
+        <text x={ZV.plotX+6} y={szb.y+szb.h/2} textAnchor="start" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{leftLabel}</text>
+        <text x={ZV.plotX+ZV.plotW-6} y={szb.y+szb.h/2} textAnchor="end" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{rightLabel}</text>
+      </g>
       <path d={plateD} fill="rgba(232,238,245,0.1)" stroke="rgba(232,238,245,0.55)" strokeWidth={1.2} strokeLinejoin="round" />
-      <text x={pcx} y={ZV.plotY-22} textAnchor="middle" fontSize={10} fill="rgba(198,181,131,0.75)" fontFamily={FONT} fontWeight={700} letterSpacing={1}>{viewLabel}</text>
-      <text x={ZV.plotX+6} y={szb.y+szb.h/2} textAnchor="start" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{leftLabel}</text>
-      <text x={ZV.plotX+ZV.plotW-6} y={szb.y+szb.h/2} textAnchor="end" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{rightLabel}</text>
       {rows.length===0 && (
         <text x={ZV.W/2} y={ZV.H/2} textAnchor="middle" fontSize={12} fill="rgba(159,178,196,0.4)" fontFamily={FONT} fontStyle="italic">No pitch location data</text>
       )}

@@ -35,12 +35,16 @@ function popColor(val) {
   return '#111';
 }
 
-// ── Build HTML ────────────────────────────────────────────────
+// ── Build HTML — dense one-row-per-player tables instead of stacked cards ────
+// Individual readings (every pop time, every steal attempt, every throw) are
+// still fully captured in the database via the live scouting tools — this
+// printed report shows averages + counts so a roster fits on a couple pages
+// instead of one page (or more) per player.
 
-function buildPitcherSection(pitchers) {
-  if (!pitchers.length) return '<p style="color:#888;font-style:italic">No pitcher observations for this team/game.</p>';
+function buildPitcherTable(pitchers) {
+  if (!pitchers.length) return '<p class="empty">No pitcher observations for this team/game.</p>';
 
-  return pitchers.map(p => {
+  const rows = pitchers.map(p => {
     const allTtp1b = (p.time_to_plate_1b || []).filter(v => v != null);
     const allTtp2b = (p.time_to_plate_2b || []).filter(v => v != null);
     const allSlide = (p.time_to_plate_slide || []).filter(v => v != null);
@@ -49,114 +53,82 @@ function buildPitcherSection(pitchers) {
     const avgSlide = avg(allSlide);
     const pickoffs = (p.pickoff_moves || []).filter(Boolean);
 
-    const ttpRow = (label, readings, avgVal) => {
-      if (!readings.length && avgVal == null) return `<tr><td class="key">${label}</td><td>—</td></tr>`;
-      const readingsStr = readings.length ? readings.map(v => v.toFixed(2) + 's').join(', ') : '—';
-      const avgStr = avgVal != null
-        ? `<span style="font-weight:900;color:${ttpColor(avgVal)}">${avgVal.toFixed(2)}s avg</span>`
-        : '';
-      return `<tr><td class="key">${label}</td><td>${readingsStr}${avgStr ? ' &nbsp;· ' + avgStr : ''}</td></tr>`;
+    const ttpCell = (readings, avgVal) => {
+      if (!readings.length && avgVal == null) return '—';
+      const avgStr = avgVal != null ? `<span style="font-weight:900;color:${ttpColor(avgVal)}">${avgVal.toFixed(2)}s</span>` : '—';
+      return readings.length > 1 ? `${avgStr} <span class="n">(n=${readings.length})</span>` : avgStr;
     };
 
     const uclaHold = [
-      p.ucla_hold_start ? `1B: ${p.ucla_hold_start}` : null,
-      p.ucla_hold_2b    ? `2B: ${p.ucla_hold_2b}` : null,
-    ].filter(Boolean).join(' &nbsp;|&nbsp; ') || '—';
+      p.ucla_hold_start ? `1B:${p.ucla_hold_start}` : null,
+      p.ucla_hold_2b    ? `2B:${p.ucla_hold_2b}` : null,
+    ].filter(Boolean).join(' ') || '—';
 
-    return `
-      <div class="player-card">
-        <div class="player-header">
-          <span class="jersey">${p.jersey_number ? '#' + p.jersey_number : ''}</span>
-          <span class="player-name">${p.pitcher_name}</span>
-          <span class="badge">${p.pitcher_hand || '?'}HP</span>
-        </div>
-        <table class="data-table">
-          <tbody>
-            ${ttpRow('TTP (1B)', allTtp1b, avg1b)}
-            ${ttpRow('TTP (2B)', allTtp2b, avg2b)}
-            ${allSlide.length || p.slide_step_notes
-              ? ttpRow('Slide Step', allSlide, avgSlide) + (p.slide_step_notes ? `<tr><td class="key">Slide Notes</td><td>${p.slide_step_notes}</td></tr>` : '')
-              : '<tr><td class="key">Slide Step</td><td><em>None logged</em></td></tr>'}
-            <tr><td class="key">UCLA Hold</td><td>${uclaHold}</td></tr>
-            <tr><td class="key">Pickoff Moves</td><td>${pickoffs.length ? pickoffs.map(m => `<span class="tag">${m}</span>`).join(' ') : '<em>None</em>'}</td></tr>
-            <tr><td class="key">Notes</td><td>${p.notes || '—'}</td></tr>
-          </tbody>
-        </table>
-      </div>`;
+    return `<tr>
+      <td class="num">${p.jersey_number || '—'}</td>
+      <td class="name">${p.pitcher_name || '—'}</td>
+      <td>${p.pitcher_hand ? p.pitcher_hand + 'HP' : '—'}</td>
+      <td class="num">${ttpCell(allTtp1b, avg1b)}</td>
+      <td class="num">${ttpCell(allTtp2b, avg2b)}</td>
+      <td class="num">${ttpCell(allSlide, avgSlide)}</td>
+      <td>${uclaHold}</td>
+      <td>${pickoffs.length ? pickoffs.map(m => `<span class="tag">${m}</span>`).join(' ') : '—'}</td>
+      <td class="notes">${p.notes || (p.slide_step_notes ? `Slide: ${p.slide_step_notes}` : '')}</td>
+    </tr>`;
   }).join('');
+
+  return `<table class="roster">
+    <thead><tr>
+      <th class="num">#</th><th>Name</th><th>Hand</th>
+      <th class="num">TTP 1B</th><th class="num">TTP 2B</th><th class="num">Slide</th>
+      <th>UCLA Hold</th><th>Pickoff Moves</th><th>Notes</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
-function buildCatcherSection(catchers) {
-  if (!catchers.length) return '<p style="color:#888;font-style:italic">No catcher observations for this team/game.</p>';
+function buildCatcherTable(catchers) {
+  if (!catchers.length) return '<p class="empty">No catcher observations for this team/game.</p>';
 
-  return catchers.map(c => {
+  const rows = catchers.map(c => {
     const tmPops = (c.trackman_pop_times || []).filter(p => p.pop_time != null);
-    const stealAttempts = c.steal_attempts || [];
-    const biThrows = c.between_innings_throws || [];
     const avgTmPop = avg(tmPops.map(p => p.pop_time));
+    const stealAttempts = c.steal_attempts || [];
+    const caughtCount = stealAttempts.filter(s => (s.result || '').toLowerCase().includes('out') || (s.result||'').toLowerCase().includes('caught')).length;
+    const avgStealPop = avg(stealAttempts.map(s => s.pop_time).filter(v => v != null));
+    const biThrows = c.between_innings_throws || [];
+    const avgBiTime = avg(biThrows.map(t => t.time).filter(v => v != null));
 
-    const tmTable = tmPops.length ? `
-      <table class="mini-table">
-        <thead><tr><th>Inn</th><th>Pop Time</th><th>Exchange</th><th>Throw Spd</th><th>Time to Base</th></tr></thead>
-        <tbody>
-          ${tmPops.map(p => `<tr>
-            <td>${p.inning ?? '—'}</td>
-            <td style="font-weight:800;color:${popColor(p.pop_time)}">${p.pop_time != null ? p.pop_time.toFixed(2) + 's' : '—'}</td>
-            <td>${p.exchange_time != null ? p.exchange_time.toFixed(2) + 's' : '—'}</td>
-            <td>${p.throw_speed != null ? p.throw_speed.toFixed(1) + ' mph' : '—'}</td>
-            <td>${p.time_to_base != null ? p.time_to_base.toFixed(2) + 's' : '—'}</td>
-          </tr>`).join('')}
-        </tbody>
-        <tfoot><tr><td colspan="1" style="font-weight:700">Avg</td>
-          <td style="font-weight:900;color:${popColor(avgTmPop)}">${avgTmPop != null ? avgTmPop.toFixed(2) + 's' : '—'}</td>
-          <td colspan="3"></td></tr></tfoot>
-      </table>` : '<em>No Trackman pop times</em>';
+    const tmPopCell = tmPops.length
+      ? `<span style="font-weight:900;color:${popColor(avgTmPop)}">${avgTmPop != null ? avgTmPop.toFixed(2)+'s' : '—'}</span> <span class="n">(n=${tmPops.length})</span>`
+      : '—';
+    const stealCell = stealAttempts.length
+      ? `${caughtCount}/${stealAttempts.length} caught${avgStealPop != null ? ` · <span style="font-weight:800;color:${popColor(avgStealPop)}">${avgStealPop.toFixed(2)}s</span>` : ''}`
+      : '—';
+    const biCell = biThrows.length
+      ? `${avgBiTime != null ? avgBiTime.toFixed(2)+'s avg' : '—'} <span class="n">(n=${biThrows.length})</span>`
+      : '—';
 
-    const stealTable = stealAttempts.length ? `
-      <table class="mini-table">
-        <thead><tr><th>Base</th><th>Pop Time</th><th>Result</th></tr></thead>
-        <tbody>${stealAttempts.map(s => `<tr>
-          <td>${s.base || '—'}</td>
-          <td style="font-weight:800;color:${popColor(s.pop_time)}">${s.pop_time != null ? s.pop_time.toFixed(2) + 's' : '—'}</td>
-          <td>${s.result || '—'}</td>
-        </tr>`).join('')}</tbody>
-      </table>` : '<em>None logged</em>';
-
-    const biTable = biThrows.length ? `
-      <table class="mini-table">
-        <thead><tr><th>Base</th><th>Time</th><th>Notes</th></tr></thead>
-        <tbody>${biThrows.map(t => `<tr>
-          <td>${t.base || '—'}</td>
-          <td style="font-weight:800">${t.time != null ? t.time.toFixed(2) + 's' : '—'}</td>
-          <td>${t.notes || '—'}</td>
-        </tr>`).join('')}</tbody>
-      </table>` : '<em>None logged</em>';
-
-    return `
-      <div class="player-card">
-        <div class="player-header">
-          <span class="jersey">${c.jersey_number ? '#' + c.jersey_number : ''}</span>
-          <span class="player-name">${c.catcher_name}</span>
-          ${c.bats ? `<span class="badge">${c.bats}HB</span>` : ''}
-        </div>
-        <table class="data-table">
-          <tbody>
-            <tr><td class="key">Warmup Pop</td><td>${c.warmup_pop_time != null
-              ? `<span style="font-weight:900;color:${popColor(c.warmup_pop_time)}">${c.warmup_pop_time.toFixed(2)}s</span>`
-              : '—'}</td></tr>
-          </tbody>
-        </table>
-        <div class="sub-section"><div class="sub-label">Trackman Pop Times</div>${tmTable}</div>
-        <div class="sub-section"><div class="sub-label">Steal Attempts (Manual)</div>${stealTable}</div>
-        <div class="sub-section"><div class="sub-label">Between Innings Throws</div>${biTable}</div>
-        <table class="data-table">
-          <tbody>
-            <tr><td class="key">Blocking Notes</td><td>${c.blocking_notes || '—'}</td></tr>
-            <tr><td class="key">Notes</td><td>${c.notes || '—'}</td></tr>
-          </tbody>
-        </table>
-      </div>`;
+    return `<tr>
+      <td class="num">${c.jersey_number || '—'}</td>
+      <td class="name">${c.catcher_name || '—'}</td>
+      <td>${c.bats ? c.bats + 'HB' : '—'}</td>
+      <td class="num">${c.warmup_pop_time != null ? `<span style="font-weight:900;color:${popColor(c.warmup_pop_time)}">${c.warmup_pop_time.toFixed(2)}s</span>` : '—'}</td>
+      <td class="num">${tmPopCell}</td>
+      <td>${stealCell}</td>
+      <td class="num">${biCell}</td>
+      <td class="notes">${[c.blocking_notes, c.notes].filter(Boolean).join(' · ') || ''}</td>
+    </tr>`;
   }).join('');
+
+  return `<table class="roster">
+    <thead><tr>
+      <th class="num">#</th><th>Name</th><th>Bats</th>
+      <th class="num">Warmup Pop</th><th class="num">TM Pop Avg</th>
+      <th>Manual SB</th><th class="num">Btwn-Inn Throw</th><th>Notes</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function buildFullHtml({ pitchers, catchers, game, teamName }) {
@@ -172,37 +144,33 @@ function buildFullHtml({ pitchers, catchers, game, teamName }) {
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 28px 32px; font-size: 12px; }
-    .doc-header { margin-bottom: 20px; }
+    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 24px 28px; font-size: 11px; }
+    .doc-header { margin-bottom: 16px; }
     .doc-title { font-size: 9px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
-    .doc-team { font-size: 22px; font-weight: 900; color: #000; letter-spacing: -0.5px; }
+    .doc-team { font-size: 20px; font-weight: 900; color: #000; letter-spacing: -0.5px; }
     .doc-meta { font-size: 11px; color: #777; margin-top: 3px; }
-    hr.doc-rule { border: none; border-top: 2.5px solid #000; margin: 14px 0 20px; }
+    hr.doc-rule { border: none; border-top: 2.5px solid #000; margin: 12px 0 16px; }
     .section-header {
-      font-size: 10px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase;
-      color: #fff; background: #0e253a; padding: 7px 12px; border-radius: 4px;
-      margin: 24px 0 14px;
+      font-size: 9.5px; font-weight: 900; letter-spacing: 2.5px; text-transform: uppercase;
+      color: #fff; background: #0e253a; padding: 6px 12px; border-radius: 4px;
+      margin: 18px 0 8px;
     }
-    .player-card {
-      border: 1px solid #ddd; border-radius: 7px; padding: 14px 16px;
-      margin-bottom: 14px; page-break-inside: avoid; break-inside: avoid;
+    table.roster { width: 100%; border-collapse: collapse; }
+    table.roster thead { display: table-header-group; } /* repeats on every printed page */
+    table.roster th {
+      font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
+      color: #fff; background: #1c3a56; text-align: left; padding: 5px 7px; white-space: nowrap;
     }
-    .player-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
-    .jersey { font-size: 13px; font-weight: 900; color: #777; }
-    .player-name { font-size: 17px; font-weight: 900; color: #000; letter-spacing: -0.3px; }
-    .badge { font-size: 11px; font-weight: 700; background: #f0f0f0; border-radius: 3px; padding: 2px 7px; color: #555; }
-    .data-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-    .data-table td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid #f2f2f2; font-size: 12px; }
-    .data-table tr:last-child td { border-bottom: none; }
-    .key { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; width: 130px; padding-right: 12px; white-space: nowrap; }
-    .tag { display: inline-block; background: #eef2f6; border-radius: 3px; padding: 1px 7px; margin: 1px 2px 1px 0; font-size: 11px; font-weight: 600; color: #334; }
-    .sub-section { margin: 10px 0; }
-    .sub-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; margin-bottom: 5px; }
-    .mini-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .mini-table th { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: #999; border-bottom: 1px solid #ddd; padding: 3px 6px 3px 0; text-align: left; }
-    .mini-table td { padding: 3px 6px 3px 0; border-bottom: 1px solid #f5f5f5; color: #111; }
-    .mini-table tfoot td { border-top: 1px solid #ccc; border-bottom: none; font-size: 11px; padding-top: 4px; }
-    @page { margin: 16mm 18mm; }
+    table.roster th.num, table.roster td.num { text-align: center; }
+    table.roster td { padding: 5px 7px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 10.5px; }
+    table.roster tr:nth-child(even) td { background: #fafafa; }
+    table.roster tr { page-break-inside: avoid; break-inside: avoid; }
+    td.name { font-weight: 800; color: #000; white-space: nowrap; }
+    td.notes { font-style: italic; color: #555; }
+    .n { font-size: 9px; color: #999; }
+    .tag { display: inline-block; background: #eef2f6; border-radius: 3px; padding: 1px 6px; margin: 1px 2px 1px 0; font-size: 10px; font-weight: 600; color: #334; }
+    .empty { color: #888; font-style: italic; padding: 8px 0; font-size: 11px; }
+    @page { margin: 14mm 16mm; }
     .page-footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; color: #bbb; letter-spacing: 1.5px; text-transform: uppercase; padding: 6px 0; border-top: 1px solid #eee; background: #fff; }
   </style>
 </head>
@@ -216,11 +184,11 @@ function buildFullHtml({ pitchers, catchers, game, teamName }) {
   </div>
   <hr class="doc-rule"/>
 
-  <div class="section-header">⚾ Pitcher Report</div>
-  ${buildPitcherSection(pitchers)}
+  <div class="section-header">Pitcher Report</div>
+  ${buildPitcherTable(pitchers)}
 
-  <div class="section-header">🥎 Catcher Report</div>
-  ${buildCatcherSection(catchers)}
+  <div class="section-header">Catcher Report</div>
+  ${buildCatcherTable(catchers)}
 
   <script>window.onload = function(){ window.print(); }<\/script>
 </body>
