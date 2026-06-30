@@ -63,9 +63,9 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
 // ── Battery tab (pitcher + catcher combined) ──────────────────────────────────
 function BatteryTab({ currentPitcher, relievers, catcherObs }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
       {/* PITCHER section */}
-      <div>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <span style={{ width: 3, height: 14, background: GOLD, borderRadius: 2 }} />
           <span style={{ fontWeight: 800, fontSize: 10.5, color: GOLD, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: FONT }}>Pitcher</span>
@@ -91,11 +91,11 @@ function BatteryTab({ currentPitcher, relievers, catcherObs }) {
         )}
       </div>
 
-      {/* Divider */}
-      <div style={{ height: 1, background: 'rgba(198,181,131,0.15)', borderRadius: 1 }} />
+      {/* Vertical divider */}
+      <div style={{ width: 1, background: 'rgba(198,181,131,0.15)', alignSelf: 'stretch', flexShrink: 0 }} />
 
       {/* CATCHER section */}
-      <div>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <span style={{ width: 3, height: 14, background: GOLD, borderRadius: 2 }} />
           <span style={{ fontWeight: 800, fontSize: 10.5, color: GOLD, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: FONT }}>Catcher</span>
