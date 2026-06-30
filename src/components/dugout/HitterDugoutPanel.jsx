@@ -294,11 +294,11 @@ export default function HitterDugoutPanel({ gameId }) {
       <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
 
         {/* LEFT — hot zones */}
-        <div style={{ flex:'0 0 38%', maxWidth:'38%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ flex:'0 0 46%', maxWidth:'46%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <SectionTitle>HOT ZONES</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
-              <div style={{ width:'100%', maxWidth:400 }}>
+              <div style={{ width:'100%', maxWidth:600 }}>
                 <ZoneHeatmap rows={batterRows} viewMode="pitcher" batterHand={hand} />
               </div>
             ) : (
@@ -318,7 +318,7 @@ export default function HitterDugoutPanel({ gameId }) {
         </div>
 
         {/* CENTER — pitch type production table */}
-        <div style={{ flex:'0 0 24%', maxWidth:'24%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ flex:'0 0 19%', maxWidth:'19%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <SectionTitle>By Pitch Type</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? <PitchTypeTable rows={batterRows} /> : (
