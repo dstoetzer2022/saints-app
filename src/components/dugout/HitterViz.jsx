@@ -11,7 +11,6 @@ const SIL_LHB = 'iVBORw0KGgoAAAANSUhEUgAAANUAAAH0CAYAAACqx2ikAAA17UlEQVR42u1963Y
 const HIT_RESULTS = ['Single','Double','Triple','HomeRun'];
 
 // ── Shared blue → white → red diverging color scale ─────────────────────────
-// t=0 → cool blue (low frequency), t=0.5 → white (mid), t=1 → red (high frequency)
 function lerp(a,b,t) { return a + (b - a) * t; }
 export function colorAt(t) {
   t = Math.max(0, Math.min(1, t));
@@ -28,17 +27,18 @@ export function rgba(t, alpha) {
 }
 
 // ============================================================================
-// ZONE HEATMAP — shadow-style contact-quality model (Statcast-style KDE blob)
-// Blue = poor contact / weak exit velo here, red = strong contact + high EV.
-// Score blends local contact rate and local avg exit velocity (50/50).
-// Blob shape/visibility still reflects pitch density (where data exists at all).
+// ZONE HEATMAP — back to the original, verified 3x3 + 4-shadow-zone geometry
+// (the same getZone/zoneRows/inCellRect/shadowPoints logic that was correct
+// before the continuous KDE raster was introduced). Each of the 13 regions
+// shows its own pitch count, so the color can be checked against raw data
+// directly instead of trusting an opaque continuous field.
 // ============================================================================
-const SZ  = { LEFT:-0.83, RIGHT:0.83, BOT:1.50, TOP:3.50 };         // rulebook zone
-const EXT = { LEFT:-2.3,  RIGHT:2.3,  BOT:-0.4,  TOP:4.9 };          // KDE field bounds
+const SZ   = { LEFT:-0.83, RIGHT:0.83, BOT:1.50, TOP:3.50 };         // rulebook zone
+const BAND = 0.40;
+const OUTB = { LEFT:SZ.LEFT-BAND, RIGHT:SZ.RIGHT+BAND, BOT:SZ.BOT-BAND, TOP:SZ.TOP+BAND };
+const EXT  = { LEFT:-2.3, RIGHT:2.3, BOT:-0.4, TOP:4.9 };            // wider canvas field
 
-// Wide canvas: 480x460. plotX/plotY/plotW/plotH define BOTH the KDE field
-// and the rulebook-zone rectangle, so the rectangle always sits correctly
-// inside the blob — no separate coordinate systems to drift apart.
+// Canvas: 480x540, 130px side margins for the silhouette
 const ZV = { W:480, H:540, plotX:100, plotY:140, plotW:280, plotH:260 };
 
 function mapX(s, mirror) { const t=(s-EXT.LEFT)/(EXT.RIGHT-EXT.LEFT); return ZV.plotX+(mirror?1-t:t)*ZV.plotW; }
@@ -48,120 +48,139 @@ function plateRect(x0,x1,y0,y1,mirror) {
   return { x:Math.min(sx0,sx1), y:Math.min(sy0,sy1), w:Math.abs(sx1-sx0), h:Math.abs(sy1-sy0) };
 }
 
-const KDE_NX = 32, KDE_NY = 30, KDE_SIGMA = 32;
-
-// Per-cell score blends two signals via kernel-weighted local averaging:
-//   • contactRate = locally-smoothed (contact swings / all swings) — 0..1 naturally
-//   • avgEV       = locally-smoothed average exit velocity on balls in play,
-//                    normalized against a fixed 65-100 mph scale (so colors stay
-//                    comparable across different hitters, not just relative to
-//                    this player's own range)
-// score = 0.5*contactRate + 0.5*evNorm where both exist; falls back to
-// contactRate alone where there's no batted-ball sample (e.g. an all-whiff zone
-// still reads cold, which is correct — no damage happening there).
-// Cell visibility (alpha/blob shape) is still driven by total pitch density,
-// so the blob's footprint reflects where pitches were actually thrown,
-// independent of the contact/EV score driving its color.
-function buildDamageGrid(rows, mirror) {
-  const pts = [];
-  let totalSwings=0, totalContacts=0, totalBip=0, totalEvSum=0;
-  for (const r of rows) {
-    const s = parseFloat(r.plate_loc_side), h = parseFloat(r.plate_loc_height);
-    if (!isFinite(s) || !isFinite(h)) continue;
-    const swung = isSwing(r);
-    const whiffed = isWhiff(r);
-    const contact = swung && !whiffed;
-    const ev = parseFloat(r.exit_speed);
-    const isBip = r.pitch_call === 'InPlay' && isFinite(ev) && ev > 30;
-    if (swung) { totalSwings++; if (contact) totalContacts++; }
-    if (isBip) { totalBip++; totalEvSum += ev; }
-    pts.push({ px: mapX(s, mirror), py: mapY(h), swung, contact, isBip, ev: isBip ? ev : null });
+function getZone(side, height) {
+  const s=parseFloat(side), h=parseFloat(height);
+  if (!isFinite(s)||!isFinite(h)) return null;
+  if (s<OUTB.LEFT||s>OUTB.RIGHT||h<OUTB.BOT||h>OUTB.TOP) return null;
+  const inX=s>=SZ.LEFT&&s<=SZ.RIGHT, inY=h>=SZ.BOT&&h<=SZ.TOP;
+  if (inX&&inY) {
+    const COL=(SZ.RIGHT-SZ.LEFT)/3, ROW=(SZ.TOP-SZ.BOT)/3;
+    const col=s<(SZ.LEFT+COL)?0:s<(SZ.LEFT+2*COL)?1:2;
+    const row=h<(SZ.BOT+ROW)?0:h<(SZ.BOT+2*ROW)?1:2;
+    return row*3+col+1;
   }
-  if (!pts.length) return null;
+  const left=s<(SZ.LEFT+SZ.RIGHT)/2, bot=h<(SZ.BOT+SZ.TOP)/2;
+  if (left&&!bot) return 11;
+  if (!left&&!bot) return 12;
+  if (left&&bot) return 13;
+  return 14;
+}
+function zoneRows(rows, zone) { return rows.filter(r=>getZone(r.plate_loc_side,r.plate_loc_height)===zone); }
 
-  // College Trackman samples are small (often 20-50 pitches per batter), so a
-  // raw local ratio at each of ~960 grid cells is dominated by 1-2 nearby
-  // pitches — a single whiff or single bomb would swing a cell to a hard 0
-  // or 1. Bayesian shrinkage pulls sparse cells toward the batter's OVERALL
-  // contact rate / avg EV (a stable prior), only letting a cell diverge once
-  // enough real local data supports it. This is the statistically correct
-  // fix for sparse-sample noise — blur alone just smears the noise around.
-  const globalContactRate = totalSwings > 0 ? totalContacts/totalSwings : 0.65;
-  const globalAvgEV       = totalBip    > 0 ? totalEvSum/totalBip       : 82;
-  const K_CONTACT = 6; // pseudo-swings of shrinkage strength
-  const K_EV      = 4; // pseudo-batted-balls of shrinkage strength
-
-  const cellW = ZV.plotW / KDE_NX, cellH = ZV.plotH / KDE_NY;
-  const raw = [];
-  let maxTotal = 0;
-  for (let iy=0; iy<KDE_NY; iy++) {
-    for (let ix=0; ix<KDE_NX; ix++) {
-      const cx = ZV.plotX + (ix+0.5)*cellW;
-      const cy = ZV.plotY + (iy+0.5)*cellH;
-      let totalD=0, swingD=0, contactD=0, bipD=0, evSum=0;
-      for (const p of pts) {
-        const dx=cx-p.px, dy=cy-p.py;
-        const w = Math.exp(-(dx*dx+dy*dy)/(2*KDE_SIGMA*KDE_SIGMA));
-        totalD += w;
-        if (p.swung)  swingD += w;
-        if (p.contact) contactD += w;
-        if (p.isBip)  { bipD += w; evSum += w*p.ev; }
-      }
-      if (totalD > maxTotal) maxTotal = totalD;
-      raw.push({ x:ZV.plotX+ix*cellW, y:ZV.plotY+iy*cellH, w:cellW, h:cellH, totalD, swingD, contactD, bipD, evSum });
-    }
-  }
-  if (maxTotal <= 0) return null;
-
-  const scored = raw.map(c => {
-    const coverage    = c.totalD / maxTotal;
-    const contactRate = (c.contactD + K_CONTACT*globalContactRate) / (c.swingD + K_CONTACT);
-    const avgEV        = (c.evSum    + K_EV*globalAvgEV)            / (c.bipD   + K_EV);
-    const evNorm        = Math.max(0, Math.min(1, (avgEV - 65) / 35));
-    const score          = 0.5*contactRate + 0.5*evNorm;
-    return { x:c.x, y:c.y, w:c.w, h:c.h, score, coverage };
-  });
-
-  // Contrast-stretch across well-covered cells so the color scale still uses
-  // its full range rather than bunching near the shrinkage prior.
-  const visible = scored.filter(c => c.coverage > 0.05);
-  const pool = visible.length >= 4 ? visible : scored;
-  let minS = Infinity, maxS = -Infinity;
-  for (const c of pool) { if (c.score < minS) minS = c.score; if (c.score > maxS) maxS = c.score; }
-  const range = (maxS - minS) || 1;
-
-  return scored.map(c => ({
-    x:c.x, y:c.y, w:c.w, h:c.h, coverage:c.coverage,
-    t: Math.max(0, Math.min(1, (c.score - minS) / range)),
-  }));
+function inCellRect(z, mirror) {
+  const COL=(SZ.RIGHT-SZ.LEFT)/3, ROW=(SZ.TOP-SZ.BOT)/3;
+  const col=(z-1)%3, rowFromBot=Math.floor((z-1)/3);
+  return plateRect(SZ.LEFT+col*COL, SZ.LEFT+(col+1)*COL, SZ.BOT+rowFromBot*ROW, SZ.BOT+(rowFromBot+1)*ROW, mirror);
+}
+function shadowPoints(zone, mirror) {
+  const midX=(SZ.LEFT+SZ.RIGHT)/2, midY=(SZ.BOT+SZ.TOP)/2;
+  let qx0,qx1,qy0,qy1;
+  if(zone===11){qx0=OUTB.LEFT;qx1=midX;qy0=midY;qy1=OUTB.TOP;}
+  if(zone===12){qx0=midX;qx1=OUTB.RIGHT;qy0=midY;qy1=OUTB.TOP;}
+  if(zone===13){qx0=OUTB.LEFT;qx1=midX;qy0=OUTB.BOT;qy1=midY;}
+  if(zone===14){qx0=midX;qx1=OUTB.RIGHT;qy0=OUTB.BOT;qy1=midY;}
+  const ix0=Math.max(qx0,SZ.LEFT),ix1=Math.min(qx1,SZ.RIGHT);
+  const iy0=Math.max(qy0,SZ.BOT),iy1=Math.min(qy1,SZ.TOP);
+  const q=plateRect(qx0,qx1,qy0,qy1,mirror);
+  const bite=plateRect(ix0,ix1,iy0,iy1,mirror);
+  const qX0=q.x,qX1=q.x+q.w,qY0=q.y,qY1=q.y+q.h;
+  const bX0=bite.x,bX1=bite.x+bite.w,bY0=bite.y,bY1=bite.y+bite.h;
+  const biteLeft=Math.abs(bX0-qX0)<Math.abs(bX1-qX1);
+  const biteTop=Math.abs(bY0-qY0)<Math.abs(bY1-qY1);
+  let pts;
+  if(biteLeft&&biteTop)       pts=[[qX0,bY1],[bX1,bY1],[bX1,qY0],[qX1,qY0],[qX1,qY1],[qX0,qY1]];
+  else if(!biteLeft&&biteTop) pts=[[qX0,qY0],[bX0,qY0],[bX0,bY1],[qX1,bY1],[qX1,qY1],[qX0,qY1]];
+  else if(biteLeft&&!biteTop) pts=[[qX0,qY0],[qX1,qY0],[qX1,qY1],[bX1,qY1],[bX1,bY0],[qX0,bY0]];
+  else                        pts=[[qX0,qY0],[qX1,qY0],[qX1,bY0],[bX0,bY0],[bX0,qY1],[qX0,qY1]];
+  const lx=biteLeft?qX1-18:qX0+18, ly=biteTop?qY1-13:qY0+15;
+  return { path:'M '+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L ')+' Z', lx, ly };
 }
 
+// Simple per-region aggregation — no spatial kernel, no smoothing math.
+// Every number here can be hand-checked against raw TrackmanPitch rows.
+function zoneDamageStats(rows) {
+  let swings=0, contacts=0, bip=0, evSum=0;
+  for (const r of rows) {
+    if (isSwing(r)) { swings++; if (!isWhiff(r)) contacts++; }
+    if (r.pitch_call==='InPlay') {
+      const ev=parseFloat(r.exit_speed);
+      if (isFinite(ev)&&ev>30) { bip++; evSum+=ev; }
+    }
+  }
+  return { n: rows.length, swings, contacts, bip, evSum };
+}
+
+const ALL_ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14];
+const K_CONTACT = 6; // pseudo-swings of shrinkage strength toward this batter's overall rate
+const K_EV      = 4; // pseudo-batted-balls of shrinkage strength
+
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
-  // mirror=true → pitcher's view (rectangle/plate/blob all share this orientation)
   const mirror = viewMode === 'pitcher';
 
-  const grid = useMemo(() => buildDamageGrid(rows, mirror), [rows, mirror]);
+  // Global rates (this batter, all pitches) used as the shrinkage prior
+  let totalSwings=0, totalContacts=0, totalBip=0, totalEvSum=0;
+  for (const r of rows) {
+    if (isSwing(r)) { totalSwings++; if (!isWhiff(r)) totalContacts++; }
+    if (r.pitch_call==='InPlay') {
+      const ev=parseFloat(r.exit_speed);
+      if (isFinite(ev)&&ev>30) { totalBip++; totalEvSum+=ev; }
+    }
+  }
+  const globalContactRate = totalSwings>0 ? totalContacts/totalSwings : 0.65;
+  const globalAvgEV       = totalBip>0    ? totalEvSum/totalBip      : 82;
 
-  const blobCells = grid ? grid.map((c,i) => {
-    const alpha = Math.min(1, c.coverage/0.15);
-    if (alpha <= 0.02) return null;
-    return <rect key={i} x={c.x.toFixed(1)} y={c.y.toFixed(1)} width={c.w.toFixed(1)} height={c.h.toFixed(1)} fill={rgba(c.t, alpha)} stroke="none" />;
-  }) : null;
+  const zoneData = ALL_ZONES.map(z => {
+    const zr = zoneRows(rows, z);
+    const st = zoneDamageStats(zr);
+    const contactRate = (st.contacts + K_CONTACT*globalContactRate) / (st.swings + K_CONTACT);
+    const avgEV        = (st.evSum    + K_EV*globalAvgEV)            / (st.bip    + K_EV);
+    const evNorm        = Math.max(0, Math.min(1, (avgEV-65)/35));
+    const score          = 0.5*contactRate + 0.5*evNorm;
+    return { z, st, score };
+  });
+
+  const maxN = Math.max(1, ...zoneData.map(zd => zd.st.n));
+  // Contrast-stretch using only zones that actually saw a pitch
+  const withData = zoneData.filter(zd => zd.st.n > 0);
+  const pool = withData.length >= 2 ? withData : zoneData;
+  let minS=Infinity, maxS=-Infinity;
+  for (const zd of pool) { if (zd.score<minS) minS=zd.score; if (zd.score>maxS) maxS=zd.score; }
+  const range = (maxS-minS) || 1;
+
+  // Two layers: fillShapes get blurred into the soft "shadow" blob look;
+  // labelTexts (the auditable pitch counts) render crisp on top, unblurred,
+  // so the numbers stay legible and checkable no matter how soft the blur is.
+  const fillShapes = [];
+  const labelTexts = [];
+  for (const zd of zoneData) {
+    const { z, st, score } = zd;
+    const t = Math.max(0, Math.min(1, (score-minS)/range));
+    const coverage = st.n / maxN;
+    // Zero-data zones render near-transparent rather than a false color
+    const alpha = st.n === 0 ? 0.06 : Math.max(0.35, Math.min(0.92, 0.30 + 0.62*coverage));
+    const fill = rgba(t, alpha);
+    const isShadow = z >= 11;
+    if (isShadow) {
+      const sp = shadowPoints(z, mirror);
+      fillShapes.push(<path key={'z'+z} d={sp.path} fill={fill} stroke="none" />);
+      labelTexts.push(<text key={'zt'+z} x={sp.lx} y={sp.ly} textAnchor="middle" fontSize={8} fill="rgba(14,37,58,0.9)" stroke="rgba(232,238,245,0.55)" strokeWidth={2.2} paintOrder="stroke" fontFamily={FONT} fontWeight={800}>{st.n}p</text>);
+    } else {
+      const r = inCellRect(z, mirror);
+      fillShapes.push(<rect key={'z'+z} x={r.x} y={r.y} width={r.w} height={r.h} fill={fill} stroke="none" />);
+      const cx=r.x+r.w/2, cy=r.y+r.h/2;
+      labelTexts.push(<text key={'zt'+z} x={cx} y={cy} textAnchor="middle" fontSize={10} fill="rgba(14,37,58,0.9)" stroke="rgba(232,238,245,0.55)" strokeWidth={2.5} paintOrder="stroke" fontFamily={FONT} fontWeight={800}>{st.n}p</text>);
+    }
+  }
 
   const szb  = plateRect(SZ.LEFT, SZ.RIGHT, SZ.BOT, SZ.TOP, mirror);
   const pcx  = szb.x + szb.w/2;
   const ptop = szb.y + szb.h + 18;
   const pw = szb.w*0.55, ph = pw/2, plH = pw*0.55;
 
-  // Home plate: pitcher's view draws the point UP (toward the mound), catcher's view flat-top
   const plateD = mirror
     ? `M ${pcx.toFixed(1)},${ptop.toFixed(1)} L ${(pcx+ph).toFixed(1)},${(ptop+plH*0.45).toFixed(1)} L ${(pcx+ph).toFixed(1)},${(ptop+plH).toFixed(1)} L ${(pcx-ph).toFixed(1)},${(ptop+plH).toFixed(1)} L ${(pcx-ph).toFixed(1)},${(ptop+plH*0.45).toFixed(1)} Z`
     : `M ${(pcx-ph).toFixed(1)},${ptop.toFixed(1)} L ${(pcx+ph).toFixed(1)},${ptop.toFixed(1)} L ${(pcx+ph).toFixed(1)},${(ptop+plH*0.55).toFixed(1)} L ${pcx.toFixed(1)},${(ptop+plH).toFixed(1)} L ${(pcx-ph).toFixed(1)},${(ptop+plH*0.55).toFixed(1)} Z`;
 
-  // Silhouette — placed by REAL batter's-box side, independent of which image we drew where before.
-  // RHB stands in the 3B-side box; LHB stands in the 1B-side box.
-  // Pitcher's view (mirror=true): 3B side renders on the RIGHT, 1B side on the LEFT.
-  // Catcher's view (mirror=false): that flips.
   const silW = 130, silH = Math.round(silW*500/213);
   const silY = ptop + plH + 4 - silH;
   const rhbX = mirror ? (ZV.W - silW) : 0;
@@ -180,18 +199,23 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   return (
     <svg width="100%" viewBox={`0 0 ${ZV.W} ${ZV.H}`} style={{ display:'block' }} xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <filter id="kdeBlur" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="8" />
+        <filter id="hotZoneBlur" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="7" />
         </filter>
       </defs>
-      {blobCells && <g filter="url(#kdeBlur)">{blobCells}</g>}
       {silhouette}
+      {/* Blurred fills only — softens hard rectangle edges into the "shadow"
+          blob look. The data driving the color is still the exact same
+          verified 13-region aggregation; only the rendering is blurred. */}
+      <g filter="url(#hotZoneBlur)">{fillShapes}</g>
+      {/* Crisp, unblurred — the auditable pitch-count numbers always stay legible */}
+      {labelTexts}
       <rect x={szb.x} y={szb.y} width={szb.w} height={szb.h} fill="none" stroke="rgba(232,238,245,0.75)" strokeWidth={1.75} />
       <path d={plateD} fill="rgba(232,238,245,0.1)" stroke="rgba(232,238,245,0.55)" strokeWidth={1.2} strokeLinejoin="round" />
       <text x={pcx} y={ZV.plotY-22} textAnchor="middle" fontSize={10} fill="rgba(198,181,131,0.75)" fontFamily={FONT} fontWeight={700} letterSpacing={1}>{viewLabel}</text>
       <text x={ZV.plotX+6} y={szb.y+szb.h/2} textAnchor="start" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{leftLabel}</text>
       <text x={ZV.plotX+ZV.plotW-6} y={szb.y+szb.h/2} textAnchor="end" fontSize={8} fill="rgba(232,238,245,0.5)" fontFamily={FONT} fontWeight={600}>{rightLabel}</text>
-      {!grid && (
+      {rows.length===0 && (
         <text x={ZV.W/2} y={ZV.H/2} textAnchor="middle" fontSize={12} fill="rgba(159,178,196,0.4)" fontFamily={FONT} fontStyle="italic">No pitch location data</text>
       )}
     </svg>
@@ -199,9 +223,7 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
 }
 
 // ============================================================================
-// SPRAY CHART
-// Wedge frequency shading now uses the same blue→white→red scale (no rainbow).
-// dugout=true: wedges + individual BBE dots layered together, bigger canvas.
+// SPRAY CHART — unchanged from the prior working version
 // ============================================================================
 const RESULT_COLORS = { HomeRun:'#E24B4A', Triple:'#EF9F27', Double:'#c6b583', Single:'#2dba5a', Out:'#5f7488', Error:'#9fb2c4' };
 function resultColor(pr) { return RESULT_COLORS[pr] || '#5f7488'; }
@@ -219,7 +241,6 @@ export function SprayChart({ rows, hand, dugout=false }) {
   const activeFilter = dugout ? 'all'   : filter;
   const dist    = useMemo(() => sprayDistribution(rows, hand), [rows, hand]);
 
-  // Larger canvas
   const W=440, H=370, homeX=W/2, homeY=H-28, MAXD=420, scale=(H-65)/MAXD;
   const flRad = 45*Math.PI/180;
   const hasHand = !!hand && dist.total > 0;
