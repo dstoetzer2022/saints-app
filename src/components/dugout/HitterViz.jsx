@@ -39,7 +39,7 @@ const EXT = { LEFT:-2.3,  RIGHT:2.3,  BOT:-0.4,  TOP:4.9 };          // KDE fiel
 // Wide canvas: 480x460. plotX/plotY/plotW/plotH define BOTH the KDE field
 // and the rulebook-zone rectangle, so the rectangle always sits correctly
 // inside the blob — no separate coordinate systems to drift apart.
-const ZV = { W:480, H:460, plotX:100, plotY:60, plotW:280, plotH:260 };
+const ZV = { W:480, H:500, plotX:100, plotY:100, plotW:280, plotH:260 };
 
 function mapX(s, mirror) { const t=(s-EXT.LEFT)/(EXT.RIGHT-EXT.LEFT); return ZV.plotX+(mirror?1-t:t)*ZV.plotW; }
 function mapY(h) { const t=(h-EXT.BOT)/(EXT.TOP-EXT.BOT); return ZV.plotY+(1-t)*ZV.plotH; }

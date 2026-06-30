@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
+import { getPitchColor, normalizePitch } from '@/lib/ds';
 import { ZoneHeatmap, SprayChart } from './HitterViz';
 
 const FONT   = "'Archivo', system-ui, sans-serif";
@@ -48,6 +49,37 @@ function computeStats(rows) {
   };
 }
 
+// ── Per-pitch-type breakdown ──────────────────────────────────────────────────
+// NOTE: assumes the pitch-type field is r.pitch_type (falls back to
+// r.tagged_pitch_type / r.auto_pitch_type if present under a different name).
+// If pitch types come back blank in the live app, this field name is the
+// first thing to check against the actual TrackmanPitch schema.
+function computePitchTypeStats(rows) {
+  const total = rows.length;
+  const map = {};
+  for (const r of rows) {
+    const raw = r.pitch_type || r.tagged_pitch_type || r.auto_pitch_type || 'Other';
+    const type = normalizePitch(raw) || raw;
+    if (!map[type]) map[type] = { type, n:0, swings:0, whiffs:0, AB:0, tb:0 };
+    const g = map[type];
+    g.n++;
+    if (isSwing(r)) g.swings++;
+    if (isWhiff(r)) g.whiffs++;
+    if (r.pitch_call === 'InPlay') {
+      if (AB_RES.includes(r.play_result))  g.AB++;
+      if (HIT_RES.includes(r.play_result)) g.tb += TB_MAP[r.play_result] || 0;
+    }
+  }
+  return Object.values(map)
+    .map(g => ({
+      ...g,
+      usagePct: total ? g.n/total : 0,
+      whiffPct: g.swings ? g.whiffs/g.swings : null,
+      slg:      g.AB     ? g.tb/g.AB         : null,
+    }))
+    .sort((a,b) => b.n - a.n);
+}
+
 const fmtAvg = v => v == null ? '—' : v.toFixed(3).replace(/^0/,'');
 const fmtPct = v => v == null ? '—' : Math.round(v*100)+'%';
 const fmtEV  = v => v == null ? '—' : v.toFixed(1);
@@ -66,6 +98,41 @@ function SectionTitle({ children }) {
   return (
     <div style={{ fontSize:16, letterSpacing:'1.5px', textTransform:'uppercase', color:GOLDM, fontWeight:800, fontFamily:FONT, marginBottom:10, textAlign:'center' }}>
       {children}
+    </div>
+  );
+}
+
+// ── Pitch-type production table ───────────────────────────────────────────────
+function PitchTypeTable({ rows }) {
+  const stats = useMemo(() => computePitchTypeStats(rows), [rows]);
+
+  if (!stats.length) {
+    return <div style={{ color:TEXTF, fontSize:13, fontStyle:'italic', textAlign:'center' }}>No pitch data</div>;
+  }
+
+  return (
+    <div style={{ width:'100%' }}>
+      {/* Header row */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 52px 52px 56px', gap:6, padding:'0 4px 8px', borderBottom:`1px solid ${NAVY_L}`, marginBottom:4 }}>
+        <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.8px', textTransform:'uppercase', color:TEXTF, fontFamily:FONT }}>Pitch</span>
+        <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.8px', textTransform:'uppercase', color:TEXTF, fontFamily:FONT, textAlign:'right' }}>Use%</span>
+        <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.8px', textTransform:'uppercase', color:TEXTF, fontFamily:FONT, textAlign:'right' }}>Whiff%</span>
+        <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.8px', textTransform:'uppercase', color:TEXTF, fontFamily:FONT, textAlign:'right' }}>SLG</span>
+      </div>
+      {/* Rows */}
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        {stats.map(g => (
+          <div key={g.type} style={{ display:'grid', gridTemplateColumns:'1fr 52px 52px 56px', gap:6, alignItems:'center', padding:'7px 4px', borderRadius:5 }}>
+            <span style={{ display:'flex', alignItems:'center', gap:7, fontSize:14, fontWeight:700, color:TEXT, fontFamily:FONT, minWidth:0 }}>
+              <span style={{ width:10, height:10, borderRadius:3, background:getPitchColor(g.type), flexShrink:0 }} />
+              <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.type}</span>
+            </span>
+            <span style={{ fontSize:14, fontWeight:700, color:TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{Math.round(g.usagePct*100)}%</span>
+            <span style={{ fontSize:14, fontWeight:700, color: g.whiffPct!=null && g.whiffPct>=0.35 ? '#f87171' : TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{fmtPct(g.whiffPct)}</span>
+            <span style={{ fontSize:14, fontWeight:800, color: g.slg!=null && g.slg>=0.500 ? GOLD : TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{g.slg!=null ? fmtAvg(g.slg) : '—'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -89,7 +156,6 @@ function BaseSlot({ base, runner }) {
       boxShadow:  theme ? theme.glow : 'none',
       transition: 'box-shadow 0.3s, border-color 0.3s, background 0.3s',
     }}>
-      {/* Base label — large and readable */}
       <div style={{ fontSize:15, letterSpacing:'2px', textTransform:'uppercase', fontWeight:900, color:theme ? theme.text : isEmpty ? TEXTF : GOLDM, fontFamily:FONT }}>
         {LABELS[base]}
       </div>
@@ -217,12 +283,12 @@ export default function HitterDugoutPanel({ gameId }) {
         </div>
       </div>
 
-      {/* ── VIZ BODY (50 / 50) ────────────────────────────────── */}
+      {/* ── VIZ BODY — Hot Zones | Pitch Type | Spray Chart ───── */}
       <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
 
-        {/* LEFT — zone heatmap */}
-        <div style={{ flex:'0 0 50%', maxWidth:'50%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
-          <SectionTitle>Damage Zones · Contact + EV</SectionTitle>
+        {/* LEFT — hot zones */}
+        <div style={{ flex:'0 0 38%', maxWidth:'38%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+          <SectionTitle>HOT ZONES</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
               <div style={{ width:'100%', maxWidth:400 }}>
@@ -244,8 +310,20 @@ export default function HitterDugoutPanel({ gameId }) {
           </div>
         </div>
 
+        {/* CENTER — pitch type production table */}
+        <div style={{ flex:'0 0 24%', maxWidth:'24%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+          <SectionTitle>By Pitch Type</SectionTitle>
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
+            {hasData ? <PitchTypeTable rows={batterRows} /> : (
+              <div style={{ color:TEXTF, fontSize:13, fontStyle:'italic', textAlign:'center' }}>
+                {currentBatter ? 'No Trackman data for this batter' : 'No batter active'}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* RIGHT — spray chart */}
-        <div style={{ flex:'0 0 50%', maxWidth:'50%', padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ flex:'1 1 38%', padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <SectionTitle>Spray Chart</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
@@ -264,9 +342,9 @@ export default function HitterDugoutPanel({ gameId }) {
       {/* ── BASERUNNER FOOTER — no header label, just the three cards ── */}
       <div style={{ flexShrink:0, borderTop:`2px solid ${GOLD}`, background:'rgba(14,37,58,0.75)', padding:'12px 16px' }}>
         <div style={{ display:'flex', gap:10 }}>
-          <BaseSlot base="3B" runner={runnerAt('3B')} />
-          <BaseSlot base="2B" runner={runnerAt('2B')} />
           <BaseSlot base="1B" runner={runnerAt('1B')} />
+          <BaseSlot base="2B" runner={runnerAt('2B')} />
+          <BaseSlot base="3B" runner={runnerAt('3B')} />
         </div>
       </div>
     </div>
