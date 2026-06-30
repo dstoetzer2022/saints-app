@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
+import { colorAt } from '@/components/dugout/HitterViz';
 
 const FONT = "'Archivo', system-ui, sans-serif";
 const pitchHex = t => colorFor(t || '');
@@ -184,7 +185,11 @@ function ArsenalPanel({ arsenal, activeIdx, curatedColorMap }) {
 
 function StatBar({ label, value, good, avg: avgThresh }) {
   const pct = value == null ? null : Math.round(value);
-  const color = pct == null ? '#555' : pct >= good ? '#3fa66a' : pct >= avgThresh ? '#e3b341' : '#d64545';
+  // Continuous blue → white → red scale, anchored to the same good/avg
+  // thresholds the bars already used — avg threshold = blue, good threshold = red.
+  const t = pct == null ? 0.5 : Math.max(0, Math.min(1, (pct - avgThresh) / (good - avgThresh)));
+  const [cr, cg, cb] = colorAt(t);
+  const color = pct == null ? '#555' : `rgb(${Math.round(cr)},${Math.round(cg)},${Math.round(cb)})`;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
       <div style={{ width: 92, textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#8a9aaa', fontFamily: FONT, flexShrink: 0 }}>{label}</div>

@@ -13,7 +13,7 @@ const HIT_RESULTS = ['Single','Double','Triple','HomeRun'];
 // ── Shared blue → white → red diverging color scale ─────────────────────────
 // t=0 → cool blue (low frequency), t=0.5 → white (mid), t=1 → red (high frequency)
 function lerp(a,b,t) { return a + (b - a) * t; }
-function colorAt(t) {
+export function colorAt(t) {
   t = Math.max(0, Math.min(1, t));
   if (t <= 0.5) {
     const k = t / 0.5;
@@ -22,7 +22,7 @@ function colorAt(t) {
   const k = (t - 0.5) / 0.5;
   return [lerp(242,200,k), lerp(242,40,k), lerp(242,44,k)];
 }
-function rgba(t, alpha) {
+export function rgba(t, alpha) {
   const [r,g,b] = colorAt(t);
   return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${alpha.toFixed(2)})`;
 }
@@ -39,7 +39,7 @@ const EXT = { LEFT:-2.3,  RIGHT:2.3,  BOT:-0.4,  TOP:4.9 };          // KDE fiel
 // Wide canvas: 480x460. plotX/plotY/plotW/plotH define BOTH the KDE field
 // and the rulebook-zone rectangle, so the rectangle always sits correctly
 // inside the blob — no separate coordinate systems to drift apart.
-const ZV = { W:480, H:500, plotX:100, plotY:100, plotW:280, plotH:260 };
+const ZV = { W:480, H:540, plotX:100, plotY:140, plotW:280, plotH:260 };
 
 function mapX(s, mirror) { const t=(s-EXT.LEFT)/(EXT.RIGHT-EXT.LEFT); return ZV.plotX+(mirror?1-t:t)*ZV.plotW; }
 function mapY(h) { const t=(h-EXT.BOT)/(EXT.TOP-EXT.BOT); return ZV.plotY+(1-t)*ZV.plotH; }
@@ -48,7 +48,7 @@ function plateRect(x0,x1,y0,y1,mirror) {
   return { x:Math.min(sx0,sx1), y:Math.min(sy0,sy1), w:Math.abs(sx1-sx0), h:Math.abs(sy1-sy0) };
 }
 
-const KDE_NX = 32, KDE_NY = 30, KDE_SIGMA = 26;
+const KDE_NX = 32, KDE_NY = 30, KDE_SIGMA = 32;
 
 // Per-cell score blends two signals via kernel-weighted local averaging:
 //   • contactRate = locally-smoothed (contact swings / all swings) — 0..1 naturally
@@ -101,14 +101,28 @@ function buildDamageGrid(rows, mirror) {
   }
   if (maxTotal <= 0) return null;
 
-  return raw.map(c => {
+  const scored = raw.map(c => {
     const coverage   = c.totalD / maxTotal;
     const contactRate = c.swingD > 1e-6 ? c.contactD / c.swingD : 0;
     const avgEV       = c.bipD   > 1e-6 ? c.evSum / c.bipD      : null;
     const evNorm      = avgEV != null ? Math.max(0, Math.min(1, (avgEV - 65) / 35)) : null;
     const score        = evNorm != null ? 0.5*contactRate + 0.5*evNorm : contactRate;
-    return { x:c.x, y:c.y, w:c.w, h:c.h, t:score, coverage };
+    return { x:c.x, y:c.y, w:c.w, h:c.h, score, coverage };
   });
+
+  // Stretch score range to full 0..1 using only cells with a meaningful
+  // sample (coverage > 5% of the busiest cell), so a handful of noisy
+  // near-empty cells can't compress the whole color scale toward the middle.
+  const visible = scored.filter(c => c.coverage > 0.05);
+  const pool = visible.length >= 4 ? visible : scored;
+  let minS = Infinity, maxS = -Infinity;
+  for (const c of pool) { if (c.score < minS) minS = c.score; if (c.score > maxS) maxS = c.score; }
+  const range = (maxS - minS) || 1;
+
+  return scored.map(c => ({
+    x:c.x, y:c.y, w:c.w, h:c.h, coverage:c.coverage,
+    t: Math.max(0, Math.min(1, (c.score - minS) / range)),
+  }));
 }
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
@@ -156,7 +170,7 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
     <svg width="100%" viewBox={`0 0 ${ZV.W} ${ZV.H}`} style={{ display:'block' }} xmlns="http://www.w3.org/2000/svg">
       <defs>
         <filter id="kdeBlur" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="5" />
+          <feGaussianBlur stdDeviation="8" />
         </filter>
       </defs>
       {blobCells && <g filter="url(#kdeBlur)">{blobCells}</g>}

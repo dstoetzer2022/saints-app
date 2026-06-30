@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
-import { ZoneHeatmap, SprayChart } from './HitterViz';
+import { ZoneHeatmap, SprayChart, rgba } from './HitterViz';
 
 const FONT   = "'Archivo', system-ui, sans-serif";
 const NAVY   = '#0e253a';
@@ -121,17 +121,24 @@ function PitchTypeTable({ rows }) {
       </div>
       {/* Rows */}
       <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-        {stats.map(g => (
-          <div key={g.type} style={{ display:'grid', gridTemplateColumns:'1fr 52px 52px 56px', gap:6, alignItems:'center', padding:'7px 4px', borderRadius:5 }}>
-            <span style={{ display:'flex', alignItems:'center', gap:7, fontSize:14, fontWeight:700, color:TEXT, fontFamily:FONT, minWidth:0 }}>
-              <span style={{ width:10, height:10, borderRadius:3, background:getPitchColor(g.type), flexShrink:0 }} />
-              <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.type}</span>
-            </span>
-            <span style={{ fontSize:14, fontWeight:700, color:TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{Math.round(g.usagePct*100)}%</span>
-            <span style={{ fontSize:14, fontWeight:700, color: g.whiffPct!=null && g.whiffPct>=0.35 ? '#f87171' : TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{fmtPct(g.whiffPct)}</span>
-            <span style={{ fontSize:14, fontWeight:800, color: g.slg!=null && g.slg>=0.500 ? GOLD : TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{g.slg!=null ? fmtAvg(g.slg) : '—'}</span>
-          </div>
-        ))}
+        {stats.map(g => {
+          // Whiff% inverted: high whiff = bad for hitter = blue (cold).
+          // SLG direct: high SLG = good for hitter = red (damage).
+          // Both match the same blue-white-red scale used in Hot Zones.
+          const whiffT = g.whiffPct != null ? 1 - Math.max(0, Math.min(1, g.whiffPct/0.45)) : null;
+          const slgT   = g.slg      != null ? Math.max(0, Math.min(1, g.slg/0.700))         : null;
+          return (
+            <div key={g.type} style={{ display:'grid', gridTemplateColumns:'1fr 52px 52px 56px', gap:6, alignItems:'center', padding:'7px 4px', borderRadius:5 }}>
+              <span style={{ display:'flex', alignItems:'center', gap:7, fontSize:14, fontWeight:700, color:TEXT, fontFamily:FONT, minWidth:0 }}>
+                <span style={{ width:10, height:10, borderRadius:3, background:getPitchColor(g.type), flexShrink:0 }} />
+                <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.type}</span>
+              </span>
+              <span style={{ fontSize:14, fontWeight:700, color:TEXTD, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{Math.round(g.usagePct*100)}%</span>
+              <span style={{ fontSize:14, fontWeight:700, color:TEXT, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums', background: whiffT!=null ? rgba(whiffT,0.32) : 'transparent', borderRadius:4, padding:'2px 5px' }}>{fmtPct(g.whiffPct)}</span>
+              <span style={{ fontSize:14, fontWeight:800, color:TEXT, fontFamily:FONT, textAlign:'right', fontVariantNumeric:'tabular-nums', background: slgT!=null ? rgba(slgT,0.32) : 'transparent', borderRadius:4, padding:'2px 5px' }}>{g.slg!=null ? fmtAvg(g.slg) : '—'}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
