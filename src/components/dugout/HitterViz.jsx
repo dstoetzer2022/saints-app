@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { isValidBattedBall, sprayDistribution } from '@/lib/statsUtils';
+import { isSwing, isWhiff, isValidBattedBall, sprayDistribution } from '@/lib/statsUtils';
 
 const FONT = "\'Archivo\', system-ui, sans-serif";
 const NAVY = '#0e253a';
@@ -28,9 +28,10 @@ function rgba(t, alpha) {
 }
 
 // ============================================================================
-// ZONE HEATMAP — shadow-style location frequency model (Statcast-style KDE blob)
-// Blue = rarely attacked, white = moderate, red = frequently attacked.
-// Replaces the old SLG-colored 3x3 grid with a continuous density field.
+// ZONE HEATMAP — shadow-style contact-quality model (Statcast-style KDE blob)
+// Blue = poor contact / weak exit velo here, red = strong contact + high EV.
+// Score blends local contact rate and local avg exit velocity (50/50).
+// Blob shape/visibility still reflects pitch density (where data exists at all).
 // ============================================================================
 const SZ  = { LEFT:-0.83, RIGHT:0.83, BOT:1.50, TOP:3.50 };         // rulebook zone
 const EXT = { LEFT:-2.3,  RIGHT:2.3,  BOT:-0.4,  TOP:4.9 };          // KDE field bounds
@@ -49,43 +50,75 @@ function plateRect(x0,x1,y0,y1,mirror) {
 
 const KDE_NX = 32, KDE_NY = 30, KDE_SIGMA = 26;
 
-function buildKdeGrid(rows, mirror) {
+// Per-cell score blends two signals via kernel-weighted local averaging:
+//   • contactRate = locally-smoothed (contact swings / all swings) — 0..1 naturally
+//   • avgEV       = locally-smoothed average exit velocity on balls in play,
+//                    normalized against a fixed 65-100 mph scale (so colors stay
+//                    comparable across different hitters, not just relative to
+//                    this player's own range)
+// score = 0.5*contactRate + 0.5*evNorm where both exist; falls back to
+// contactRate alone where there's no batted-ball sample (e.g. an all-whiff zone
+// still reads cold, which is correct — no damage happening there).
+// Cell visibility (alpha/blob shape) is still driven by total pitch density,
+// so the blob's footprint reflects where pitches were actually thrown,
+// independent of the contact/EV score driving its color.
+function buildDamageGrid(rows, mirror) {
   const pts = [];
   for (const r of rows) {
     const s = parseFloat(r.plate_loc_side), h = parseFloat(r.plate_loc_height);
     if (!isFinite(s) || !isFinite(h)) continue;
-    pts.push([mapX(s,mirror), mapY(h)]);
+    const swung = isSwing(r);
+    const whiffed = isWhiff(r);
+    const ev = parseFloat(r.exit_speed);
+    const isBip = r.pitch_call === 'InPlay' && isFinite(ev) && ev > 30;
+    pts.push({
+      px: mapX(s, mirror), py: mapY(h),
+      swung, contact: swung && !whiffed,
+      isBip, ev: isBip ? ev : null,
+    });
   }
   if (!pts.length) return null;
 
   const cellW = ZV.plotW / KDE_NX, cellH = ZV.plotH / KDE_NY;
-  const cells = [];
-  let maxD = 0;
+  const raw = [];
+  let maxTotal = 0;
   for (let iy=0; iy<KDE_NY; iy++) {
     for (let ix=0; ix<KDE_NX; ix++) {
       const cx = ZV.plotX + (ix+0.5)*cellW;
       const cy = ZV.plotY + (iy+0.5)*cellH;
-      let d = 0;
-      for (const [px,py] of pts) {
-        const dx=cx-px, dy=cy-py;
-        d += Math.exp(-(dx*dx+dy*dy)/(2*KDE_SIGMA*KDE_SIGMA));
+      let totalD=0, swingD=0, contactD=0, bipD=0, evSum=0;
+      for (const p of pts) {
+        const dx=cx-p.px, dy=cy-p.py;
+        const w = Math.exp(-(dx*dx+dy*dy)/(2*KDE_SIGMA*KDE_SIGMA));
+        totalD += w;
+        if (p.swung)  swingD += w;
+        if (p.contact) contactD += w;
+        if (p.isBip)  { bipD += w; evSum += w*p.ev; }
       }
-      if (d > maxD) maxD = d;
-      cells.push({ x:ZV.plotX+ix*cellW, y:ZV.plotY+iy*cellH, w:cellW, h:cellH, d });
+      if (totalD > maxTotal) maxTotal = totalD;
+      raw.push({ x:ZV.plotX+ix*cellW, y:ZV.plotY+iy*cellH, w:cellW, h:cellH, totalD, swingD, contactD, bipD, evSum });
     }
   }
-  if (maxD <= 0) return null;
-  return cells.map(c => ({ ...c, t: c.d/maxD }));
+  if (maxTotal <= 0) return null;
+
+  return raw.map(c => {
+    const coverage   = c.totalD / maxTotal;
+    const contactRate = c.swingD > 1e-6 ? c.contactD / c.swingD : 0;
+    const avgEV       = c.bipD   > 1e-6 ? c.evSum / c.bipD      : null;
+    const evNorm      = avgEV != null ? Math.max(0, Math.min(1, (avgEV - 65) / 35)) : null;
+    const score        = evNorm != null ? 0.5*contactRate + 0.5*evNorm : contactRate;
+    return { x:c.x, y:c.y, w:c.w, h:c.h, t:score, coverage };
+  });
 }
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
   // mirror=true → pitcher's view (rectangle/plate/blob all share this orientation)
   const mirror = viewMode === 'pitcher';
 
-  const grid = useMemo(() => buildKdeGrid(rows, mirror), [rows, mirror]);
+  const grid = useMemo(() => buildDamageGrid(rows, mirror), [rows, mirror]);
 
   const blobCells = grid ? grid.map((c,i) => {
-    const alpha = Math.min(1, c.t/0.15);
+    const alpha = Math.min(1, c.coverage/0.15);
     if (alpha <= 0.02) return null;
     return <rect key={i} x={c.x.toFixed(1)} y={c.y.toFixed(1)} width={c.w.toFixed(1)} height={c.h.toFixed(1)} fill={rgba(c.t, alpha)} stroke="none" />;
   }) : null;
