@@ -222,7 +222,7 @@ export default function HitterDugoutPanel({ gameId }) {
 
         {/* LEFT — zone heatmap */}
         <div style={{ flex:'0 0 50%', maxWidth:'50%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
-          <SectionTitle>Damage Zones · SLG</SectionTitle>
+          <SectionTitle>Attack Zone · Pitch Frequency</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
               <div style={{ width:'100%', maxWidth:400 }}>
@@ -234,13 +234,13 @@ export default function HitterDugoutPanel({ gameId }) {
               </div>
             )}
           </div>
-          {/* Legend — bigger */}
+          {/* Legend — blue (rare) → white (moderate) → red (frequent) */}
           <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8, fontSize:12, color:TEXTF, flexShrink:0, justifyContent:'center' }}>
-            <span>Weak</span>
+            <span>Cold</span>
             <div style={{ display:'flex', height:9, borderRadius:3, overflow:'hidden', width:140 }}>
-              {['rgba(20,54,86,0.85)','rgba(23,80,65,0.80)','rgba(85,79,10,0.82)','rgba(140,79,11,0.86)','rgba(153,60,29,0.90)','rgba(163,45,45,0.94)'].map((c,i)=><span key={i} style={{flex:1,background:c}}/>)}
+              {['rgba(47,99,166,0.9)','rgba(144,170,205,0.9)','rgba(242,242,242,0.9)','rgba(221,138,140,0.9)','rgba(200,40,44,0.9)'].map((c,i)=><span key={i} style={{flex:1,background:c}}/>)}
             </div>
-            <span>Damage</span>
+            <span>Hot</span>
           </div>
         </div>
 
