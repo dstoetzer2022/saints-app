@@ -43,6 +43,7 @@ export default function LiveScout({ onBack }) {
         opponent={hubData.opponent}
         initialLineup={hubData.lineup}
         onBack={() => setStep('SELECT')}
+        onHome={onBack}
       />
     );
   }

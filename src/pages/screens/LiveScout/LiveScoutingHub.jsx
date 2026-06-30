@@ -23,9 +23,15 @@ const SPD_COLOR   = { fast: '#4ade80', average: '#facc15', slow: '#f87171' };
 const AGGR_COLOR  = { aggressive: '#4ade80', average: '#facc15', passive: '#94a3b8' };
 
 // ── Top banner ────────────────────────────────────────────────────────────────
-function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode }) {
+function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode, onHome }) {
   return (
     <div style={{ background: NAVY_DARK, borderBottom: '1px solid rgba(198,181,131,0.18)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+      {onHome && (
+        <button onClick={onHome} title="Back to home"
+          style={{ background: 'rgba(255,255,255,.07)', border: '0.5px solid rgba(255,255,255,.15)', borderRadius: 6, color: GOLD, fontSize: 16, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: FONT }}>
+          ‹
+        </button>
+      )}
       <img src={opponent?.logo_url || CCL_LOGO} alt="" style={{ width: 40, height: 40, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.6))' }} />
       <div style={{ flex: 1 }}>
         <div style={{ color: '#f0ece0', fontWeight: 800, fontSize: 15, lineHeight: 1.1, fontFamily: FONT }}>vs {opponent?.name || '—'}</div>
@@ -335,7 +341,7 @@ function LineupAndRunnersTab({ hitterObs, runnerObs, lineup, onSetCurrentBatter,
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function LiveScoutingHub({ game, opponent, initialLineup, onBack }) {
+export default function LiveScoutingHub({ game, opponent, initialLineup, onBack, onHome }) {
   const [tab,         setTab]         = useState('BATTERY');
   const [pitcherObs,  setPitcherObs]  = useState([]);
   const [catcherObs,  setCatcherObs]  = useState(null);
@@ -518,6 +524,7 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack 
         onCompleteGame={() => setConfirmEnd(true)}
         onToggleSub={() => setShowSub(s => !s)} showSub={showSub}
         dugoutMode={dugoutMode} onToggleDugout={toggleDugoutMode} togglingMode={togglingMode}
+        onHome={onHome}
       />
 
       {/* Tab bar */}

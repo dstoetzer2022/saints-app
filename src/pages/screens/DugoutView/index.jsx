@@ -556,7 +556,7 @@ export default function DugoutView({ setScreen }) {
       {/* Nav bar */}
       <div style={{ padding: '8px 16px', background: '#0e253a', borderBottom: '2px solid #b8860b', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => setScreen('home')} style={{ background: 'rgba(255,255,255,.07)', border: '0.5px solid rgba(255,255,255,.15)', borderRadius: 6, color: '#c6b583', fontSize: 16, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
+          <button onClick={() => setScreen('HOME')} style={{ background: 'rgba(255,255,255,.07)', border: '0.5px solid rgba(255,255,255,.15)', borderRadius: 6, color: '#c6b583', fontSize: 16, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
           <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(198,181,131,0.5)', fontFamily: FONT }}>DUGOUT VIEW</span>
         </div>
         <div style={{ fontSize: 11, fontWeight: 800, color: '#4ade80', letterSpacing: 1, fontFamily: FONT }}>● LIVE</div>
