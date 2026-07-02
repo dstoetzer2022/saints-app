@@ -1,3 +1,5 @@
+import { normalizePitch } from '@/lib/ds';
+
 // Parses a Trackman V3 CSV string into an array of row objects.
 export function parseTrackmanCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -58,8 +60,9 @@ export function buildArsenals(rows, gameId) {
   // group by pitcher+pitchType
   const map = {};
   rows.forEach(r => {
-    const key = `${r.Pitcher}||${r.PitcherTeam}||${r.TaggedPitchType || r.AutoPitchType || 'Unknown'}`;
-    if (!map[key]) map[key] = { rows: [], pitcher: r.Pitcher, pitcherIdTrackman: r.PitcherId, pitcherTeam: r.PitcherTeam, pitcherHand: r.PitcherThrows, pitchType: r.TaggedPitchType || r.AutoPitchType || 'Unknown' };
+    const pitchType = normalizePitch(r.TaggedPitchType || r.AutoPitchType || 'Unknown');
+    const key = `${r.Pitcher}||${r.PitcherTeam}||${pitchType}`;
+    if (!map[key]) map[key] = { rows: [], pitcher: r.Pitcher, pitcherIdTrackman: r.PitcherId, pitcherTeam: r.PitcherTeam, pitcherHand: r.PitcherThrows, pitchType };
     map[key].rows.push(r);
   });
 

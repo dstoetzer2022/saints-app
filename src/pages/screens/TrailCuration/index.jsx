@@ -222,10 +222,11 @@ export default function TrailCuration({ setScreen }) {
         ).catch(() => []),
       ]);
       setCurated(curatedRows || []);
-      // Group by tagged_pitch_type, attach short game id
+      // Group by canonical pitch type (normalizePitch collapses Fastball/
+      // FourSeamFastBall/Four-Seam/FF into one "Four-Seam" bucket)
       const groups = {};
       for (const r of (pitchRows || [])) {
-        const pt = r.tagged_pitch_type || r.pitch_type || 'Unknown';
+        const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
         if (!groups[pt]) groups[pt] = [];
         groups[pt].push({ ...r, source_game_id_short: (r.game_id || '').slice(-6) });
       }
