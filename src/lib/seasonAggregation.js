@@ -152,12 +152,13 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
     const strike_pct = rs.length > 0 ? (strikeCount / rs.length) * 100 : null;
 
     // Count situation buckets: pitcher ahead = more strikes than balls
-    let ahead_count = 0, even_count = 0, behind_count = 0;
+    let ahead_count = 0, even_count = 0, behind_count = 0, first_pitch_count = 0;
     for (const r of rs) {
       const b = r.balls ?? 0, s = r.strikes ?? 0;
       if (s > b) ahead_count++;
       else if (b > s) behind_count++;
       else even_count++;
+      if (b === 0 && s === 0) first_pitch_count++;
     }
 
     const record = {
@@ -180,6 +181,7 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
       ahead_count,
       even_count,
       behind_count,
+      first_pitch_count,
     };
     record.strike_pct = strike_pct;
     return record;

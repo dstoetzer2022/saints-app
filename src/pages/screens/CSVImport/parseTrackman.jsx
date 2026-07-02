@@ -83,6 +83,7 @@ export function buildArsenals(rows, gameId) {
     const aheadC = pr.filter(r => countCategory(r.Balls, r.Strikes) === 'ahead').length;
     const evenC = pr.filter(r => countCategory(r.Balls, r.Strikes) === 'even').length;
     const behindC = pr.filter(r => countCategory(r.Balls, r.Strikes) === 'behind').length;
+    const firstPitchC = pr.filter(r => (parseInt(r.Balls) || 0) === 0 && (parseInt(r.Strikes) || 0) === 0).length;
 
     return {
       game_id: gameId,
@@ -108,6 +109,7 @@ export function buildArsenals(rows, gameId) {
       ahead_count: aheadC,
       even_count: evenC,
       behind_count: behindC,
+      first_pitch_count: firstPitchC,
     };
   });
 }

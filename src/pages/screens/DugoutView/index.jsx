@@ -740,7 +740,11 @@ export default function DugoutView({ setScreen }) {
               <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
                 <ChipFooter
                   pitches={curatedTrails.length > 0
-                    ? curatedTrails.map(t => ({ pitch_type: t.display_label || t.pitch_type, _color: t.trail_color, usage_pct: 1 / curatedTrails.length }))
+                    ? curatedTrails.map(t => {
+                        const label = t.display_label || t.pitch_type;
+                        const seasonMatch = seasonArsenal.find(p => normalizePitch(p.pitch_type) === normalizePitch(label));
+                        return { pitch_type: label, _color: t.trail_color, usage_pct: seasonMatch?.usage_pct ?? null };
+                      })
                     : seasonArsenal}
                   activeIdx={activeArsenalIdx}
                   colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
