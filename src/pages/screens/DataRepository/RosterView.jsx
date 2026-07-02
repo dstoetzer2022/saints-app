@@ -187,7 +187,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team }) {
   );
 }
 
-export default function RosterView({ team, onSelectPlayer, onBack }) {
+export default function RosterView({ team, onSelectPlayer, onBack, initialTab }) {
   const [loading, setLoading] = useState(true);
   const [pitcherObs, setPitcherObs] = useState([]);
   const [catcherObs, setCatcherObs] = useState([]);
@@ -196,7 +196,7 @@ export default function RosterView({ team, onSelectPlayer, onBack }) {
   const [batterPitches, setBatterPitches] = useState([]);
   const [activePlayer, setActivePlayer] = useState(null);
   const [_scope, _setScope] = useState('season');
-  const [sidebarTab, setSidebarTab] = useState('pitchers');
+  const [sidebarTab, setSidebarTab] = useState(initialTab === 'hitters' ? 'hitters' : 'pitchers');
   const [showRunnerReport, setShowRunnerReport] = useState(false);
   const [showPitcherCatcherReport, setShowPitcherCatcherReport] = useState(false);
 
@@ -441,7 +441,7 @@ export default function RosterView({ team, onSelectPlayer, onBack }) {
             onClick={onBack}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: C.muted, fontFamily: FONT, padding: 0, marginBottom: 14 }}
           >
-            ← Data Repository
+            ← {team.name}
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
