@@ -115,7 +115,7 @@ function DugoutPitch3D({ arsenal, pitcherName, pitcherHand, curatedTrails, onAct
     const scene3d = buildScene(THREE, mount, pitcher, { mode: 'avg' });
     scene3d.setCam('catcher');
     sceneRef.current = scene3d;
-    cycleRef.current = makeCycle(scene3d, pitcher.pitches.length, onActiveIdx, 3000);
+    cycleRef.current = makeCycle(scene3d, pitcher.pitches.length, onActiveIdx, 5000);
     return () => {
       if (cycleRef.current) { cycleRef.current.stop(); cycleRef.current = null; }
       if (sceneRef.current) { sceneRef.current.dispose(); sceneRef.current = null; }

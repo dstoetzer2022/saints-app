@@ -80,9 +80,9 @@ function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) 
   const [confirming, setConfirming] = useState(false);
   const color = trail.trail_color || getPitchColor(trail.pitch_type);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#fff', border: `1px solid ${color}66`, borderRadius: 8, marginBottom: 6, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#fff', border: `1px solid ${color}66`, borderRadius: 8, marginBottom: 6 }}>
       {/* Color bar on left edge */}
-      <div style={{ width: 5, alignSelf: 'stretch', background: color, flexShrink: 0 }} />
+      <div style={{ width: 5, alignSelf: 'stretch', background: color, borderRadius: '8px 0 0 8px', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -98,11 +98,11 @@ function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) 
         </div>
         <span style={{ fontSize: 9, fontWeight: 800, color: color, background: color + '18', border: `1px solid ${color}55`, borderRadius: 4, padding: '2px 6px', flexShrink: 0, letterSpacing: 0.5 }}>LOCKED</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 2px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 2px', flexShrink: 0 }}>
         <button onClick={onMoveUp} disabled={isFirst} style={{ border: 'none', background: 'none', cursor: isFirst ? 'not-allowed' : 'pointer', color: isFirst ? '#ccc' : NAVY, padding: '2px 4px' }}><ChevronUp size={14} /></button>
         <button onClick={onMoveDown} disabled={isLast} style={{ border: 'none', background: 'none', cursor: isLast ? 'not-allowed' : 'pointer', color: isLast ? '#ccc' : NAVY, padding: '2px 4px' }}><ChevronDown size={14} /></button>
       </div>
-      <div style={{ padding: '0 10px 0 4px' }}>
+      <div style={{ padding: '0 10px 0 4px', flexShrink: 0 }}>
         {confirming ? (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: '#c0392b', fontFamily: FONT }}>Remove?</span>
