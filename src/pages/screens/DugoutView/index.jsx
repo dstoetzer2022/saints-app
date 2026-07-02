@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
+import { normalizePitch } from '@/lib/ds';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
 import { colorAt } from '@/components/dugout/HitterViz';
 
@@ -507,7 +508,7 @@ export default function DugoutView({ setScreen }) {
         const total = allRows.length;
         const groups = {};
         for (const r of allRows) {
-          const pt = r.tagged_pitch_type || r.pitch_type || 'Unknown';
+          const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
           (groups[pt] = groups[pt] || []).push(r);
         }
         const safeMean = arr => { const v=arr.filter(x=>x!=null&&x>0); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
@@ -642,7 +643,9 @@ export default function DugoutView({ setScreen }) {
     : seasonArsenal[activeArsenalIdx]?.pitch_type;
   // Video and rate stats live on the season PitcherArsenal row regardless of
   // whether the 3D trail is currently rendering from curated trails or season avgs.
-  const activeStatPitch = seasonArsenal.find(p => p.pitch_type === activePitchType) || null;
+  // Normalize both sides — curated trails may still carry a pre-canonicalization
+  // label (e.g. "Fastball") that wouldn't otherwise match the season row's "Four-Seam".
+  const activeStatPitch = seasonArsenal.find(p => normalizePitch(p.pitch_type) === normalizePitch(activePitchType)) || null;
   const activeVideoUrl = activeStatPitch?.video_url || null;
 
   return (

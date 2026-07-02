@@ -118,9 +118,10 @@ function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) 
 }
 
 // ── Available pitch group ────────────────────────────────────────────────────
-function PitchGroup({ pitchType, pitches, curatedPitchTypes, onAdd, adding }) {
+function PitchGroup({ pitchType, pitches, curatedPitchTypes, onAdd, onRemoveType, adding }) {
   const [open, setOpen] = useState(false);
   const [previewPitch, setPreviewPitch] = useState(null);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const hasCurated = curatedPitchTypes.has(pitchType);
   const color = trailColorFor(pitchType);
 
@@ -165,10 +166,27 @@ function PitchGroup({ pitchType, pitches, curatedPitchTypes, onAdd, adding }) {
                   {fmt1(p.rel_speed)} mph · {fmtInt(p.spin_rate)} rpm · {fmtInt(p.spin_axis)}° · {fmt1(p.induced_vert_break)} IVB · {fmt1(p.horz_break)} HB
                 </div>
               </div>
-              <button onClick={e => { e.stopPropagation(); onAdd(p); }} disabled={adding === p.id}
-                style={{ background: hasCurated ? '#BA7517' : NAVY, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: adding === p.id ? 'wait' : 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', opacity: adding === p.id ? 0.6 : 1 }}>
-                {hasCurated ? 'Replace' : 'Add trail'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button onClick={e => { e.stopPropagation(); onAdd(p); }} disabled={adding === p.id}
+                  style={{ background: hasCurated ? '#BA7517' : NAVY, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: adding === p.id ? 'wait' : 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', opacity: adding === p.id ? 0.6 : 1 }}>
+                  {hasCurated ? 'Replace' : 'Add trail'}
+                </button>
+                {/* Delete only enabled when THIS pitch type already has a curated trail */}
+                {hasCurated && (
+                  confirmingRemove ? (
+                    <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <button onClick={() => { setConfirmingRemove(false); onRemoveType(); }} style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 5, padding: '5px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>Yes</button>
+                      <button onClick={() => setConfirmingRemove(false)} style={{ background: '#eee', color: NAVY, border: 'none', borderRadius: 5, padding: '5px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>No</button>
+                    </div>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setConfirmingRemove(true); }}
+                      style={{ background: 'none', border: '1px solid #ddd', borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: '#c0392b', flexShrink: 0 }}
+                      title={`Remove curated ${pitchType} trail`}>
+                      <Trash2 size={13} />
+                    </button>
+                  )
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -244,6 +262,12 @@ export default function TrailCuration({ setScreen }) {
   const handleRemove = async (trail) => {
     await base44.entities.CuratedDugoutTrail.delete(trail.id).catch(() => {});
     setCurated(prev => prev.filter(t => t.id !== trail.id));
+  };
+
+  const handleRemoveType = async (pitchType) => {
+    const existing = curated.find(t => t.pitch_type === pitchType);
+    if (!existing) return;
+    await handleRemove(existing);
   };
 
   const handleMoveUp = async (idx) => {
@@ -381,6 +405,7 @@ export default function TrailCuration({ setScreen }) {
                     pitches={pitches}
                     curatedPitchTypes={curatedPitchTypes}
                     onAdd={(pitch) => handleAdd(pitch, pt)}
+                    onRemoveType={() => handleRemoveType(pt)}
                     adding={adding}
                   />
                 ))}
