@@ -133,6 +133,24 @@ function Panel({ children, style }) {
     </div>
   );
 }
+// ── Header stat pill (season rates, moved up from the old RatesPanel) ──
+function statTier(value, avgThresh, goodThresh) {
+  if (value == null) return null;
+  return Math.max(0, Math.min(1, (value - avgThresh) / (goodThresh - avgThresh)));
+}
+function HeaderStatPill({ label, value, suffix = '%', avg: avgThresh, good, last }) {
+  const t = statTier(value, avgThresh, good);
+  const bg = t != null ? (() => { const [r, g, b] = colorAt(t); return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},.22)`; })() : 'transparent';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: last ? 'none' : '1px solid #1c3f5e', background: bg, transition: 'background 0.3s' }}>
+      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
+        {value == null ? '—' : `${Math.round(value)}${suffix}`}
+      </span>
+      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>{label}</span>
+    </div>
+  );
+}
+
 function PanelHeading({ children }) {
   return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: '#c6b583', marginBottom: 12, fontFamily: FONT }}>{children}</div>;
 }
@@ -266,6 +284,67 @@ function ModeBadge({ isCurated }) {
   return (
     <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: isCurated ? '#0F6E56' : '#888780', color: isCurated ? '#E1F5EE' : '#F1EFE8', borderRadius: 6, padding: '4px 9px', fontSize: 12, fontWeight: 700, fontFamily: FONT }}>
       {isCurated ? '✓ Curated' : 'Auto'}
+    </div>
+  );
+}
+
+// ── Chip footer — abbreviated pitch types, active one glowing ─────────
+function ChipFooter({ pitches, activeIdx, colorOverrides }) {
+  if (!pitches.length) return <div style={{ flex: 1 }} />;
+  return (
+    <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', gap: 6 }}>
+      {pitches.map((p, i) => {
+        const col = (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
+        const isActive = i === activeIdx;
+        const usagePct = p.usage_pct == null ? null : (p.usage_pct > 1 ? p.usage_pct : p.usage_pct * 100);
+        return (
+          <div key={p.pitch_type + i} style={{
+            flex: 1, textAlign: 'center', padding: '5px 2px', borderRadius: 6, boxSizing: 'border-box',
+            background: isActive ? `${col}33` : 'rgba(255,255,255,.05)',
+            border: isActive ? `1px solid ${col}` : '1px solid transparent',
+            boxShadow: isActive ? `0 0 8px ${col}88` : 'none',
+            transition: 'background 0.3s, box-shadow 0.3s, border 0.3s',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? '#eae5d8' : '#8fa3b5', fontFamily: FONT, lineHeight: 1.2 }}>{abbrPitch(p.pitch_type)}</div>
+            <div style={{ fontSize: 9, color: isActive ? '#c6b583' : '#5a7080', fontFamily: FONT, lineHeight: 1.2 }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Stat footer — velo / ivb·hb / strike% / usage% for the active pitch, aligned with ChipFooter ──
+function StatFooter({ pitch }) {
+  const cells = [
+    { label: 'velo', value: pitch?.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—' },
+    { label: 'ivb / hb', value: pitch ? `${sign(pitch.vert_break_mean)} / ${sign(pitch.horz_break_mean)}` : '—' },
+    { label: 'strike%', value: pitch?.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—', color: '#4ade80' },
+    { label: 'usage%', value: (() => { if (pitch?.usage_pct == null) return '—'; const u = pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100; return Math.round(u) + '%'; })() },
+  ];
+  return (
+    <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', gap: 6 }}>
+      {cells.map(c => (
+        <div key={c.label} style={{ flex: 1, textAlign: 'center', padding: '5px 2px', borderRadius: 6, boxSizing: 'border-box', background: 'rgba(198,146,12,.1)', border: '1px solid rgba(198,146,12,.35)' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: c.color || '#f0d68a', fontFamily: FONT, lineHeight: 1.2 }}>{c.value}</div>
+          <div style={{ fontSize: 9, color: '#c6b583', fontFamily: FONT, textTransform: 'uppercase', lineHeight: 1.2 }}>{c.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Video panel — plays the clip for the currently active pitch type ──
+function VideoPanel({ videoUrl, pitchType }) {
+  return (
+    <div style={{ flex: 1, background: '#050d13', border: '1px solid rgba(198,181,131,.15)', borderRadius: 10, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+      {videoUrl ? (
+        <video key={pitchType + videoUrl} src={videoUrl} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      ) : (
+        <div style={{ color: 'rgba(198,181,131,.35)', fontSize: 13, fontFamily: FONT, fontStyle: 'italic' }}>
+          {pitchType ? `No clip for ${pitchType}` : 'No pitch active'}
+        </div>
+      )}
     </div>
   );
 }
@@ -556,6 +635,16 @@ export default function DugoutView({ setScreen }) {
     return null;
   })();
 
+  // Single shared index (activeArsenalIdx) drives the 3D trail, the chip
+  // footer, the stat footer, and the video — all four stay in sync automatically.
+  const activePitchType = curatedTrails.length > 0
+    ? (curatedTrails[activeArsenalIdx]?.display_label || curatedTrails[activeArsenalIdx]?.pitch_type)
+    : seasonArsenal[activeArsenalIdx]?.pitch_type;
+  // Video and rate stats live on the season PitcherArsenal row regardless of
+  // whether the 3D trail is currently rendering from curated trails or season avgs.
+  const activeStatPitch = seasonArsenal.find(p => p.pitch_type === activePitchType) || null;
+  const activeVideoUrl = activeStatPitch?.video_url || null;
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: 'linear-gradient(160deg, #08151f 0%, #0c2030 100%)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: FONT }}>
 
@@ -590,17 +679,23 @@ export default function DugoutView({ setScreen }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   {ttpVal != null && (
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: '#c6b583', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>{ttpVal.toFixed(2)}s</div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#5a7080', textTransform: 'uppercase', letterSpacing: 1, fontFamily: FONT }}>Time to Plate</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
+                      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
+                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Time to Plate</span>
                     </div>
                   )}
+                  <HeaderStatPill label="Strike%"      value={seasonRates?.strike_pct}             avg={58} good={64} />
+                  <HeaderStatPill label="1st-K%"       value={seasonRates?.first_pitch_strike_pct} avg={52} good={60} />
+                  <HeaderStatPill label="CSW%"         value={seasonRates?.csw_pct}                avg={24} good={30} />
+                  <HeaderStatPill label="Whiff%"       value={seasonRates?.whiff_pct}               avg={21} good={28} />
+                  <HeaderStatPill label="Zone%"        value={seasonRates?.zone_pct}                avg={45} good={52} />
+                  <HeaderStatPill label="Chase%"       value={seasonRates?.chase_pct}               avg={24} good={30} />
                   {seasonArsenal.length > 0 && seasonArsenal[0]?.total_pitches && (
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: '#c6b583', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>{seasonArsenal[0].total_pitches}</div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#5a7080', textTransform: 'uppercase', letterSpacing: 1, fontFamily: FONT }}>Season Pitches</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px' }}>
+                      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{seasonArsenal[0].total_pitches}</span>
+                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Season Pitches</span>
                     </div>
                   )}
                 </div>
@@ -608,43 +703,46 @@ export default function DugoutView({ setScreen }) {
             )}
           </div>
 
-          {/* Body: 3D left + panels right */}
+          {/* Body: 3D + video, 50/50, with aligned chip/stat footers */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ flex: 1, display: 'flex', gap: 16, padding: '14px 16px 10px', minHeight: 0, overflow: 'hidden' }}>
-              {/* 3D canvas */}
-              <div style={{ flex: '0 0 55%', maxWidth: '55%', position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)' }}>
-                {pitcherObs && (curatedTrails.length > 0 || seasonArsenal.length > 0) ? (
-                  <>
-                    <DugoutPitch3D
-                      key={pitcherDisplayName + ':' + (curatedTrails.length > 0 ? 'curated' + curatedTrails.length : 'season')}
-                      arsenal={seasonArsenal}
-                      pitcherName={pitcherDisplayName}
-                      pitcherHand={pitcherHand}
-                      curatedTrails={curatedTrails}
-                      onActiveIdx={setActiveArsenalIdx}
-                    />
-                    {curatedTrails.length > 0
-                      ? <NowShowing pitch={curatedTrails[activeArsenalIdx] ? { pitch_type: curatedTrails[activeArsenalIdx]?.display_label || curatedTrails[activeArsenalIdx]?.pitch_type, trail_color: curatedTrails[activeArsenalIdx]?.trail_color } : null} colorOverride={curatedTrails[activeArsenalIdx]?.trail_color} />
-                      : <NowShowing pitch={seasonArsenal[activeArsenalIdx]} />
-                    }
-                    <Legend
-                      arsenal={curatedTrails.length > 0
-                        ? curatedTrails.map(t => ({ pitch_type: t.display_label || t.pitch_type, _color: t.trail_color }))
-                        : seasonArsenal}
-                      colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
-                    />
-                    <ModeBadge isCurated={curatedTrails.length > 0} />
-                  </>
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.2)', fontSize: 14, fontFamily: FONT, fontStyle: 'italic', textAlign: 'center', padding: 24 }}>
-                    {!pitcherObs ? 'Waiting for active pitcher…' : 'No season data — set pitcher active in Live Scout'}
-                  </div>
-                )}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ flex: 1, display: 'flex', gap: 12, minHeight: 0 }}>
+                {/* 3D canvas */}
+                <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)' }}>
+                  {pitcherObs && (curatedTrails.length > 0 || seasonArsenal.length > 0) ? (
+                    <>
+                      <DugoutPitch3D
+                        key={pitcherDisplayName + ':' + (curatedTrails.length > 0 ? 'curated' + curatedTrails.length : 'season')}
+                        arsenal={seasonArsenal}
+                        pitcherName={pitcherDisplayName}
+                        pitcherHand={pitcherHand}
+                        curatedTrails={curatedTrails}
+                        onActiveIdx={setActiveArsenalIdx}
+                      />
+                      <ModeBadge isCurated={curatedTrails.length > 0} />
+                    </>
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.2)', fontSize: 14, fontFamily: FONT, fontStyle: 'italic', textAlign: 'center', padding: 24 }}>
+                      {!pitcherObs ? 'Waiting for active pitcher…' : 'No season data — set pitcher active in Live Scout'}
+                    </div>
+                  )}
+                </div>
+                {/* Video */}
+                <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex' }}>
+                  <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} />
+                </div>
               </div>
-              {/* Right panels */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-                <ArsenalPanel arsenal={seasonArsenal} activeIdx={activeArsenalIdx} curatedColorMap={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { const key = t.display_label || t.pitch_type; m[key] = t.trail_color; m[t.pitch_type] = t.trail_color; return m; }, {}) : null} />
-                <RatesPanel rates={seasonRates} />
+
+              {/* Aligned footer row: chips under 3D, stats under video */}
+              <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                <ChipFooter
+                  pitches={curatedTrails.length > 0
+                    ? curatedTrails.map(t => ({ pitch_type: t.display_label || t.pitch_type, _color: t.trail_color, usage_pct: 1 / curatedTrails.length }))
+                    : seasonArsenal}
+                  activeIdx={activeArsenalIdx}
+                  colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
+                />
+                <StatFooter pitch={activeStatPitch} />
               </div>
             </div>
             {/* Count splits — full width below, always visible */}

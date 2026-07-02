@@ -10,6 +10,7 @@ import GameScopeSelector from "@/components/shared/GameScopeSelector";
 import MovementChart from "@/components/charts/MovementChart";
 import ReleasePointChart from "@/components/charts/ReleasePointChart";
 import MetricCell from "@/components/shared/MetricCell";
+import PitchVideoCell from "@/components/shared/PitchVideoCell";
 import { useTeam } from "@/hooks/useTeam";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ function getPitchColor(type) {
   return "#6b7280";
 }
 
-function ArsenalRow({ a, getPitchColor }) {
+function ArsenalRow({ a, getPitchColor, videoInfo, onVideoUploaded }) {
   const { team } = useTeam(a.pitcher_team);
   const borderColor = team?.primary_color || "transparent";
   return (
@@ -53,7 +54,16 @@ function ArsenalRow({ a, getPitchColor }) {
       <td className="text-center p-3 font-mono">{a.horz_break_mean?.toFixed(1)}"</td>
       <td className="text-center p-3 font-mono">{a.vert_break_mean?.toFixed(1)}"</td>
       <MetricCell value={a.whiff_pct} metric="whiff_pct" />
-      <MetricCell value={a.zone_pct} metric="zone_pct" className="pr-5" />
+      <MetricCell value={a.zone_pct} metric="zone_pct" />
+      <td className="text-center p-3 pr-5">
+        <PitchVideoCell
+          pitchType={a.pitch_type}
+          videoUrl={videoInfo?.video_url}
+          thumbnailUrl={videoInfo?.video_thumbnail_url}
+          arsenalId={videoInfo?.id}
+          onUploaded={(fields) => onVideoUploaded(a.pitch_type, fields)}
+        />
+      </td>
     </tr>
   );
 }
@@ -67,6 +77,7 @@ export default function PitcherProfile() {
   const [selectedGame, setSelectedGame] = useState("season");
   const [leaguePool, setLeaguePool] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [videoOverrides, setVideoOverrides] = useState({}); // pitch_type -> {video_url, video_thumbnail_url}
 
   useEffect(() => {
     async function load() {
@@ -124,6 +135,23 @@ export default function PitcherProfile() {
     }
     return allArsenals.filter(a => a.game_id === selectedGame);
   }, [allArsenals, selectedGame]);
+
+  // Video lives on the season-scope PitcherArsenal row per pitch type,
+  // regardless of which game scope is currently selected in the table.
+  const videoByPitchType = useMemo(() => {
+    const map = {};
+    allArsenals.filter(a => a.game_id === "season").forEach(a => {
+      map[a.pitch_type] = { id: a.id, video_url: a.video_url, video_thumbnail_url: a.video_thumbnail_url };
+    });
+    Object.entries(videoOverrides).forEach(([type, fields]) => {
+      map[type] = { ...(map[type] || {}), ...fields };
+    });
+    return map;
+  }, [allArsenals, videoOverrides]);
+
+  function handleVideoUploaded(pitchType, fields) {
+    setVideoOverrides(prev => ({ ...prev, [pitchType]: fields }));
+  }
 
   // League percentile pools
   const leaguePools = useMemo(() => {
@@ -203,12 +231,19 @@ export default function PitcherProfile() {
                 <th className="text-center p-3 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">H Break</th>
                 <th className="text-center p-3 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">V Break</th>
                 <th className="text-center p-3 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">Whiff%</th>
-                <th className="text-center p-3 pr-5 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">Zone%</th>
+                <th className="text-center p-3 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">Zone%</th>
+                <th className="text-center p-3 pr-5 font-heading font-semibold text-xs uppercase tracking-wider text-muted-foreground">Video</th>
               </tr>
             </thead>
             <tbody>
               {filteredArsenals.sort((a, b) => (b.count || 0) - (a.count || 0)).map((a, i) => (
-                <ArsenalRow key={i} a={a} getPitchColor={getPitchColor} />
+                <ArsenalRow
+                  key={i}
+                  a={a}
+                  getPitchColor={getPitchColor}
+                  videoInfo={videoByPitchType[a.pitch_type]}
+                  onVideoUploaded={handleVideoUploaded}
+                />
               ))}
             </tbody>
           </table>
