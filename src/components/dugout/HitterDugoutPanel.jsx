@@ -260,7 +260,7 @@ function BaseSlot({ base, runner }) {
   );
 }
 
-export default function HitterDugoutPanel({ gameId }) {
+export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }) {
   const [currentBatter, setCurrentBatter] = useState(null);
   const [batterRows,    setBatterRows]     = useState([]);
   const [runners,       setRunners]        = useState([]);
@@ -345,7 +345,7 @@ export default function HitterDugoutPanel({ gameId }) {
           )}
         </div>
         <div style={{ width:1, background:NAVY_L, flexShrink:0, alignSelf:'stretch', margin:'8px 0' }} />
-        <div style={{ display:'flex', alignItems:'stretch', flex:1, overflow:'hidden' }}>
+        <div style={{ display:'flex', alignItems:'stretch', flex:1, overflow:'hidden', flexWrap: orientation === 'vertical' ? 'wrap' : 'nowrap' }}>
           <StatPill label="Pitches"  value={stats.pitches||'—'} />
           <StatPill label="AVG"      value={fmtAvg(stats.BA)}   t={statT(stats.BA,      0.220, 0.330)} />
           <StatPill label="OBP"      value={fmtAvg(stats.OBP)}  t={statT(stats.OBP,     0.300, 0.430)} />
@@ -358,11 +358,18 @@ export default function HitterDugoutPanel({ gameId }) {
         </div>
       </div>
 
-      {/* ── VIZ BODY — Hot Zones | Pitch Type | Spray Chart ───── */}
-      <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
+      {/* ── VIZ BODY — Hot Zones | Pitch Type | Spray Chart — side-by-side (horizontal) or stacked (vertical) ───── */}
+      <div style={{ flex:1, display:'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', minHeight:0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
 
-        {/* LEFT — hot zones */}
-        <div style={{ flex:'0 0 42%', maxWidth:'42%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* LEFT/TOP — hot zones */}
+        <div style={{
+          flex: orientation === 'vertical' ? 'none' : '0 0 42%',
+          maxWidth: orientation === 'vertical' ? '100%' : '42%',
+          minHeight: orientation === 'vertical' ? 280 : 0,
+          borderRight: orientation === 'vertical' ? 'none' : `1px solid ${NAVY_L}`,
+          borderBottom: orientation === 'vertical' ? `1px solid ${NAVY_L}` : 'none',
+          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+        }}>
           <SectionTitle>HOT ZONES</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
@@ -386,7 +393,14 @@ export default function HitterDugoutPanel({ gameId }) {
         </div>
 
         {/* CENTER — pitch type production table */}
-        <div style={{ flex:'0 0 25%', maxWidth:'25%', borderRight:`1px solid ${NAVY_L}`, padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{
+          flex: orientation === 'vertical' ? 'none' : '0 0 25%',
+          maxWidth: orientation === 'vertical' ? '100%' : '25%',
+          minHeight: orientation === 'vertical' ? 220 : 0,
+          borderRight: orientation === 'vertical' ? 'none' : `1px solid ${NAVY_L}`,
+          borderBottom: orientation === 'vertical' ? `1px solid ${NAVY_L}` : 'none',
+          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+        }}>
           <SectionTitle>By Pitch Type</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? <PitchTypeTable rows={batterRows} /> : (
@@ -397,8 +411,13 @@ export default function HitterDugoutPanel({ gameId }) {
           </div>
         </div>
 
-        {/* RIGHT — spray chart */}
-        <div style={{ flex:'1 1 38%', padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* RIGHT/BOTTOM — spray chart */}
+        <div style={{
+          flex: orientation === 'vertical' ? 'none' : '1 1 38%',
+          maxWidth: orientation === 'vertical' ? '100%' : 'none',
+          minHeight: orientation === 'vertical' ? 280 : 0,
+          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+        }}>
           <SectionTitle>Spray Chart</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (

@@ -23,7 +23,7 @@ const SPD_COLOR   = { fast: '#4ade80', average: '#facc15', slow: '#f87171' };
 const AGGR_COLOR  = { aggressive: '#4ade80', average: '#facc15', passive: '#94a3b8' };
 
 // ── Top banner ────────────────────────────────────────────────────────────────
-function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode, onHome }) {
+function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugoutMode, onToggleDugout, togglingMode, orientation, onToggleOrientation, togglingOrientation, onHome }) {
   return (
     <div style={{ background: NAVY_DARK, borderBottom: '1px solid rgba(198,181,131,0.18)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
       {onHome && (
@@ -51,6 +51,20 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
           whiteSpace: 'nowrap', transition: 'all 0.15s', opacity: togglingMode ? 0.6 : 1,
         }}>
         {togglingMode ? '…' : dugoutMode === 'hitter' ? '● HITTER VIEW' : '○ PITCHER VIEW'}
+      </button>
+      <button
+        onClick={onToggleOrientation}
+        disabled={togglingOrientation}
+        title="Toggle Dugout View layout for portrait vs landscape monitor"
+        style={{
+          background: orientation === 'vertical' ? 'rgba(198,181,131,0.22)' : 'rgba(198,181,131,0.12)',
+          border: `1px solid ${orientation === 'vertical' ? GOLD : 'rgba(198,181,131,0.3)'}`,
+          color: GOLD,
+          borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5,
+          cursor: togglingOrientation ? 'wait' : 'pointer', fontFamily: FONT,
+          whiteSpace: 'nowrap', transition: 'all 0.15s', opacity: togglingOrientation ? 0.6 : 1,
+        }}>
+        {togglingOrientation ? '…' : orientation === 'vertical' ? '▯ VERTICAL' : '▭ HORIZONTAL'}
       </button>
       <button onClick={onToggleSub}
         style={{ background: showSub ? 'rgba(239,68,68,0.18)' : 'rgba(198,181,131,0.12)', border: `1px solid ${showSub ? 'rgba(239,68,68,0.45)' : 'rgba(198,181,131,0.3)'}`, color: showSub ? '#f87171' : GOLD, borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
@@ -354,6 +368,8 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
   const [confirmEnd,  setConfirmEnd]  = useState(false);
   const [dugoutMode,  setDugoutMode]  = useState(game?.dugout_display_mode || 'pitcher');
   const [togglingMode, setTogglingMode] = useState(false);
+  const [orientation, setOrientation] = useState(game?.dugout_orientation || 'horizontal');
+  const [togglingOrientation, setTogglingOrientation] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -489,6 +505,21 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
     }
   }
 
+  // ── Dugout orientation toggle ─────────────────────────────────────────────
+  async function toggleOrientation() {
+    if (togglingOrientation) return;
+    setTogglingOrientation(true);
+    const next = orientation === 'horizontal' ? 'vertical' : 'horizontal';
+    try {
+      await base44.entities.Game.update(game.id, { dugout_orientation: next });
+      setOrientation(next);
+    } catch (e) {
+      console.error('Failed to set dugout orientation:', e);
+    } finally {
+      setTogglingOrientation(false);
+    }
+  }
+
   // ── Complete game ─────────────────────────────────────────────────────────
   async function completeGame() {
     setCompleting(true);
@@ -524,6 +555,7 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
         onCompleteGame={() => setConfirmEnd(true)}
         onToggleSub={() => setShowSub(s => !s)} showSub={showSub}
         dugoutMode={dugoutMode} onToggleDugout={toggleDugoutMode} togglingMode={togglingMode}
+        orientation={orientation} onToggleOrientation={toggleOrientation} togglingOrientation={togglingOrientation}
         onHome={onHome}
       />
 

@@ -443,6 +443,7 @@ export default function DugoutView({ setScreen }) {
   const [curatedTrails, setCuratedTrails] = useState([]);
   const [liveGameId, setLiveGameId] = useState(null);
   const [dugoutMode, setDugoutMode] = useState('pitcher'); // 'pitcher' | 'hitter' — controlled remotely
+  const [orientation, setOrientation] = useState('horizontal'); // 'horizontal' | 'vertical' — controlled remotely
   const [activeArsenalIdx, setActiveArsenalIdx] = useState(0);
 
   const livePollingRef = useRef(null);
@@ -578,6 +579,8 @@ export default function DugoutView({ setScreen }) {
     // The TV only reads it. Default to 'pitcher' when unset. Never error the view on a missing field.
     const mode = liveGames?.[0]?.dugout_display_mode;
     if (mode === 'hitter' || mode === 'pitcher') setDugoutMode(mode);
+    const orient = liveGames?.[0]?.dugout_orientation;
+    if (orient === 'horizontal' || orient === 'vertical') setOrientation(orient);
 
     if (obsResults && obsResults.length > 0) {
       const obs = obsResults[0];
@@ -682,7 +685,7 @@ export default function DugoutView({ setScreen }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: orientation === 'vertical' ? 'wrap' : 'nowrap', overflowX: orientation === 'vertical' ? 'auto' : 'visible' }}>
                   {ttpVal != null && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
@@ -706,12 +709,17 @@ export default function DugoutView({ setScreen }) {
             )}
           </div>
 
-          {/* Body: 3D + video, 50/50, with aligned chip/stat footers */}
+          {/* Body: 3D + video — side-by-side (horizontal) or stacked (vertical, for portrait monitors) */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: 'hidden' }}>
-              <div style={{ flex: 1, display: 'flex', gap: 12, minHeight: 0 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
+              <div style={{ flex: orientation === 'vertical' ? 'none' : 1, display: 'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', gap: 12, minHeight: 0 }}>
                 {/* 3D canvas */}
-                <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)' }}>
+                <div style={{
+                  flex: orientation === 'vertical' ? 'none' : '1 1 0',
+                  height: orientation === 'vertical' ? 260 : 'auto',
+                  minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
+                  border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)',
+                }}>
                   {pitcherObs && (curatedTrails.length > 0 || seasonArsenal.length > 0) ? (
                     <>
                       <DugoutPitch3D
@@ -731,13 +739,17 @@ export default function DugoutView({ setScreen }) {
                   )}
                 </div>
                 {/* Video */}
-                <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex' }}>
+                <div style={{
+                  flex: orientation === 'vertical' ? 'none' : '1 1 0',
+                  height: orientation === 'vertical' ? 200 : 'auto',
+                  minWidth: 0, display: 'flex',
+                }}>
                   <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} />
                 </div>
               </div>
 
-              {/* Aligned footer row: chips under 3D, stats under video */}
-              <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+              {/* Aligned footer row: chips + stats — side-by-side (horizontal) or stacked (vertical) */}
+              <div style={{ display: 'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', gap: 12, flexShrink: 0 }}>
                 <ChipFooter
                   pitches={curatedTrails.length > 0
                     ? curatedTrails.map(t => {
@@ -761,7 +773,7 @@ export default function DugoutView({ setScreen }) {
       {/* HITTER TAB — controlled remotely via Game.dugout_display_mode */}
       {dugoutMode === 'hitter' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <HitterDugoutPanel gameId={liveGameId} />
+          <HitterDugoutPanel gameId={liveGameId} orientation={orientation} />
         </div>
       )}
     </div>
