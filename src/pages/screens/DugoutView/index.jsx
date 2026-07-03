@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
 import { normalizePitch } from '@/lib/ds';
+import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
 import { colorAt } from '@/components/dugout/HitterViz';
 
@@ -336,11 +337,12 @@ function StatFooter({ pitch }) {
 }
 
 // ── Video panel — plays the clip for the currently active pitch type ──
-function VideoPanel({ videoUrl, pitchType }) {
+function VideoPanel({ videoUrl, pitchType, orientation }) {
+  const src = dugoutVideoUrl(videoUrl, orientation);
   return (
     <div style={{ flex: 1, background: '#050d13', border: '1px solid rgba(198,181,131,.15)', borderRadius: 10, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
-      {videoUrl ? (
-        <video key={pitchType + videoUrl} src={videoUrl} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      {src ? (
+        <video key={pitchType + src} src={src} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
         <div style={{ color: 'rgba(198,181,131,.35)', fontSize: 13, fontFamily: FONT, fontStyle: 'italic' }}>
           {pitchType ? `No clip for ${pitchType}` : 'No pitch active'}
@@ -716,7 +718,8 @@ export default function DugoutView({ setScreen }) {
                 {/* 3D canvas */}
                 <div style={{
                   flex: orientation === 'vertical' ? 'none' : '1 1 0',
-                  height: orientation === 'vertical' ? 260 : 'auto',
+                  height: orientation === 'vertical' ? 220 : 'auto',
+                  order: orientation === 'vertical' ? 2 : 0,
                   minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
                   border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)',
                 }}>
@@ -741,10 +744,11 @@ export default function DugoutView({ setScreen }) {
                 {/* Video */}
                 <div style={{
                   flex: orientation === 'vertical' ? 'none' : '1 1 0',
-                  height: orientation === 'vertical' ? 200 : 'auto',
+                  height: orientation === 'vertical' ? 340 : 'auto',
+                  order: orientation === 'vertical' ? 1 : 0,
                   minWidth: 0, display: 'flex',
                 }}>
-                  <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} />
+                  <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} orientation={orientation} />
                 </div>
               </div>
 
