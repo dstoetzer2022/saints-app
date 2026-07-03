@@ -21,7 +21,7 @@ const FONT = "'Archivo', system-ui, sans-serif";
 // Point this at wherever the scraper's GitHub Action commits pitcher-rest.json —
 // defaults to a same-origin path, i.e. this file living in this app's own
 // public/data/ folder so Cloudflare Pages serves it statically alongside the app.
-const REST_DATA_URL = '/data/pitcher-rest.json';
+const REST_DATA_URL = 'https://raw.githubusercontent.com/dstoetzer2022/ccl-pitcher-tracker/main/data/pitcher-rest.json';
 
 function restClass(d) { return d <= 1 ? 'low' : d <= 3 ? 'mid' : 'high'; }
 function restColor(d) { return d <= 1 ? C.red : d <= 3 ? C.amber : C.green; }
