@@ -53,10 +53,16 @@ const NICKNAME_CANON = {
   pat: 'patrick',
   raf: 'rafael', rafa: 'rafael',
   gabe: 'gabriel',
-  isaac: 'isaac',
   cal: 'calvin',
-  nate: 'nathan', nathaniel: 'nathan',
+  nate: 'nathan',
+  // AUDIT: removed nathaniel→nathan (distinct given names — merging them could
+  // collapse two different players) and the isaac→isaac no-op.
 };
+
+// Generational suffixes are not last names. Without this, "Ken Griffey Jr."
+// keyed as jr|kengriffey and two suffixed players could collide on "jr".
+const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v', 'jr.', 'sr.']);
+
 
 function canonFirst(first) {
   if (!first) return '';
@@ -74,9 +80,23 @@ export function canonicalNameKey(name) {
   // Split into first / last regardless of input order
   let first, last;
   if (s.includes(',')) {
-    [last, first] = s.split(',').map(p => p.trim());
+    let [l, f] = s.split(',').map(p => p.trim());
+    // Suffix may ride with either segment: "Griffey, Ken Jr." or "Griffey Jr., Ken"
+    const dropTrailing = seg => {
+      let ps = (seg || '').split(/\s+/).filter(Boolean);
+      // a lone suffix token means the suffix WAS the whole segment ("Jr.") — drop it
+      while (ps.length && SUFFIXES.has(ps[ps.length - 1].toLowerCase().replace(/\./g, ''))) {
+        if (ps.length === 1 && !SUFFIXES.has(ps[0].toLowerCase().replace(/\./g, ''))) break;
+        ps = ps.slice(0, -1);
+      }
+      return ps.join(' ');
+    };
+    last = dropTrailing(l); first = dropTrailing(f);
   } else {
-    const parts = s.split(/\s+/);
+    let parts = s.split(/\s+/).filter(Boolean);
+    while (parts.length > 2 && SUFFIXES.has(parts[parts.length - 1].toLowerCase().replace(/\./g, ''))) {
+      parts = parts.slice(0, -1);
+    }
     if (parts.length < 2) {
       // single token — key on it alone
       return scrub(parts[0] || '');
@@ -212,7 +232,8 @@ export function stdDev(arr) {
 }
 
 export function percentile(value, pool) {
-  if (!pool || pool.length === 0) return 50;
+  // AUDIT: an empty pool used to render a plausible-looking "50th percentile".
+  if (!pool || pool.length === 0 || value == null) return null;
   const sorted = [...pool].sort((a, b) => a - b);
   let count = 0;
   for (const v of sorted) {
@@ -259,9 +280,10 @@ export function aggregateArsenal(pitches, pitcherName, pitcherTeam, pitcherHand,
     const swings = rows.filter(isSwing);
     const whiffs = rows.filter(isWhiff);
     const inZone = rows.filter(r => {
-      const h = Math.abs(r.plate_loc_side);
-      const v = r.plate_loc_height;
-      return h != null && v != null && h <= 0.83 && v >= 1.5 && v <= 3.5;
+      const s0 = parseFloat(r.plate_loc_side);
+      const v = parseFloat(r.plate_loc_height);
+      // AUDIT: Math.abs(null)===0 previously let null side count as in-zone.
+      return Number.isFinite(s0) && Number.isFinite(v) && Math.abs(s0) <= 0.83 && v >= 1.5 && v <= 3.5;
     });
 
     const ahead = rows.filter(r => r.count_category === "ahead").length;

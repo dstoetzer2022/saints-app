@@ -1,33 +1,25 @@
 // ── Season Aggregation ────────────────────────────────────────────────────────
 // Reads all TrackmanPitch rows for a pitcher across every game,
 // groups by canonical pitch type, and writes PitcherArsenal + PitcherSeasonRates.
+//
+// AUDIT FIXES (2026-07):
+//  • strike% now uses the shared statsUtils isStrike (BallinDirt/BallIntentional
+//    were previously counted as strikes; V2 foul spellings now handled).
+//  • chase%/zone% denominators exclude pitches with missing plate location.
+//  • All fetches paginate via fetchAll (no more silent 500-row truncation).
+//  • Per-pitcher rebuild is CREATE-then-DELETE: new rows are written and
+//    verified BEFORE stale rows are removed, so a mid-rebuild failure can
+//    leave harmless duplicates (cleaned next run) but never a wiped pitcher.
+//  • Stale-row cleanup matches on canonicalNameKey, so variant spellings
+//    (curly apostrophes, "First Last") no longer leave orphan season rows.
 
 import { base44 } from '@/api/base44Client';
-
-// ── Pitch-type canonicalization ───────────────────────────────────────────────
-// MUST match the output of normalizePitch() in ds.js — used as pitch_type in PitcherArsenal
-const TYPE_MAP = {
-  fourseamfastball: 'Four-Seam', fourseam: 'Four-Seam', fastball: 'Four-Seam', ff: 'Four-Seam',
-  twoseamfastball: 'Sinker', twoseam: 'Sinker', sinker: 'Sinker', si: 'Sinker',
-  cutter: 'Cutter', fc: 'Cutter',
-  slider: 'Slider', sl: 'Slider',
-  sweeper: 'Sweeper', st: 'Sweeper',
-  curveball: 'Curveball', curve: 'Curveball', cu: 'Curveball',
-  knucklecurve: 'Knucklecurve', kc: 'Knucklecurve',
-  changeup: 'ChangeUp', change: 'ChangeUp', ch: 'ChangeUp', cho: 'ChangeUp',
-  splitter: 'Splitter', splitfinger: 'Splitter', fs: 'Splitter',
-  knuckleball: 'Knucklecurve', knuckle: 'Knucklecurve',
-};
-
-function canonPitchType(raw) {
-  if (!raw) return null;
-  const key = raw.replace(/[\s_\-]/g, '').toLowerCase();
-  return TYPE_MAP[key] || raw.trim();
-}
+import { isStrike, isSwing, isWhiff, canonicalNameKey } from '@/lib/statsUtils';
+import { canonPitchType } from '@/lib/ds';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 
 // ── Name normalization ────────────────────────────────────────────────────────
 function normalizeApostrophe(s) {
-  // Replace curly/smart apostrophes and other single-quote variants with straight apostrophe
   return s ? s.replace(/[\u2018\u2019\u02BC\u0060\u00B4]/g, "'") : s;
 }
 
@@ -42,14 +34,8 @@ function toLastFirst(name) {
   return `${last}, ${first}`;
 }
 
-function canonicalKey(name) {
-  if (!name) return '';
-  const lf = toLastFirst(normalizeApostrophe(name));
-  const [last, first] = lf.split(',').map(s => s.trim().toLowerCase());
-  return `${last || ''}|${first || ''}`;
-}
-
-const isPlaceholder = name => !name || canonicalKey(name) === 'first|last' || name.trim() === 'Last, First';
+const isPlaceholder = name =>
+  !name || canonicalNameKey(name) === 'last|first' || name.trim() === 'Last, First';
 
 // ── Circular mean of angles in degrees ───────────────────────────────────────
 function circularMean(degs) {
@@ -70,56 +56,41 @@ function safeMax(arr) {
   return v.length ? Math.max(...v) : null;
 }
 
-// ── FIX A1: Fetch ALL TrackmanPitch rows for a pitcher ────────────────────────
-// Filters by pitcher_name directly (exact match as stored), then cross-checks
-// with normalized key to handle variant spellings. Also tries the alternate
-// "First Last" form so we catch both storage conventions.
-async function fetchAllPitches(lastFirstName, teamFullName) {
-  const key = canonicalKey(lastFirstName);
-  // Normalize apostrophes in both directions so DB query matches stored value
+// Finite-location gate: pitches without plate location are excluded from BOTH
+// zone% and chase% denominators (previously they inflated chase% as "OOZ").
+function hasLoc(r) {
+  return Number.isFinite(parseFloat(r.plate_loc_height)) && Number.isFinite(parseFloat(r.plate_loc_side));
+}
+function inZone(r) {
+  const h = parseFloat(r.plate_loc_height), s = parseFloat(r.plate_loc_side);
+  return Number.isFinite(h) && Number.isFinite(s) && h >= 1.5 && h <= 3.5 && s >= -0.83 && s <= 0.83;
+}
+
+// ── Fetch ALL TrackmanPitch rows for a pitcher (paginated, both name forms) ──
+async function fetchAllPitches(lastFirstName) {
+  const key = canonicalNameKey(lastFirstName);
   const normName = normalizeApostrophe(lastFirstName);
   const firstLastForm = normName.includes(',')
     ? normName.split(',').map(s => s.trim()).reverse().join(' ')
     : normName;
-  // Also try with curly apostrophe in case CSV stored it that way
   const curlyName = normName.replace(/'/g, '\u2019');
   const curlyFirstLast = firstLastForm.replace(/'/g, '\u2019');
 
-  const [batch1, batch2, batch3, batch4] = await Promise.all([
-    base44.entities.TrackmanPitch.filter({ pitcher_name: normName }, '-created_date', 500).catch(() => []),
-    firstLastForm !== normName
-      ? base44.entities.TrackmanPitch.filter({ pitcher_name: firstLastForm }, '-created_date', 500).catch(() => [])
-      : Promise.resolve([]),
-    curlyName !== normName
-      ? base44.entities.TrackmanPitch.filter({ pitcher_name: curlyName }, '-created_date', 500).catch(() => [])
-      : Promise.resolve([]),
-    curlyFirstLast !== firstLastForm
-      ? base44.entities.TrackmanPitch.filter({ pitcher_name: curlyFirstLast }, '-created_date', 500).catch(() => [])
-      : Promise.resolve([]),
-  ]);
+  const forms = [...new Set([normName, firstLastForm, curlyName, curlyFirstLast])];
+  const batches = await Promise.all(
+    forms.map(f => fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: f }, '-created_date'))
+  );
 
   const seen = new Set();
   const combined = [];
-  for (const r of [...(batch1||[]), ...(batch2||[]), ...(batch3||[]), ...(batch4||[])]) {
-    if (!seen.has(r.id)) { seen.add(r.id); combined.push(r); }
-  }
-
-  // If any batch hit the 500 cap, paginate per-game
-  if ([batch1,batch2,batch3,batch4].some(b => (b||[]).length >= 500)) {
-    const [g1, g2] = await Promise.all([
-      base44.entities.Game.filter({ status: 'complete' }, '-date', 200).catch(() => []),
-      base44.entities.Game.filter({ status: 'imported' }, '-date', 200).catch(() => []),
-    ]);
-    for (const game of [...(g1||[]), ...(g2||[])]) {
-      const rows = await base44.entities.TrackmanPitch.filter({ game_id: game.id }, '-created_date', 500).catch(() => []);
-      for (const r of rows) {
-        if (seen.has(r.id)) continue;
-        if (canonicalKey(r.pitcher_name) !== key) continue;
-        seen.add(r.id); combined.push(r);
-      }
+  for (const batch of batches) {
+    for (const r of batch) {
+      if (seen.has(r.id)) continue;
+      // Cross-check the canonical key so a shared surname variant never leaks in.
+      if (canonicalNameKey(r.pitcher_name) !== key) continue;
+      seen.add(r.id); combined.push(r);
     }
   }
-
   return combined;
 }
 
@@ -129,10 +100,11 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
 
   if (onProgress) onProgress(`Fetching pitches for ${lastFirstName}…`);
 
-  const rows = await fetchAllPitches(lastFirstName, teamFullName);
+  const rows = await fetchAllPitches(lastFirstName);
   if (!rows.length) return;
 
   const total = rows.length;
+  const myKey = canonicalNameKey(lastFirstName);
 
   // Group by canonical pitch type
   const groups = {};
@@ -142,16 +114,22 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
     (groups[pt] = groups[pt] || []).push(r);
   }
 
-  const STRIKE_CALLS = ['StrikeCalled', 'StrikeSwinging', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'];
+  // Snapshot existing rows BEFORE writing, so we can delete exactly the stale
+  // set afterwards (create-then-delete; see header note).
+  const existingArsenal = (await fetchAllFiltered(
+    base44.entities.PitcherArsenal, { game_id: 'season' }, '-created_date', { max: 5000 }
+  )).filter(r => canonicalNameKey(r.pitcher_name) === myKey);
+  const existingRates = (await fetchAllFiltered(
+    base44.entities.PitcherSeasonRates, {}, '-created_date', { max: 3000 }
+  )).filter(r => canonicalNameKey(r.pitcher_name) === myKey);
 
-  // Build arsenal rows (usage_pct stored as whole-number 0-100)
+  // Build arsenal rows (usage_pct stored as whole-number 0-100 on season rows)
   const arsenalRows = Object.entries(groups).map(([pitch_type, rs]) => {
     const count = rs.length;
     const get = field => rs.map(r => r[field] != null ? parseFloat(r[field]) : null);
-    const strikeCount = rs.filter(r => STRIKE_CALLS.includes(r.pitch_call)).length;
+    const strikeCount = rs.filter(isStrike).length; // shared classifier — fixes BallinDirt bug
     const strike_pct = rs.length > 0 ? (strikeCount / rs.length) * 100 : null;
 
-    // Count situation buckets: pitcher ahead = more strikes than balls
     let ahead_count = 0, even_count = 0, behind_count = 0, first_pitch_count = 0;
     for (const r of rs) {
       const b = r.balls ?? 0, s = r.strikes ?? 0;
@@ -183,105 +161,85 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
       behind_count,
       first_pitch_count,
     };
-    record.strike_pct = strike_pct;
+    record.strike_pct = strike_pct; // explicit assignment (known silent-drop failure mode)
     return record;
   }).filter(r => r.usage_pct > 2); // drop noise <2%
 
-  // Per-pitcher cleanup — delete existing rows for this pitcher then rewrite
-  const myKey = canonicalKey(lastFirstName);
-  const existingArsenal = await base44.entities.PitcherArsenal.filter(
-    { game_id: 'season', pitcher_name: lastFirstName }, '-created_date', 100
-  ).catch(() => []);
-  if (existingArsenal.length) {
-    await Promise.all(existingArsenal.map(r => base44.entities.PitcherArsenal.delete(r.id).catch(() => {})));
-  }
-
-  // Create new season arsenal rows
-  for (let i = 0; i < arsenalRows.length; i += 50) {
-    await base44.entities.PitcherArsenal.bulkCreate(arsenalRows.slice(i, i + 50));
-  }
-
-  // Verification: re-query one row and confirm spin_axis_mean was persisted
-  if (arsenalRows.length > 0) {
-    const verify = await base44.entities.PitcherArsenal.filter(
-      { game_id: 'season', pitcher_name: lastFirstName }, '-created_date', 1
-    ).catch(() => []);
-    if (verify.length > 0 && !('spin_axis_mean' in verify[0])) {
-      console.error(`[seasonAggregation] spin_axis_mean MISSING on stored row for ${lastFirstName} — schema may not include the field`);
-    }
-  }
-
-  // ── Season rates ──────────────────────────────────────────────────────────
-  const isStrike = r => r.pitch_call !== 'BallCalled' && r.pitch_call !== 'HitByPitch' && r.pitch_call;
-  const isSwing  = r => ['StrikeSwinging', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(r.pitch_call);
-  const inZone   = r => {
-    const h = parseFloat(r.plate_loc_height), s = parseFloat(r.plate_loc_side);
-    return Number.isFinite(h) && Number.isFinite(s) && h >= 1.5 && h <= 3.5 && s >= -0.83 && s <= 0.83;
-  };
-
-  // null when denom===0, never 0
+  // ── Season rates (shared classifiers + location-gated denominators) ────────
   const div = (num, denom) => denom > 0 ? Math.round(100 * num / denom) : null;
 
   const fp     = rows.filter(r => r.balls === 0 && r.strikes === 0);
   const swings = rows.filter(isSwing);
-  const ooz    = rows.filter(r => !inZone(r));
+  const located = rows.filter(hasLoc);
+  const ooz    = located.filter(r => !inZone(r));
 
   const rates = {
     strike_pct:             div(rows.filter(isStrike).length, total),
     first_pitch_strike_pct: div(fp.filter(isStrike).length, fp.length),
-    csw_pct:                div(rows.filter(r => r.pitch_call === 'StrikeCalled' || r.pitch_call === 'StrikeSwinging').length, total),
-    whiff_pct:              div(rows.filter(r => r.pitch_call === 'StrikeSwinging').length, swings.length),
-    zone_pct:               div(rows.filter(inZone).length, total),
+    csw_pct:                div(rows.filter(r => r.pitch_call === 'StrikeCalled' || isWhiff(r)).length, total),
+    whiff_pct:              div(rows.filter(isWhiff).length, swings.length),
+    zone_pct:               div(located.filter(inZone).length, located.length),
     chase_pct:              div(ooz.filter(isSwing).length, ooz.length),
   };
 
-  // Delete existing rates rows for this pitcher
-  const existingRates = await base44.entities.PitcherSeasonRates.filter(
-    { pitcher_name: lastFirstName }, '-created_date', 10
-  ).catch(() => []);
-  if (existingRates.length) {
-    await Promise.all(existingRates.map(r => base44.entities.PitcherSeasonRates.delete(r.id).catch(() => {})));
+  // ── CREATE new rows first ───────────────────────────────────────────────────
+  for (let i = 0; i < arsenalRows.length; i += 50) {
+    await base44.entities.PitcherArsenal.bulkCreate(arsenalRows.slice(i, i + 50));
   }
-
-  await base44.entities.PitcherSeasonRates.create({
+  const newRates = await base44.entities.PitcherSeasonRates.create({
     pitcher_name: lastFirstName,
     pitcher_team: teamTrackmanCode,
     total_pitches: total,
     updated_date: new Date().toISOString(),
     ...rates,
   });
+
+  // Verify the new arsenal rows landed before touching the old ones.
+  let verified = arsenalRows.length === 0;
+  if (arsenalRows.length > 0) {
+    const verify = await base44.entities.PitcherArsenal.filter(
+      { game_id: 'season', pitcher_name: lastFirstName }, '-created_date', 100
+    ).catch(() => []);
+    const existingIds = new Set(existingArsenal.map(r => r.id));
+    const fresh = (verify || []).filter(r => !existingIds.has(r.id));
+    verified = fresh.length >= arsenalRows.length;
+    if (verify.length > 0 && !('spin_axis_mean' in verify[0])) {
+      console.error(`[seasonAggregation] spin_axis_mean MISSING on stored row for ${lastFirstName} — schema may not include the field`);
+    }
+  }
+
+  // ── DELETE the stale snapshot only after a verified write ──────────────────
+  if (verified) {
+    await Promise.all(existingArsenal.map(r => base44.entities.PitcherArsenal.delete(r.id).catch(() => {})));
+    await Promise.all(
+      existingRates
+        .filter(r => !newRates || r.id !== newRates.id)
+        .map(r => base44.entities.PitcherSeasonRates.delete(r.id).catch(() => {}))
+    );
+  } else {
+    console.error(`[seasonAggregation] write verification failed for ${lastFirstName} — old rows kept (duplicates possible until next rebuild)`);
+  }
 }
 
 // ── Collect ALL distinct pitcher+team pairs from TrackmanPitch ────────────────
-// Iterates every complete game and collects distinct pitcher+team pairs.
-// ── Collect ALL distinct pitcher+team pairs from TrackmanPitch ────────────────
-// Scans TrackmanPitch directly in pages rather than going through Game records,
-// which is more reliable and doesn't depend on game status fields.
 async function fetchAllDistinctPitchers(nameToCode) {
   const seen = new Set();
   const pairs = [];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  // Get all games first
   const [g1, g2] = await Promise.all([
-    base44.entities.Game.filter({ status: 'complete' }, '-date', 300).catch(() => []),
-    base44.entities.Game.filter({ status: 'imported' }, '-date', 300).catch(() => []),
+    fetchAllFiltered(base44.entities.Game, { status: 'complete' }, '-date'),
+    fetchAllFiltered(base44.entities.Game, { status: 'imported' }, '-date'),
   ]);
-  const games = [...(g1||[]), ...(g2||[])];
+  const games = [...g1, ...g2];
 
-  // For each game, fetch its pitchers
   for (const game of games) {
-    let rows = [];
-    try {
-      rows = await base44.entities.TrackmanPitch.filter({ game_id: game.id }, 'pitcher_name', 500);
-    } catch(e) {
-      await sleep(600);
-      try { rows = await base44.entities.TrackmanPitch.filter({ game_id: game.id }, 'pitcher_name', 500); }
-      catch(e2) { continue; }
-    }
+    const rows = await fetchAllFiltered(
+      base44.entities.TrackmanPitch, { game_id: game.id }, 'pitcher_name'
+    );
     for (const r of rows) {
       if (!r.pitcher_name || isPlaceholder(r.pitcher_name)) continue;
-      const k = canonicalKey(toLastFirst(r.pitcher_name));
+      const k = canonicalNameKey(r.pitcher_name);
       if (seen.has(k)) continue;
       seen.add(k);
       const fullTeamName = r.pitcher_team || '';
@@ -294,9 +252,40 @@ async function fetchAllDistinctPitchers(nameToCode) {
   return pairs;
 }
 
+// ── Rebuild season stats for a specific set of pitcher names ─────────────────
+// Used by CSV import to rebuild ONLY the pitchers who appeared in the imported
+// files, instead of hammering the API with a full-league rebuild every import.
+export async function rebuildPitchersByName(pitcherEntries, allTeams, onProgress) {
+  const nameToCode = {};
+  (allTeams || []).forEach(t => { if (t.trackman_code) nameToCode[t.name] = t.trackman_code; });
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const seen = new Set();
+  let done = 0;
+  const unique = (pitcherEntries || []).filter(({ name }) => {
+    const k = canonicalNameKey(name);
+    if (!name || seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+
+  for (const { name, team } of unique) {
+    const lastFirst = toLastFirst(name);
+    const teamCode = nameToCode[team] || team || '';
+    if (onProgress) onProgress(`Rebuilding ${lastFirst} (${done + 1}/${unique.length})…`);
+    try {
+      await rebuildPitcherSeason(lastFirst, teamCode, team, null);
+    } catch (e) {
+      await sleep(1000);
+      try { await rebuildPitcherSeason(lastFirst, teamCode, team, null); } catch (e2) { /* skip */ }
+    }
+    done++;
+    await sleep(200);
+  }
+  if (onProgress) onProgress(`Done — rebuilt ${done} pitchers.`);
+  return done;
+}
+
 // ── Snapshot one team's pitchers (called before a game) ───────────────────────
-// Rebuilds season stats only for pitchers from a specific team (by trackman code).
-// Much faster than a full league rebuild — scopes to games where that team pitched.
 export async function snapshotTeamSeasonStats(teamTrackmanCode, allTeams) {
   const codeToName = {}, nameToCode = {};
   (allTeams || []).forEach(t => {
@@ -304,23 +293,23 @@ export async function snapshotTeamSeasonStats(teamTrackmanCode, allTeams) {
   });
 
   const [completeGames, importedGames] = await Promise.all([
-    base44.entities.Game.filter({ status: 'complete' }, '-date', 200).catch(() => []),
-    base44.entities.Game.filter({ status: 'imported' }, '-date', 200).catch(() => []),
+    fetchAllFiltered(base44.entities.Game, { status: 'complete' }, '-date'),
+    fetchAllFiltered(base44.entities.Game, { status: 'imported' }, '-date'),
   ]);
-  const games = [...(completeGames || []), ...(importedGames || [])];
+  const games = [...completeGames, ...importedGames];
 
-  // Collect distinct pitchers for this team
   const seen = new Set();
   const pairs = [];
   for (const game of games) {
-    const rows = await base44.entities.TrackmanPitch.filter(
+    const rows = await fetchAllFiltered(
+      base44.entities.TrackmanPitch,
       { game_id: game.id, pitcher_team: codeToName[teamTrackmanCode] || teamTrackmanCode },
-      '-created_date', 500
-    ).catch(() => []);
+      '-created_date'
+    );
     for (const r of rows) {
       if (!r.pitcher_name || isPlaceholder(r.pitcher_name)) continue;
       const lastFirst = toLastFirst(r.pitcher_name);
-      const k = canonicalKey(lastFirst);
+      const k = canonicalNameKey(lastFirst);
       if (seen.has(k)) continue;
       seen.add(k);
       pairs.push({ name: lastFirst, teamCode: teamTrackmanCode, teamFullName: codeToName[teamTrackmanCode] || teamTrackmanCode });
@@ -333,32 +322,27 @@ export async function snapshotTeamSeasonStats(teamTrackmanCode, allTeams) {
   return pairs.length;
 }
 
-// ── FIX A4: Derive distinct pitchers from TrackmanPitch (source of truth) ─────
+// ── Full-league rebuild (manual button only) ─────────────────────────────────
 export async function rebuildAllPitcherSeasons(allTeams, onProgress) {
-  // Build team lookups
-  const codeToName = {};   // trackman_code -> full name
-  const nameToCode = {};   // full name -> trackman_code
+  const codeToName = {};
+  const nameToCode = {};
   (allTeams || []).forEach(t => {
     if (t.trackman_code) { codeToName[t.trackman_code] = t.name; nameToCode[t.name] = t.trackman_code; }
   });
 
-  // STEP 1: NO GLOBAL WIPE. We upsert per-pitcher in Step 3.
-  // This means a failed discovery run never destroys existing data.
-
-  // STEP 2: Collect all distinct pitcher+team pairs from TrackmanPitch
+  // NO GLOBAL WIPE — per-pitcher create-then-delete in rebuildPitcherSeason.
   if (onProgress) onProgress('Scanning pitchers…');
   const pairs = await fetchAllDistinctPitchers(nameToCode);
 
-  // STEP 3: Rebuild each pitcher individually (delete-then-rewrite per pitcher)
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   let done = 0;
   for (const { name, teamCode, teamFullName } of pairs) {
     if (onProgress) onProgress(`Rebuilding ${name} (${done + 1}/${pairs.length})…`);
     try {
       await rebuildPitcherSeason(name, teamCode, teamFullName, null);
-    } catch(e) {
+    } catch (e) {
       await sleep(1000);
-      try { await rebuildPitcherSeason(name, teamCode, teamFullName, null); } catch(e2) { /* skip */ }
+      try { await rebuildPitcherSeason(name, teamCode, teamFullName, null); } catch (e2) { /* skip */ }
     }
     done++;
     await sleep(200);

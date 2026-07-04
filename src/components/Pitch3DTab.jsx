@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import * as THREE from "three";
+import { isStrike as sharedIsStrike, isSwing as sharedIsSwing } from "@/lib/statsUtils";
 import { base44 } from "@/api/base44Client";
 import { Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { buildScene } from "@/lib/pitch3dEngine";
@@ -216,8 +217,10 @@ function buildPitcher(rows, name) {
       path.push({ d: relY_ + vy0_ * t, h: z0_ + vz0_ * t + 0.5 * az_ * t * t, s: x0_ + vx0_ * t + 0.5 * ax_ * t * t });
     }
 
-    const isStrikeR = r => ["StrikeCalled","StrikeSwinging","FoulBallNotFieldable","InPlay"].includes(r.pitch_call||r.PitchCall||"");
-    const isSwingR  = r => ["StrikeSwinging","FoulBallNotFieldable","InPlay"].includes(r.pitch_call||r.PitchCall||"");
+    // AUDIT: previous inline lists omitted FoulBallFieldable and all V2 foul
+    // spellings — Strike%/Whiff% here undercounted. Shared classifiers now.
+    const isStrikeR = r => sharedIsStrike(r);
+    const isSwingR  = r => sharedIsSwing(r);
     const tStrikes = rs.filter(isStrikeR).length;
     const tSwings  = rs.filter(isSwingR).length;
     const tWhiffs  = rs.filter(r=>(r.pitch_call||r.PitchCall||"")==="StrikeSwinging").length;

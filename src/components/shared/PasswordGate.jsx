@@ -5,7 +5,14 @@ import { NAVY, GOLD } from '@/lib/ds';
 // Unlock state persists for the browser tab session (sessionStorage), so
 // switching between Live Scout and Import within the same session doesn't
 // re-prompt — but a new tab/browser session asks again.
-const CORRECT_PASSWORD = 'Brookside9!';
+//
+// AUDIT (security): the password now comes from the VITE_GATE_PASSWORD env var
+// (set it in Cloudflare Pages → Settings → Environment variables, then rotate
+// away from the old value, which shipped in every previous bundle).
+// IMPORTANT: any client-side password is still extractable from the bundle by
+// a determined user — this gate is UX friction, NOT security. Real protection
+// requires Base44 auth + row-level security (see audit report, item C1).
+const CORRECT_PASSWORD = import.meta.env.VITE_GATE_PASSWORD || 'Brookside9!';
 const SESSION_KEY = 'saints_dm_data_unlocked';
 
 export default function PasswordGate({ children }) {

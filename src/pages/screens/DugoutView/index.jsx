@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
 import { normalizePitch } from '@/lib/ds';
+import { isStrike, isSwing as isSwingRow, isWhiff } from '@/lib/statsUtils';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
 import { colorAt } from '@/components/dugout/HitterViz';
@@ -148,7 +150,7 @@ function HeaderStatPill({ label, value, suffix = '%', avg: avgThresh, good, last
       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
         {value == null ? '—' : `${Math.round(value)}${suffix}`}
       </span>
-      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>{label}</span>
+      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>{label}</span>
     </div>
   );
 }
@@ -161,12 +163,12 @@ function ArsenalPanel({ arsenal, activeIdx, curatedColorMap }) {
   return (
     <Panel style={{ flex: '0 0 auto' }}>
       <PanelHeading>Season Arsenal — by usage</PanelHeading>
-      {arsenal.length === 0 && <div style={{ fontSize: 13, color: '#5a7080', fontStyle: 'italic', fontFamily: FONT }}>No season data yet</div>}
+      {arsenal.length === 0 && <div style={{ fontSize: 13, color: '#7d93a6', fontStyle: 'italic', fontFamily: FONT }}>No season data yet</div>}
       {arsenal.length > 0 && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 52px 58px 56px 52px 52px 54px', gap: '0 6px', paddingBottom: 6, borderBottom: '0.5px solid rgba(255,255,255,.08)', marginBottom: 2 }}>
             {['Pitch', 'Usage', 'Velo', 'Spin', 'HB', 'IVB', 'Strike%'].map(h => (
-              <div key={h} style={{ fontSize: 10, fontWeight: 800, color: '#5a7080', textTransform: 'uppercase', letterSpacing: 1, fontFamily: FONT, textAlign: h === 'Pitch' ? 'left' : 'right' }}>{h}</div>
+              <div key={h} style={{ fontSize: 10, fontWeight: 800, color: '#7d93a6', textTransform: 'uppercase', letterSpacing: 1, fontFamily: FONT, textAlign: h === 'Pitch' ? 'left' : 'right' }}>{h}</div>
             ))}
           </div>
           {arsenal.map((p, i) => {
@@ -243,7 +245,7 @@ function RatesPanel({ rates }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <PanelHeading style={{ margin: 0 }}>Season Rates</PanelHeading>
         {r.total_pitches != null && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#5a7080', fontFamily: FONT }}>{r.total_pitches} pitches</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#7d93a6', fontFamily: FONT }}>{r.total_pitches} pitches</span>
         )}
       </div>
       {ROWS.map(row => <StatBar key={row.label} label={row.label} value={row.value} good={row.good} avg={row.avg} />)}
@@ -308,7 +310,7 @@ function ChipFooter({ pitches, activeIdx, colorOverrides }) {
             transition: 'background 0.3s, box-shadow 0.3s, border 0.3s',
           }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? '#eae5d8' : '#8fa3b5', fontFamily: FONT, lineHeight: 1.2 }}>{abbrPitch(p.pitch_type)}</div>
-            <div style={{ fontSize: 9, color: isActive ? '#c6b583' : '#5a7080', fontFamily: FONT, lineHeight: 1.2 }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</div>
+            <div style={{ fontSize: 9, color: isActive ? '#c6b583' : '#7d93a6', fontFamily: FONT, lineHeight: 1.2 }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</div>
           </div>
         );
       })}
@@ -495,15 +497,17 @@ export default function DugoutView({ setScreen }) {
     // Last resort: compute live from TrackmanPitch if still no arsenal rows
     // This handles pitchers whose aggregation hasn't run yet
     if (!arsenal.length) {
-      const STRIKE_CALLS = ['StrikeCalled','StrikeSwinging','FoulBallNotFieldable','FoulBallFieldable','InPlay'];
-      const isSwing = c => ['StrikeSwinging','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
+      // AUDIT: shared classifiers (V2+V3 spellings); location-gated denominators.
       const inZone = r => { const h = parseFloat(r.plate_loc_height), s = parseFloat(r.plate_loc_side); return Number.isFinite(h) && Number.isFinite(s) && h >= 1.5 && h <= 3.5 && s >= -0.83 && s <= 0.83; };
+      const hasLoc = r => Number.isFinite(parseFloat(r.plate_loc_height)) && Number.isFinite(parseFloat(r.plate_loc_side));
 
-      // Try both name forms against TrackmanPitch
+      // Try both name forms against TrackmanPitch — paginated (was capped at 500)
       const firstLastForm = lastFirst.includes(',') ? lastFirst.split(',').map(s=>s.trim()).reverse().join(' ') : lastFirst;
       const [tp1, tp2] = await Promise.all([
-        base44.entities.TrackmanPitch.filter({ pitcher_name: lastFirst }, '-created_date', 500).catch(() => []),
-        base44.entities.TrackmanPitch.filter({ pitcher_name: firstLastForm }, '-created_date', 500).catch(() => []),
+        fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: lastFirst }, '-created_date'),
+        firstLastForm !== lastFirst
+          ? fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: firstLastForm }, '-created_date')
+          : Promise.resolve([]),
       ]);
       const allRows = [...(tp1||[]), ...(tp2||[])].filter((r,i,a) => a.findIndex(x=>x.id===r.id)===i);
 
@@ -514,12 +518,16 @@ export default function DugoutView({ setScreen }) {
           const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
           (groups[pt] = groups[pt] || []).push(r);
         }
-        const safeMean = arr => { const v=arr.filter(x=>x!=null&&x>0); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+        // AUDIT: old safeMean filtered x>0, which dropped every negative
+        // horz_break / induced_vert_break (all glove-side break, all curveball
+        // IVB) — the fallback arsenal showed wildly wrong movement on the TV.
+        const finiteMean = arr => { const v=arr.map(Number).filter(Number.isFinite); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+        const posMean    = arr => { const v=arr.map(Number).filter(x=>Number.isFinite(x)&&x>0); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
         arsenal = Object.entries(groups).map(([pitch_type, rs]) => {
           const velos = rs.map(r=>parseFloat(r.rel_speed)).filter(v=>v>0);
-          const strikes = rs.filter(r=>STRIKE_CALLS.includes(r.pitch_call)).length;
-          const swings = rs.filter(r=>isSwing(r.pitch_call)).length;
-          const whiffs = rs.filter(r=>r.pitch_call==='StrikeSwinging').length;
+          const strikes = rs.filter(isStrike).length;
+          const swings = rs.filter(isSwingRow).length;
+          const whiffs = rs.filter(isWhiff).length;
           let ahead_count=0, even_count=0, behind_count=0, first_pitch_count=0;
           for (const r of rs) {
             const b=r.balls??0, s=r.strikes??0;
@@ -530,11 +538,11 @@ export default function DugoutView({ setScreen }) {
             pitch_type, count: rs.length,
             usage_pct: rs.length/total*100,
             total_pitches: total,
-            velo_mean: safeMean(velos),
+            velo_mean: posMean(velos),
             velo_max: velos.length?Math.max(...velos):null,
-            spin_mean: safeMean(rs.map(r=>parseFloat(r.spin_rate))),
-            horz_break_mean: safeMean(rs.map(r=>parseFloat(r.horz_break))),
-            vert_break_mean: safeMean(rs.map(r=>parseFloat(r.induced_vert_break))),
+            spin_mean: posMean(rs.map(r=>parseFloat(r.spin_rate))),
+            horz_break_mean: finiteMean(rs.map(r=>parseFloat(r.horz_break))),
+            vert_break_mean: finiteMean(rs.map(r=>parseFloat(r.induced_vert_break))),
             strike_pct: rs.length?strikes/rs.length*100:null,
             whiff_pct: swings?whiffs/swings*100:null,
             zone_pct: total?rs.filter(inZone).length/rs.length*100:null,
@@ -545,16 +553,17 @@ export default function DugoutView({ setScreen }) {
         // Also compute rates
         if (!ratesArr.length) {
           const fp = allRows.filter(r=>r.balls===0&&r.strikes===0);
-          const swingsAll = allRows.filter(r=>isSwing(r.pitch_call));
-          const ooz = allRows.filter(r=>!inZone(r));
+          const swingsAll = allRows.filter(isSwingRow);
+          const located = allRows.filter(hasLoc);
+          const ooz = located.filter(r=>!inZone(r));
           const div = (n,d) => d>0?Math.round(100*n/d):null;
           ratesArr = [{ total_pitches: total,
-            strike_pct: div(allRows.filter(r=>STRIKE_CALLS.includes(r.pitch_call)).length, total),
-            first_pitch_strike_pct: div(fp.filter(r=>STRIKE_CALLS.includes(r.pitch_call)).length, fp.length),
-            csw_pct: div(allRows.filter(r=>r.pitch_call==='StrikeCalled'||r.pitch_call==='StrikeSwinging').length, total),
-            whiff_pct: div(allRows.filter(r=>r.pitch_call==='StrikeSwinging').length, swingsAll.length),
-            zone_pct: div(allRows.filter(inZone).length, total),
-            chase_pct: div(ooz.filter(r=>isSwing(r.pitch_call)).length, ooz.length),
+            strike_pct: div(allRows.filter(isStrike).length, total),
+            first_pitch_strike_pct: div(fp.filter(isStrike).length, fp.length),
+            csw_pct: div(allRows.filter(r=>r.pitch_call==='StrikeCalled'||isWhiff(r)).length, total),
+            whiff_pct: div(allRows.filter(isWhiff).length, swingsAll.length),
+            zone_pct: div(located.filter(inZone).length, located.length),
+            chase_pct: div(ooz.filter(isSwingRow).length, ooz.length),
           }];
         }
       }
@@ -565,7 +574,9 @@ export default function DugoutView({ setScreen }) {
 
     setSeasonArsenal([...arsenal].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0)));
     setActiveArsenalIdx(0);
-    setSeasonRates(prev => ratesArr[0] || prev);
+    // AUDIT: previously `ratesArr[0] || prev` kept the LAST pitcher's rates on
+    // the TV under the new pitcher's name when the new one had no rates row.
+    setSeasonRates(ratesArr[0] || null);
     setCuratedTrails(curatedRaw);
   }, []);
 
@@ -691,7 +702,7 @@ export default function DugoutView({ setScreen }) {
                   {ttpVal != null && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
-                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Time to Plate</span>
+                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Time to Plate</span>
                     </div>
                   )}
                   <HeaderStatPill label="Strike%"      value={seasonRates?.strike_pct}             avg={58} good={64} />
@@ -703,7 +714,7 @@ export default function DugoutView({ setScreen }) {
                   {seasonArsenal.length > 0 && seasonArsenal[0]?.total_pitches && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px' }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{seasonArsenal[0].total_pitches}</span>
-                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#5a7080', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Season Pitches</span>
+                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Season Pitches</span>
                     </div>
                   )}
                 </div>

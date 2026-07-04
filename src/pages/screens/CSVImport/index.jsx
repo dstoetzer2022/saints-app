@@ -2,7 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import DarkScreenLayout from '@/components/shared/DarkScreenLayout';
 import { parseTrackmanCSV, n, countCategory, buildArsenals, extractCatcherData } from './parseTrackman';
-import { rebuildAllPitcherSeasons } from '@/lib/seasonAggregation';
+import { rebuildAllPitcherSeasons, rebuildPitchersByName } from '@/lib/seasonAggregation';
+import { deleteAllFiltered } from '@/lib/fetchAll';
 
 const GOLD = '#c6b583';
 const TRACKMAN_LOGO = 'https://res.cloudinary.com/dpsbfigoq/image/upload/v1781850858/Big_Grey_o4nxgb.webp';
@@ -19,7 +20,18 @@ async function importGame(rows, gameID, fileName, onProgress) {
   }
 
   const first = rows[0];
-  const date = first.Date || '';
+  // AUDIT: normalize to ISO — live data contained "" and "6/10/2026" formats
+  // that broke date sorting/filtering.
+  const toISODate = raw => {
+    if (!raw) return '';
+    const t = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+    const d = new Date(t);
+    return isNaN(d) ? t : d.toISOString().slice(0, 10);
+  };
+  const date = toISODate(first.Date);
   const stadium = first.Stadium || '';
   const homeTmCode = first.HomeTeam || '';
   const awayTmCode = first.AwayTeam || '';
@@ -40,10 +52,19 @@ async function importGame(rows, gameID, fileName, onProgress) {
   const byDate = byFileName.length ? [] : await base44.entities.Game.filter({ date });
 
   let gameRecord;
+  // AUDIT: live-scouted games sometimes carry full names (or nothing) in the
+  // *_code fields, so code-only comparison missed them and duplicate Game
+  // records were created. Compare codes AND resolved names, either orientation.
+  const normName = n => (n || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const importHomeName = normName(homeTeam.name);
+  const importAwayName = normName(awayTeam.name);
   const fuzzyMatch = !byFileName.length && byDate.find(g => {
-    const gh = normCode(g.home_team_code);
-    const ga = normCode(g.away_team_code);
-    return (gh === importHome && ga === importAway) || (gh === importAway && ga === importHome);
+    const gh = normCode(g.home_team_code), ga = normCode(g.away_team_code);
+    const ghn = normName(g.home_team), gan = normName(g.away_team);
+    const codeHit = (gh === importHome && ga === importAway) || (gh === importAway && ga === importHome);
+    const nameHit = importHomeName && importAwayName &&
+      ((ghn === importHomeName && gan === importAwayName) || (ghn === importAwayName && gan === importHomeName));
+    return codeHit || nameHit;
   });
 
   if (byFileName.length) {
@@ -56,12 +77,11 @@ async function importGame(rows, gameID, fileName, onProgress) {
       trackman_file_name: gameID, status: 'complete', total_pitches: rows.length,
     });
     onProgress('Clearing old pitch data…', 10);
-    const oldPitches = await base44.entities.TrackmanPitch.filter({ game_id: gameRecord.id });
-    for (let i = 0; i < oldPitches.length; i += 50)
-      await Promise.all(oldPitches.slice(i, i + 50).map(p => base44.entities.TrackmanPitch.delete(p.id)));
-    const oldArsenals = await base44.entities.PitcherArsenal.filter({ game_id: gameRecord.id });
-    for (let i = 0; i < oldArsenals.length; i += 50)
-      await Promise.all(oldArsenals.slice(i, i + 50).map(a => base44.entities.PitcherArsenal.delete(a.id)));
+    // AUDIT: the old unbounded filter() only returned the default first page,
+    // so re-imports left stale rows behind (duplicate pitches). Loop until empty.
+    await deleteAllFiltered(base44.entities.TrackmanPitch, { game_id: gameRecord.id },
+      n => onProgress(`Clearing old pitch data… ${n} rows`, 10));
+    await deleteAllFiltered(base44.entities.PitcherArsenal, { game_id: gameRecord.id });
   } else if (fuzzyMatch) {
     // Attach to existing live-scouted game
     gameRecord = fuzzyMatch;
@@ -69,12 +89,11 @@ async function importGame(rows, gameID, fileName, onProgress) {
       trackman_file_name: gameID, status: 'complete', total_pitches: rows.length,
     });
     onProgress('Clearing old pitch data…', 10);
-    const oldPitches = await base44.entities.TrackmanPitch.filter({ game_id: gameRecord.id });
-    for (let i = 0; i < oldPitches.length; i += 50)
-      await Promise.all(oldPitches.slice(i, i + 50).map(p => base44.entities.TrackmanPitch.delete(p.id)));
-    const oldArsenals = await base44.entities.PitcherArsenal.filter({ game_id: gameRecord.id });
-    for (let i = 0; i < oldArsenals.length; i += 50)
-      await Promise.all(oldArsenals.slice(i, i + 50).map(a => base44.entities.PitcherArsenal.delete(a.id)));
+    // AUDIT: the old unbounded filter() only returned the default first page,
+    // so re-imports left stale rows behind (duplicate pitches). Loop until empty.
+    await deleteAllFiltered(base44.entities.TrackmanPitch, { game_id: gameRecord.id },
+      n => onProgress(`Clearing old pitch data… ${n} rows`, 10));
+    await deleteAllFiltered(base44.entities.PitcherArsenal, { game_id: gameRecord.id });
   } else {
     // No match — create new game
     gameRecord = await base44.entities.Game.create({
@@ -164,9 +183,6 @@ export default function CSVImport({ onBack, onViewRepo }) {
   const [importedGames, setImportedGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
   const [rebuildStatus, setRebuildStatus] = useState(null);
-  const [wipePhase, setWipePhase] = useState('idle'); // idle | confirm | wiping | done
-  const [wipeStatus, setWipeStatus] = useState(null);
-  const [wipeCurated, setWipeCurated] = useState(false);
   const [deletingGameId, setDeletingGameId] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deleteProgress, setDeleteProgress] = useState('');
@@ -245,13 +261,16 @@ export default function CSVImport({ onBack, onViewRepo }) {
     setResults(importResults);
     setPhase('DONE');
 
-    // Auto-rebuild season stats after successful import — show progress
+    // AUDIT: rebuild ONLY the pitchers who appeared in the imported files —
+    // the old full-league rebuild re-crunched every pitcher on every team
+    // after each import.
     if (importResults.length > 0) {
       setPhase('REBUILDING');
       setRebuildStatus('Rebuilding season stats…');
       try {
         const allTeams = await base44.entities.Team.list('name', 200).catch(() => []);
-        await rebuildAllPitcherSeasons(allTeams, msg => setRebuildStatus(msg));
+        const entries = importResults.flatMap(r => r.pitchers || []);
+        await rebuildPitchersByName(entries, allTeams, msg => setRebuildStatus(msg));
         setRebuildStatus('Season stats updated!');
       } catch (e) {
         setRebuildStatus('Rebuild error: ' + e.message);
@@ -289,8 +308,12 @@ export default function CSVImport({ onBack, onViewRepo }) {
           await sleep(400);
         }
       } while (batch.length > 0);
+      setDeleteProgress('Removing per-game arsenal rows…');
+      // AUDIT: previously left orphaned per-game PitcherArsenal rows forever.
+      await deleteAllFiltered(base44.entities.PitcherArsenal, { game_id: gameId });
       setDeleteProgress('Removing game record…');
       await base44.entities.Game.delete(gameId).catch(() => {});
+      setDeleteProgress('Done — run "Rebuild All Season Stats" to remove this game from season aggregates.');
       setImportedGames(prev => prev.filter(g => g.id !== gameId));
     } finally {
       setDeletingGameId(null);
@@ -298,57 +321,11 @@ export default function CSVImport({ onBack, onViewRepo }) {
     }
   }
 
-  async function handleWipe() {
-    setWipePhase('wiping');
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-    const wipeFully = async (entity, filterFn, label) => {
-      let total = 0;
-      let emptyRounds = 0;
-      while (emptyRounds < 3) {
-        // Always fetch first page — as records are deleted the list shrinks
-        const batch = await base44.entities[entity].list('created_date', 50).catch(() => []);
-        const toDelete = filterFn ? batch.filter(filterFn) : batch;
-        if (toDelete.length === 0) {
-          emptyRounds++;
-          await sleep(500);
-          continue;
-        }
-        emptyRounds = 0;
-        for (const r of toDelete) {
-          await base44.entities[entity].delete(r.id).catch(() => {});
-          total++;
-        }
-        setWipeStatus(`Deleting ${label}… (${total} removed)`);
-        await sleep(200);
-      }
-      return total;
-    };
-
-    try {
-      setWipeStatus('Deleting pitch data… (this will take several minutes)');
-      const pitchCount = await wipeFully('TrackmanPitch', null, 'pitches');
-
-      setWipeStatus('Deleting season stats…');
-      const arsenalCount = await wipeFully('PitcherArsenal', null, 'arsenal rows');
-      const ratesCount = await wipeFully('PitcherSeasonRates', null, 'rate rows');
-
-      setWipeStatus('Deleting imported game records…');
-      const gameCount = await wipeFully('Game', g => !!g.trackman_file_name, 'games');
-
-      if (wipeCurated) {
-        setWipeStatus('Deleting curated trails…');
-        await wipeFully('CuratedDugoutTrail', null, 'trails');
-      }
-
-      setWipeStatus(`✓ Done — removed ${pitchCount} pitches, ${arsenalCount + ratesCount} stat rows, ${gameCount} games.`);
-      setWipePhase('done');
-      setTimeout(() => { setWipePhase('idle'); setWipeStatus(null); setWipeCurated(false); }, 6000);
-    } catch (e) {
-      setWipeStatus('Error: ' + e.message);
-      setWipePhase('idle');
-    }
-  }
+  // AUDIT (security): the global "Wipe CSV Data" feature was REMOVED from the
+  // production build. It deleted every TrackmanPitch / PitcherArsenal /
+  // PitcherSeasonRates / imported Game behind a client-side password that ships
+  // in the JS bundle. Season-destroying operations must not be reachable from a
+  // player-facing deployment. Per-game delete (below) remains for admin cleanup.
 
   function reset() {
     setPhase('DROP');
@@ -402,55 +379,6 @@ export default function CSVImport({ onBack, onViewRepo }) {
                 >
                   🔄 Rebuild All Season Stats
                 </button>
-              </div>
-
-              {/* Data wipe */}
-              <div style={{ marginTop: 12, border: '1px solid rgba(192,57,43,0.3)', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ padding: '10px 14px', background: 'rgba(192,57,43,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: '#e74c3c', letterSpacing: 1, textTransform: 'uppercase', fontFamily: "'Archivo', sans-serif" }}>⚠ Wipe CSV Data</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2, fontFamily: "'Archivo', sans-serif" }}>Clears all pitches, season stats, and imported game records</div>
-                  </div>
-                  {wipePhase === 'idle' && (
-                    <button onClick={() => setWipePhase('confirm')}
-                      style={{ background: 'rgba(192,57,43,0.2)', border: '1px solid rgba(192,57,43,0.5)', borderRadius: 6, padding: '6px 14px', color: '#e74c3c', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Archivo', sans-serif", whiteSpace: 'nowrap' }}>
-                      Wipe data
-                    </button>
-                  )}
-                </div>
-
-                {wipePhase === 'confirm' && (
-                  <div style={{ padding: '14px', background: 'rgba(192,57,43,0.06)', borderTop: '1px solid rgba(192,57,43,0.2)' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#f0ece0', marginBottom: 12, fontFamily: "'Archivo', sans-serif" }}>
-                      This will permanently delete all Trackman pitch data, season stats, and CSV-imported game records. Live-scouted games will be preserved.
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={wipeCurated} onChange={e => setWipeCurated(e.target.checked)}
-                        style={{ width: 14, height: 14, accentColor: '#e74c3c' }} />
-                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: "'Archivo', sans-serif" }}>Also delete curated dugout trails</span>
-                    </label>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button onClick={handleWipe}
-                        style={{ flex: 1, padding: '10px', background: '#c0392b', border: 'none', borderRadius: 7, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: "'Archivo', sans-serif" }}>
-                        Yes, wipe everything
-                      </button>
-                      <button onClick={() => { setWipePhase('idle'); setWipeCurated(false); }}
-                        style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 7, color: '#f0ece0', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Archivo', sans-serif" }}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {(wipePhase === 'wiping' || wipePhase === 'done') && (
-                  <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(192,57,43,0.2)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {wipePhase === 'wiping' && (
-                      <div style={{ width: 14, height: 14, border: '2px solid #e74c3c', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                    )}
-                    {wipePhase === 'done' && <span style={{ fontSize: 16 }}>✓</span>}
-                    <span style={{ fontSize: 12, color: wipePhase === 'done' ? '#2ecc71' : 'rgba(255,255,255,0.6)', fontFamily: "'Archivo', sans-serif" }}>{wipeStatus}</span>
-                  </div>
-                )}
               </div>
 
               {/* Already-imported games */}

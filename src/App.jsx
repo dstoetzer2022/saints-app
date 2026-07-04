@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as HotToaster } from "react-hot-toast"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
@@ -54,6 +55,7 @@ function App() {
           <AuthenticatedApp />
         </Router>
         <Toaster />
+        <HotToaster position="top-center" toastOptions={{ style: { background: '#0e253a', color: '#f0ece0', border: '1px solid rgba(198,181,131,0.3)' } }} />
       </QueryClientProvider>
     </AuthProvider>
   );

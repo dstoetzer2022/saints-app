@@ -4,6 +4,7 @@
  */
 
 import { normalizePitch } from '@/lib/ds';
+import { canonicalNameKey, isSwing as isSwingRow, isWhiff } from '@/lib/statsUtils';
 
 // percentileRank: (below + equal*0.5) / n * 100, rounded
 export function percentileRank(arr, v) {
@@ -33,8 +34,9 @@ function isBIP(p) {
   return p.pitch_call === 'InPlay' && p.hit_distance > 0;
 }
 
+// AUDIT: delegate to the shared statsUtils classifier (single source of truth).
 function isSwing(call) {
-  return ['StrikeSwinging', 'FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(call);
+  return isSwingRow({ pitch_call: call });
 }
 
 function isOutOfZone(p) {
@@ -163,10 +165,13 @@ export function hitterTrackmanProfile(rows) {
   const bipN = bip.length;
 
   // Air balls = FlyBall + LineDrive + PopUp
-  const airBalls = bip.filter(p => ['FlyBall', 'LineDrive', 'PopUp'].includes(p.tagged_hit_type));
+  // AUDIT: tagged_hit_type is not stored (per the comments above), so the old
+  // filter was always empty and Air-Pull% was permanently null. Derive from
+  // launch angle using the same buckets as the distribution above.
+  const airBalls = bip.filter(p => p.launch_angle != null && p.launch_angle >= 10);
   // Pull: bearing < -15 for RHH, > 15 for LHH — simplified: bearing < -15 as pull direction
   // Per Trackman convention bearing is signed from center; pull for RHH is negative bearing
-  const batterHand = rows[0]?.batter_hand;
+  const batterHand = String(rows[0]?.batter_hand || '').toUpperCase().startsWith('L') ? 'Left' : 'Right';
   const airPullBalls = airBalls.filter(p => {
     if (p.bearing == null) return false;
     return batterHand === 'Left' ? p.bearing > 15 : p.bearing < -15;
@@ -240,11 +245,14 @@ export function hitterTrackmanProfile(rows) {
 // ── buildPitcherPool: build distribution arrays from all TrackmanPitch rows ──
 // Requires ≥20 pitches per pitcher to qualify
 export function buildPitcherPool(allPitches) {
+  // AUDIT: key on canonicalNameKey — raw-string grouping split one pitcher
+  // into multiple sub-threshold pool entries on spelling variants.
   const byPitcher = {};
   allPitches.forEach(p => {
     if (!p.pitcher_name) return;
-    if (!byPitcher[p.pitcher_name]) byPitcher[p.pitcher_name] = [];
-    byPitcher[p.pitcher_name].push(p);
+    const k = canonicalNameKey(p.pitcher_name);
+    if (!byPitcher[k]) byPitcher[k] = [];
+    byPitcher[k].push(p);
   });
 
   const pool = {
@@ -280,8 +288,9 @@ export function buildHitterPool(allPitches) {
   const byBatter = {};
   allPitches.forEach(p => {
     if (!p.batter_name) return;
-    if (!byBatter[p.batter_name]) byBatter[p.batter_name] = [];
-    byBatter[p.batter_name].push(p);
+    const k = canonicalNameKey(p.batter_name);
+    if (!byBatter[k]) byBatter[k] = [];
+    byBatter[k].push(p);
   });
 
   const pool = {

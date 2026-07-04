@@ -5,7 +5,7 @@ import { hitterTrackmanProfile, percentileRank, fmtStat } from '@/lib/profileSta
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
-import { isSwing, isWhiff, isContact, isFastballVeloType } from '@/lib/statsUtils';
+import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -275,7 +275,7 @@ function PropBar({ segments }) {
 
 function PlateDiscipline({ pitches }) {
   const { swings, takes, whiffs, contact, zSwingPct, zWhiffPct, chasePct, ozWhiffPct } = useMemo(() => {
-    const isSwing = c => ['StrikeSwinging','FoulBall','FoulTip','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
+    const isSwing = c => sharedIsSwing({ pitch_call: c }); // AUDIT: shared classifier
     const inZone = p => p.plate_loc_height >= 1.5 && p.plate_loc_height <= 3.5 && p.plate_loc_side >= -0.83 && p.plate_loc_side <= 0.83;
     const ooz = pitches.filter(p => p.plate_loc_height != null && !inZone(p));
     const inZ = pitches.filter(p => p.plate_loc_height != null && inZone(p));
@@ -329,7 +329,7 @@ function VsPitchType({ pitches }) {
       if (!byType[pt]) byType[pt] = [];
       byType[pt].push(p);
     });
-    const isSwing = c => ['StrikeSwinging','FoulBall','FoulTip','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
+    const isSwing = c => sharedIsSwing({ pitch_call: c }); // AUDIT: shared classifier
     const ooz = p => p.plate_loc_height != null && (p.plate_loc_height < 1.5 || p.plate_loc_height > 3.5 || p.plate_loc_side < -0.83 || p.plate_loc_side > 0.83);
     return Object.entries(byType)
       .filter(([, rs]) => rs.length >= 3)
@@ -394,7 +394,7 @@ function VsPitchType({ pitches }) {
 // ── Hitter Trends ─────────────────────────────────────────────
 function HitterTrends({ pitches }) {
   const { veloBuckets, twoKSeg, twoKCount } = useMemo(() => {
-    const isSwing = c => ['StrikeSwinging','FoulBall','FoulTip','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
+    const isSwing = c => sharedIsSwing({ pitch_call: c }); // AUDIT: shared classifier
     const isContact = c => ['FoulBall','FoulTip','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
     // FB contact% by velo bucket (cutter excluded from the FB-velocity definition)
     const fbRows = pitches.filter(p => {

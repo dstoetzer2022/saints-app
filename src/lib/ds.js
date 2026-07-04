@@ -21,6 +21,11 @@ export const TEAM_NAME_MAP = {
   SAN_FRA: 'San Francisco Seagulls',
   SAN_DIE: 'San Diego Waves',
   SAN_MAR: 'Santa Maria Indians',
+  // AUDIT: suffixed Trackman codes observed in live data / code list
+  SAN_FRA4: 'San Francisco Seagulls',
+  SAN_DIE25: 'San Diego Waves',
+  SAN_MAR6: 'Santa Maria Indians',
+  ORA_COU: 'Orange County Riptide',
 };
 
 // ── Canonical pitch type palette ─────────────────────────────────────────────
@@ -39,20 +44,34 @@ export const PITCH_COLORS = {
   Other:         '#888780',
 };
 
+// ── Pitch-type canonicalization (SINGLE SOURCE for the whole app) ────────────
+// AUDIT: seasonAggregation previously kept its own TYPE_MAP that diverged from
+// normalizePitch (e.g. "Four Seam Fastball" with spaces canonicalized in one
+// but not the other). Both now share this separator-stripping map.
+const TYPE_MAP = {
+  fourseamfastball: 'Four-Seam', fourseam: 'Four-Seam', '4seam': 'Four-Seam', fastball: 'Four-Seam', ff: 'Four-Seam',
+  oneseamfastball: 'Sinker', twoseamfastball: 'Sinker', twoseam: 'Sinker', '2seam': 'Sinker', sinker: 'Sinker', si: 'Sinker',
+  cutter: 'Cutter', fc: 'Cutter',
+  slider: 'Slider', sl: 'Slider',
+  sweeper: 'Sweeper', st: 'Sweeper',
+  curveball: 'Curveball', curve: 'Curveball', cb: 'Curveball', cu: 'Curveball',
+  knucklecurve: 'Knucklecurve', kc: 'Knucklecurve',
+  knuckleball: 'Knucklecurve', knuckle: 'Knucklecurve',
+  changeup: 'ChangeUp', change: 'ChangeUp', ch: 'ChangeUp', cho: 'ChangeUp',
+  splitter: 'Splitter', splitfinger: 'Splitter', split: 'Splitter', fs: 'Splitter',
+};
+
+// Canonicalize a raw type string; returns the trimmed raw string when unknown.
+export function canonPitchType(raw) {
+  if (!raw) return null;
+  const key = String(raw).replace(/[\s_\-]/g, '').toLowerCase();
+  return TYPE_MAP[key] || String(raw).trim();
+}
+
 // Normalize raw Trackman pitch type strings to canonical display names.
 export function normalizePitch(pt) {
   if (!pt) return 'Undefined';
-  const lower = pt.toLowerCase().trim();
-  if (['fourseamfastball','four-seam','4-seam','fastball','ff'].includes(lower)) return 'Four-Seam';
-  if (['twoseamfastball','two-seam','2-seam','sinker','si'].includes(lower)) return 'Sinker';
-  if (['cutter','fc'].includes(lower)) return 'Cutter';
-  if (['slider','sl'].includes(lower)) return 'Slider';
-  if (['sweeper','st'].includes(lower)) return 'Sweeper';
-  if (['curveball','cb','cu','curve'].includes(lower)) return 'Curveball';
-  if (['knucklecurve','kc','knuckle curve','knuckleball'].includes(lower)) return 'Knucklecurve';
-  if (['changeup','ch','change up','cho'].includes(lower)) return 'ChangeUp';
-  if (['splitter','fs','split'].includes(lower)) return 'Splitter';
-  return pt;
+  return canonPitchType(pt) || 'Undefined';
 }
 
 // Universal color lookup — normalizes first, then looks up.

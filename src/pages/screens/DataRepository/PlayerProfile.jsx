@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import { normalizeName, canonicalNameKey } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool } from '@/lib/profileStats';
+import { fetchAllFiltered, fetchAllList } from '@/lib/fetchAll';
 import { buildScene } from '@/lib/pitch3dEngine';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
@@ -22,13 +23,31 @@ const C = {
   gold:    '#c8920c',
   goldDim: '#8a6308',
   cream:   '#edeae0',
-  muted:   '#5a7080',
+  muted:   '#7d93a6', // AUDIT: was #5a7080 (3.4:1 on surface — below WCAG AA for small text)
   faint:   '#253545',
   white:   '#f8f8f4',
   green:   '#21c55d',
   red:     '#e84040',
 };
 const FONT = "'Archivo', system-ui, sans-serif";
+
+// ── League pitch cache ────────────────────────────────────────────────────────
+// AUDIT: the league percentile pool was previously rebuilt on EVERY profile
+// open from three 2000-row sorted fetches (a biased subset that worsened as the
+// season grew, and a rate-limit-triggering burst). Now: one paginated pull,
+// cached for 10 minutes and shared across every profile opened in the session.
+let _leagueCache = { rows: null, at: 0, promise: null };
+const LEAGUE_TTL_MS = 10 * 60 * 1000;
+const LEAGUE_MAX_ROWS = 40000; // safety cap; ~full CCL season of pitch rows
+function getLeaguePitches() {
+  const now = Date.now();
+  if (_leagueCache.rows && now - _leagueCache.at < LEAGUE_TTL_MS) return Promise.resolve(_leagueCache.rows);
+  if (_leagueCache.promise) return _leagueCache.promise;
+  _leagueCache.promise = fetchAllList(base44.entities.TrackmanPitch, 'created_date', { max: LEAGUE_MAX_ROWS, delayMs: 150 })
+    .then(rows => { _leagueCache = { rows, at: Date.now(), promise: null }; return rows; })
+    .catch(() => { _leagueCache.promise = null; return _leagueCache.rows || []; });
+  return _leagueCache.promise;
+}
 
 // Convert "First Last" → "Last, First" for Trackman queries
 function toTrackmanName(name) {
@@ -91,6 +110,10 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
     <div style={{ border: `1px solid ${C.edge}`, borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
       <div
         onClick={() => setExpanded(e => !e)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(x => !x); } }}
         style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
           cursor: 'pointer', background: expanded ? C.raised : C.surface,
@@ -122,13 +145,13 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
                   <td style={{ ...tdS, color: C.muted }}>{p.inning}</td>
                   {!isPitcher && <td style={{ ...tdS, color: C.muted, fontSize: 11 }}>{p.pitcher_name}</td>}
                   <td style={tdS}>{normalizePitch(p.tagged_pitch_type || p.pitch_type)}</td>
-                  <td style={{ ...tdS, fontWeight: 700, color: C.gold, fontVariantNumeric: 'tabular-nums' }}>{p.rel_speed ? p.rel_speed.toFixed(1) : '—'}</td>
-                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.spin_rate ? p.spin_rate.toFixed(0) : '—'}</td>}
-                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.horz_break ? p.horz_break.toFixed(1) : '—'}</td>}
-                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.induced_vert_break ? p.induced_vert_break.toFixed(1) : '—'}</td>}
+                  <td style={{ ...tdS, fontWeight: 700, color: C.gold, fontVariantNumeric: 'tabular-nums' }}>{p.rel_speed != null ? Number(p.rel_speed).toFixed(1) : '—'}</td>
+                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.spin_rate != null ? Number(p.spin_rate).toFixed(0) : '—'}</td>}
+                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.horz_break != null ? Number(p.horz_break).toFixed(1) : '—'}</td>}
+                  {isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.induced_vert_break != null ? Number(p.induced_vert_break).toFixed(1) : '—'}</td>}
                   <td style={{ ...tdS, color: C.muted }}>{p.pitch_call || '—'}</td>
-                  {!isPitcher && <td style={{ ...tdS, fontWeight: 700, color: C.white, fontVariantNumeric: 'tabular-nums' }}>{p.exit_speed ? p.exit_speed.toFixed(1) : '—'}</td>}
-                  {!isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.launch_angle ? p.launch_angle.toFixed(1) : '—'}</td>}
+                  {!isPitcher && <td style={{ ...tdS, fontWeight: 700, color: C.white, fontVariantNumeric: 'tabular-nums' }}>{p.exit_speed != null ? Number(p.exit_speed).toFixed(1) : '—'}</td>}
+                  {!isPitcher && <td style={{ ...tdS, fontVariantNumeric: 'tabular-nums' }}>{p.launch_angle != null ? Number(p.launch_angle).toFixed(1) : '—'}</td>}
                   <td style={{ ...tdS, color: C.muted }}>{p.play_result || '—'}</td>
                 </tr>
               ))}
@@ -146,29 +169,45 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
 function GameLog({ playerName, isPitcher, team, allTeams, games }) {
   const [gameData, setGameData] = useState({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!games.length) { setLoading(false); return; }
+    // AUDIT: was 2-3 queries PER GAME fired concurrently (100+ calls per profile
+    // open — rate-limit territory). Now: fetch the player's rows/observations
+    // ONCE (paginated) and group by game_id client-side.
     const tmName = isPitcher ? toTrackmanName(playerName) : playerName;
     const normName = normalizeName(playerName);
-    Promise.all(games.map(async g => {
-      const results = isPitcher
-        ? await Promise.all([
-            base44.entities.TrackmanPitch.filter({ game_id: g.id, pitcher_name: tmName }, 'inning', 500),
-            base44.entities.PitcherObservation.filter({ game_id: g.id, pitcher_name: normName }, 'pitcher_name', 20),
-          ])
-        : await Promise.all([
-            base44.entities.TrackmanPitch.filter({ game_id: g.id, batter_name: toTrackmanName(playerName) }, 'inning', 300),
-            base44.entities.CatcherObservation.filter({ game_id: g.id, catcher_name: normName }, 'catcher_name', 10),
-            base44.entities.BaserunnerObservation.filter({ game_id: g.id, runner_name: normName }, 'runner_name', 10),
-          ]);
-      return { gameId: g.id, results };
-    })).then(entries => {
-      const map = {};
-      entries.forEach(({ gameId, results }) => { map[gameId] = results; });
-      setGameData(map);
-      setLoading(false);
-    });
+    let cancelled = false;
+    const groupBy = (rows, key) => {
+      const m = {};
+      for (const r of rows || []) { const k = r[key]; if (!k) continue; (m[k] = m[k] || []).push(r); }
+      return m;
+    };
+    const load = isPitcher
+      ? Promise.all([
+          fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: tmName }, 'inning'),
+          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normName }, 'pitcher_name'),
+        ]).then(([tp, po]) => {
+          const tpBy = groupBy(tp, 'game_id'), poBy = groupBy(po, 'game_id');
+          const map = {};
+          games.forEach(g => { map[g.id] = [tpBy[g.id] || [], poBy[g.id] || []]; });
+          return map;
+        })
+      : Promise.all([
+          fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: tmName }, 'inning'),
+          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normName }, 'catcher_name'),
+          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normName }, 'runner_name'),
+        ]).then(([tp, co, ro]) => {
+          const tpBy = groupBy(tp, 'game_id'), coBy = groupBy(co, 'game_id'), roBy = groupBy(ro, 'game_id');
+          const map = {};
+          games.forEach(g => { map[g.id] = [tpBy[g.id] || [], coBy[g.id] || [], roBy[g.id] || []]; });
+          return map;
+        });
+    load
+      .then(map => { if (!cancelled) { setGameData(map); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setGameData({}); setLoading(false); setError(true); } });
+    return () => { cancelled = true; };
   }, [games, playerName, isPitcher]);
 
   if (loading) return (
@@ -182,6 +221,11 @@ function GameLog({ playerName, isPitcher, team, allTeams, games }) {
     return d && d.some(arr => arr.length > 0);
   }).sort((a, b) => b.date?.localeCompare(a.date));
 
+  if (error) return (
+    <p style={{ color: C.red, textAlign: 'center', padding: 40, fontFamily: FONT }}>
+      Couldn't load the game log — check your connection and reopen this tab.
+    </p>
+  );
   if (!gamesWithData.length) return <p style={{ color: C.muted, textAlign: 'center', padding: 40, fontFamily: FONT }}>No game log available.</p>;
 
   return (
@@ -273,19 +317,21 @@ function TrailCurationTab({ pitcherName }) {
     if (!lfName) return;
     setLoading(true);
     Promise.all([
-      base44.entities.TrackmanPitch.filter({ pitcher_name: lfName }, '-created_date', 500).catch(() => []),
-      base44.entities.CuratedDugoutTrail.filter({ pitcher_name: lfName }, 'display_order', 50).catch(() => []),
+      fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: lfName }, '-created_date'),
+      fetchAllFiltered(base44.entities.CuratedDugoutTrail, { pitcher_name: lfName }, 'display_order'),
     ]).then(([pitchRows, curatedRows]) => {
       const groups = {};
       for (const r of (pitchRows || [])) {
-        const pt = r.tagged_pitch_type || r.pitch_type || 'Unknown';
+        // AUDIT: group by normalized type — raw grouping let "Fastball" and
+        // "Four-Seam" create duplicate trail slots for the same real pitch.
+        const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
         if (!groups[pt]) groups[pt] = [];
         groups[pt].push(r);
       }
       setPitchGroups(groups);
       setCurated(curatedRows || []);
       setLoading(false);
-    });
+    }).catch(() => { setPitchGroups({}); setCurated([]); setLoading(false); setToast('Failed to load pitch data — reopen this tab to retry.'); });
   }, [lfName]);
 
   // Build + mount 3D scene whenever previewPitch changes
@@ -348,8 +394,10 @@ function TrailCurationTab({ pitcherName }) {
   const handleAdd = async (pitch, pitchType) => {
     setAdding(pitch.id);
     try {
-      const existing = curated.find(t => t.pitch_type === pitchType);
-      if (existing) await base44.entities.CuratedDugoutTrail.delete(existing.id).catch(() => {});
+      // AUDIT: normalizePitch on both sides of the match (per the shared
+      // convention), and CREATE first / DELETE after — the old order lost the
+      // existing trail if the create failed mid-flight.
+      const existing = curated.find(t => normalizePitch(t.pitch_type) === normalizePitch(pitchType));
       const newTrail = await base44.entities.CuratedDugoutTrail.create({
         pitcher_name: lfName, pitcher_team: pitch.pitcher_team || '',
         pitcher_hand: pitch.pitcher_hand || '', pitch_type: pitchType,
@@ -369,15 +417,18 @@ function TrailCurationTab({ pitcherName }) {
         vert_rel_angle: pitch.vert_rel_angle != null ? parseFloat(pitch.vert_rel_angle) : null,
         horz_rel_angle: pitch.horz_rel_angle != null ? parseFloat(pitch.horz_rel_angle) : null,
       });
+      if (existing) await base44.entities.CuratedDugoutTrail.delete(existing.id).catch(() => {});
       setCurated(prev => {
         const next = existing ? prev.filter(t => t.id !== existing.id).concat(newTrail) : prev.concat(newTrail);
         return [...next].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       });
       setToast(existing ? `Replaced ${pitchType} trail` : `Added ${pitchType} trail`);
+    } catch (e) {
+      setToast(`Couldn't save trail — ${e?.message || 'network error'}. Try again.`);
     } finally { setAdding(null); }
   };
 
-  const curatedTypes = new Set(curated.map(t => t.pitch_type));
+  const curatedTypes = new Set(curated.map(t => normalizePitch(t.pitch_type)));
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: C.muted, fontFamily: FONT }}>
@@ -529,41 +580,27 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const normalizedName = normalizeName(player.name);
 
   useEffect(() => {
+    // AUDIT: player fetches now paginate (the old 1000/500 caps silently
+    // truncated any player past that many pitches).
     const playerFetch = isPitcher
       ? [
-          base44.entities.TrackmanPitch.filter({ pitcher_name: trackmanName }, 'date', 1000),
-          base44.entities.PitcherObservation.filter({ pitcher_name: normalizedName }, 'pitcher_name', 100),
+          fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: trackmanName }, 'date'),
+          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normalizedName }, 'pitcher_name'),
           Promise.resolve([]),
           Promise.resolve([]),
         ]
       : [
-          base44.entities.TrackmanPitch.filter({ batter_name: trackmanName }, 'date', 500),
+          fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: trackmanName }, 'date'),
           Promise.resolve([]),
-          base44.entities.CatcherObservation.filter({ catcher_name: normalizedName }, 'catcher_name', 50),
-          base44.entities.BaserunnerObservation.filter({ runner_name: normalizedName }, 'runner_name', 50),
+          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normalizedName }, 'catcher_name'),
+          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normalizedName }, 'runner_name'),
         ];
 
     Promise.all([
       ...playerFetch,
       base44.entities.Game.list('-date', 200),
       base44.entities.Team.list('name', 100),
-      isPitcher
-        ? Promise.all([
-            base44.entities.TrackmanPitch.list('pitcher_name', 2000),
-            base44.entities.TrackmanPitch.list('-pitcher_name', 2000),
-            base44.entities.TrackmanPitch.list('created_date', 2000),
-          ]).then(pages => {
-            const seen = new Set();
-            return pages.flat().filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
-          })
-        : Promise.all([
-            base44.entities.TrackmanPitch.list('batter_name', 2000),
-            base44.entities.TrackmanPitch.list('-batter_name', 2000),
-            base44.entities.TrackmanPitch.list('created_date', 2000),
-          ]).then(pages => {
-            const seen = new Set();
-            return pages.flat().filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
-          }),
+      getLeaguePitches(),
       base44.entities.Player.filter({ name: trackmanName }, undefined, 1).catch(() => []),
     ]).then(([playerPitches, obsA, obsB, obsC, g, teams, leaguePitches, playerRecords]) => {
       // The exact-match server query (pitcher_name/batter_name = trackmanName) misses

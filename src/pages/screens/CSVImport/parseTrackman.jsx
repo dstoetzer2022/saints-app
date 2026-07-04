@@ -1,4 +1,5 @@
 import { normalizePitch } from '@/lib/ds';
+import { isSwing, isWhiff } from '@/lib/statsUtils';
 
 // Parses a Trackman V3 CSV string into an array of row objects.
 export function parseTrackmanCSV(text) {
@@ -16,8 +17,14 @@ export function parseTrackmanCSV(text) {
 function splitCSVLine(line) {
   const vals = [];
   let cur = '', inQ = false;
-  for (const c of line) {
-    if (c === '"') { inQ = !inQ; }
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      // AUDIT: handle RFC-escaped double quotes ("") inside quoted fields —
+      // previously a quoted quote shifted every subsequent column in the row.
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    }
     else if (c === ',' && !inQ) { vals.push(cur); cur = ''; }
     else cur += c;
   }
@@ -78,7 +85,10 @@ export function buildArsenals(rows, gameId) {
     const spins = pr.map(r => n(r.SpinRate)).filter(v => v !== null);
     const hbs = pr.map(r => n(r.HorzBreak)).filter(v => v !== null);
     const vbs = pr.map(r => n(r.InducedVertBreak)).filter(v => v !== null);
-    const whiffs = pr.filter(r => r.PitchCall === 'StrikeSwinging').length;
+    // AUDIT: whiff% is whiffs/SWINGS (matches the season-row definition; the
+    // old whiffs/all-pitches was a different stat under the same field name).
+    const swingsN = pr.filter(isSwing).length;
+    const whiffs = pr.filter(isWhiff).length;
     const zones = pr.filter(r => isInZone(r.PlateLocHeight, r.PlateLocSide)).length;
     const aheadC = pr.filter(r => countCategory(r.Balls, r.Strikes) === 'ahead').length;
     const evenC = pr.filter(r => countCategory(r.Balls, r.Strikes) === 'even').length;
@@ -104,7 +114,7 @@ export function buildArsenals(rows, gameId) {
       horz_break_std: hbs.length ? +std(hbs).toFixed(2) : null,
       vert_break_mean: mean(vbs) ? +mean(vbs).toFixed(1) : null,
       vert_break_std: vbs.length ? +std(vbs).toFixed(2) : null,
-      whiff_pct: pr.length ? +(whiffs / pr.length).toFixed(3) : null,
+      whiff_pct: swingsN ? +(whiffs / swingsN).toFixed(3) : null, // 0-1 scale (per-game convention)
       zone_pct: pr.length ? +(zones / pr.length).toFixed(3) : null,
       ahead_count: aheadC,
       even_count: evenC,

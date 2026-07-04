@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 import { ZoneHeatmap, SprayChart, rgba } from './HitterViz';
 
 const FONT   = "'Archivo', system-ui, sans-serif";
@@ -11,7 +12,7 @@ const GOLD   = '#c8920c';
 const GOLDM  = '#c6b583';
 const TEXT   = '#e8eef5';
 const TEXTD  = '#9fb2c4';
-const TEXTF  = '#5f7488';
+const TEXTF  = '#8299ad'; // AUDIT: was #5f7488 (3.2:1 — below WCAG AA)
 const GOOD   = '#2dba5a';
 
 const SPEED_THEME = {

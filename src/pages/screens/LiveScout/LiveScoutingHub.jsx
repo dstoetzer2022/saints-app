@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
+import toast from 'react-hot-toast';
 import PitcherScoutPanel from '@/components/scouting/PitcherScoutPanel';
 import CatcherScoutPanel from '@/components/scouting/CatcherScoutPanel';
 import RunnerScoutPanel  from '@/components/scouting/RunnerScoutPanel';
@@ -46,7 +47,7 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
           background: dugoutMode === 'hitter' ? 'rgba(59,130,246,0.18)' : 'rgba(198,181,131,0.12)',
           border: `1px solid ${dugoutMode === 'hitter' ? 'rgba(59,130,246,0.5)' : 'rgba(198,181,131,0.3)'}`,
           color: dugoutMode === 'hitter' ? '#93c5fd' : GOLD,
-          borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5,
+          borderRadius: 6, padding: '7px 12px', minHeight: 44, fontWeight: 800, fontSize: 11.5,
           cursor: togglingMode ? 'wait' : 'pointer', fontFamily: FONT,
           whiteSpace: 'nowrap', transition: 'all 0.15s', opacity: togglingMode ? 0.6 : 1,
         }}>
@@ -60,18 +61,18 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
           background: orientation === 'vertical' ? 'rgba(198,181,131,0.22)' : 'rgba(198,181,131,0.12)',
           border: `1px solid ${orientation === 'vertical' ? GOLD : 'rgba(198,181,131,0.3)'}`,
           color: GOLD,
-          borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5,
+          borderRadius: 6, padding: '7px 12px', minHeight: 44, fontWeight: 800, fontSize: 11.5,
           cursor: togglingOrientation ? 'wait' : 'pointer', fontFamily: FONT,
           whiteSpace: 'nowrap', transition: 'all 0.15s', opacity: togglingOrientation ? 0.6 : 1,
         }}>
         {togglingOrientation ? '…' : orientation === 'vertical' ? '▯ VERTICAL' : '▭ HORIZONTAL'}
       </button>
       <button onClick={onToggleSub}
-        style={{ background: showSub ? 'rgba(239,68,68,0.18)' : 'rgba(198,181,131,0.12)', border: `1px solid ${showSub ? 'rgba(239,68,68,0.45)' : 'rgba(198,181,131,0.3)'}`, color: showSub ? '#f87171' : GOLD, borderRadius: 6, padding: '7px 12px', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
+        style={{ background: showSub ? 'rgba(239,68,68,0.18)' : 'rgba(198,181,131,0.12)', border: `1px solid ${showSub ? 'rgba(239,68,68,0.45)' : 'rgba(198,181,131,0.3)'}`, color: showSub ? '#f87171' : GOLD, borderRadius: 6, padding: '7px 12px', minHeight: 44, fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
         {showSub ? '✕ Cancel' : '⇄ Sub'}
       </button>
       <button onClick={onCompleteGame}
-        style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)', color: '#f87171', borderRadius: 6, padding: '7px 13px', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2, whiteSpace: 'nowrap', transition: 'all 0.15s' }}
+        style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)', color: '#f87171', borderRadius: 6, padding: '7px 13px', minHeight: 44, fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2, whiteSpace: 'nowrap', transition: 'all 0.15s' }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.3)'; }}
         onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.15)'; }}>
         ✓ End Game
@@ -398,21 +399,27 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
 
   // ── Pitcher sub ───────────────────────────────────────────────────────────
   async function handlePitcherSub({ name, jersey, hand }) {
-    if (currentPitcher) {
-      await base44.entities.PitcherObservation.update(currentPitcher.id, { is_current_pitcher: false });
+    // AUDIT: mutations during a live game previously failed silently mid-inning.
+    try {
+      if (currentPitcher) {
+        await base44.entities.PitcherObservation.update(currentPitcher.id, { is_current_pitcher: false });
+      }
+      await base44.entities.PitcherObservation.create({
+        game_id: game.id, pitcher_name: name,
+        pitcher_team: opponent?.name || '', pitcher_hand: hand || null,
+        jersey_number: jersey || null, is_current_pitcher: true,
+      });
+      setShowSub(false);
+      setTab('BATTERY');
+      reload();
+    } catch (e) {
+      toast.error(`Pitcher sub failed — ${e?.message || 'network error'}. Try again.`);
     }
-    await base44.entities.PitcherObservation.create({
-      game_id: game.id, pitcher_name: name,
-      pitcher_team: opponent?.name || '', pitcher_hand: hand || null,
-      jersey_number: jersey || null, is_current_pitcher: true,
-    });
-    setShowSub(false);
-    setTab('BATTERY');
-    reload();
   }
 
   // ── Hitter sub ────────────────────────────────────────────────────────────
   async function handleHitterSub({ name, jersey, hand, slotIndex }) {
+    try {
     const newObs = await base44.entities.BaserunnerObservation.create({
       game_id: game.id, runner_name: name, runner_team: opponent?.name || '',
       jersey_number: jersey || null, bats: hand || null,
@@ -421,6 +428,9 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
     setLineup(prev => prev.map((s, i) => i === slotIndex ? { ...s, name, jersey, hand } : s));
     setShowSub(false);
     setTab('LINEUP');
+    } catch (e) {
+      toast.error(`Hitter sub failed — ${e?.message || 'network error'}. Try again.`);
+    }
   }
 
   // ── Ensure HitterObservation exists (creates on demand) ───────────────────
@@ -443,6 +453,7 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
 
   // ── Set current batter ────────────────────────────────────────────────────
   async function setCurrentBatter(hitter) {
+    try {
     await Promise.all(
       hitterObs.filter(h => h.is_current_batter).map(h =>
         base44.entities.HitterObservation.update(h.id, { is_current_batter: false })
@@ -450,6 +461,9 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
     );
     await base44.entities.HitterObservation.update(hitter.id, { is_current_batter: true });
     setHitterObs(prev => prev.map(h => ({ ...h, is_current_batter: h.id === hitter.id })));
+    } catch (e) {
+      toast.error(`Couldn't set current batter — ${e?.message || 'network error'}.`);
+    }
   }
 
   // ── Advance batter by lineup order ────────────────────────────────────────

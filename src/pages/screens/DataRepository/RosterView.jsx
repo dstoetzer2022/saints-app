@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 import { normalizeName, canonicalNameKey } from '@/lib/statsUtils';
 import PlayerProfile from './PlayerProfile';
 import BaserunnerReport from '@/components/reports/BaserunnerReport';
@@ -206,9 +207,9 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      base44.entities.PitcherObservation.filter({ pitcher_team: teamName }, 'pitcher_name', 500),
-      base44.entities.CatcherObservation.filter({ catcher_team: teamName }, 'catcher_name', 200),
-      base44.entities.BaserunnerObservation.filter({ runner_team: teamName }, 'runner_name', 200),
+      fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_team: teamName }, 'pitcher_name'),
+      fetchAllFiltered(base44.entities.CatcherObservation, { catcher_team: teamName }, 'catcher_name'),
+      fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_team: teamName }, 'runner_name'),
       // PitcherArsenal rows carry the team's trackman_code in pitcher_team. We want the
       // COMPLETE list of the team's pitchers, so we do NOT restrict to game_id:'season' —
       // a pitcher who has per-game arsenal rows but whose season-aggregate row was never
@@ -216,18 +217,18 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       // roster dedups by canonical name key, so pulling every row per pitcher is fine.
       // Query both the trackman_code and the full name, since rows may use either.
       Promise.all([
-        base44.entities.PitcherArsenal.filter({ pitcher_team: trackmanCode }, 'pitcher_name', 1000),
+        fetchAllFiltered(base44.entities.PitcherArsenal, { pitcher_team: trackmanCode }, 'pitcher_name'),
         trackmanCode !== teamName
-          ? base44.entities.PitcherArsenal.filter({ pitcher_team: teamName }, 'pitcher_name', 1000)
+          ? fetchAllFiltered(base44.entities.PitcherArsenal, { pitcher_team: teamName }, 'pitcher_name')
           : Promise.resolve([]),
       ]).then(([a, b]) => {
         const seen = new Set();
         return [...(a||[]), ...(b||[])].filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
       }),
-      base44.entities.TrackmanPitch.filter({ batter_team: teamName }, 'batter_name', 2000),
+      fetchAllFiltered(base44.entities.TrackmanPitch, { batter_team: teamName }, 'batter_name'), // AUDIT: was capped 2000
       Promise.all([
-        base44.entities.TrackmanPitch.filter({ pitcher_team: teamName }, 'pitcher_name', 500),
-        base44.entities.TrackmanPitch.filter({ pitcher_team: trackmanCode }, 'pitcher_name', 500),
+        fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_team: teamName }, 'pitcher_name'),
+        fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_team: trackmanCode }, 'pitcher_name'),
       ]).then(([a, b]) => {
         const seen = new Set();
         return [...(a||[]), ...(b||[])].filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
