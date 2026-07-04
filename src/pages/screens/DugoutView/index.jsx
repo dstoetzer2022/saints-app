@@ -597,6 +597,16 @@ export default function DugoutView({ setScreen }) {
       return vc ? { ...r, video_url: vc.video_url, video_thumbnail_url: vc.video_thumbnail_url || r.video_thumbnail_url } : r;
     });
 
+    // Dedupe by pitch type — season rows can have duplicates from repeated
+    // aggregation runs. arsenal is already newest-first, so keep first-seen.
+    const seenTypes = new Set();
+    arsenal = arsenal.filter(r => {
+      const t = normalizePitch(r.pitch_type);
+      if (seenTypes.has(t)) return false;
+      seenTypes.add(t);
+      return true;
+    });
+
     setSeasonArsenal([...arsenal].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0)));
     setActiveArsenalIdx(0);
     // AUDIT: previously `ratesArr[0] || prev` kept the LAST pitcher's rates on
