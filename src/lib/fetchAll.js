@@ -19,8 +19,18 @@ async function drain(fetchPage, { max = 20000, delayMs = 120 } = {}) {
   let skip = 0;
   for (;;) {
     let page = [];
-    try { page = (await fetchPage(PAGE, skip)) || []; }
-    catch { break; } // partial result beats a crash; callers already tolerate []
+    let ok = false;
+    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      try { page = (await fetchPage(PAGE, skip)) || []; ok = true; }
+      catch (err) {
+        if (attempt === 2) {
+          console.warn(`fetchAll: page at skip=${skip} failed after 3 attempts, stopping early`, err);
+        } else {
+          await sleep(300 * (attempt + 1)); // backoff before retry
+        }
+      }
+    }
+    if (!ok) break; // partial result beats a crash; callers already tolerate []
     let added = 0;
     for (const r of page) {
       if (!r || seen.has(r.id)) continue;
