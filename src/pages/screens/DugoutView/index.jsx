@@ -340,11 +340,18 @@ function StatFooter({ pitch }) {
 
 // ── Video panel — plays the clip for the currently active pitch type ──
 function VideoPanel({ videoUrl, pitchType, orientation }) {
-  const src = dugoutVideoUrl(videoUrl, orientation);
+  const [failed, setFailed] = useState(false);
+  const src = failed ? videoUrl : dugoutVideoUrl(videoUrl, orientation);
   return (
     <div style={{ flex: 1, background: '#050d13', border: '1px solid rgba(198,181,131,.15)', borderRadius: 10, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
       {src ? (
-        <video key={pitchType + src} src={src} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <video
+          key={pitchType + src}
+          src={src}
+          autoPlay muted loop playsInline
+          onError={() => { if (!failed) setFailed(true); }}
+          style={{ width: '100%', height: '100%', objectFit: failed ? 'contain' : 'cover' }}
+        />
       ) : (
         <div style={{ color: 'rgba(198,181,131,.35)', fontSize: 13, fontFamily: FONT, fontStyle: 'italic' }}>
           {pitchType ? `No clip for ${pitchType}` : 'No pitch active'}
@@ -461,7 +468,7 @@ export default function DugoutView({ setScreen }) {
     const key = canonicalKey(pitcherName);
 
     // Curated trails may be stored with full team name OR trackman code — try both
-    const [arsenalRaw, ratesRaw, curatedByCode, curatedByName] = await Promise.all([
+    const [arsenalRaw, ratesRaw, curatedByCode, curatedByName, videoClipsRaw] = await Promise.all([
       base44.entities.PitcherArsenal.filter(
         { game_id: 'season', pitcher_name: lastFirst, pitcher_team: teamTrackmanCode },
         '-created_date', 50
@@ -480,6 +487,12 @@ export default function DugoutView({ setScreen }) {
             'display_order', 50
           ).catch(() => [])
         : Promise.resolve([]),
+      // Video clips live in their own entity, decoupled from PitcherArsenal —
+      // season rows get wiped/regenerated on every Trackman resync, which was
+      // silently deleting attached video_url values. This table survives that.
+      base44.entities.PitcherVideoClip.filter(
+        { pitcher_name: lastFirst, pitcher_team: teamTrackmanCode }, null, 50
+      ).catch(() => []),
     ]);
 
     // Fallback: broader search by canonical key if exact query missed
@@ -571,6 +584,18 @@ export default function DugoutView({ setScreen }) {
 
     // Merge curated results (prefer whichever has entries)
     const curatedRaw = (curatedByCode && curatedByCode.length > 0) ? curatedByCode : (curatedByName || []);
+
+    let videoClips = videoClipsRaw || [];
+    if (!videoClips.length) {
+      const broader = await base44.entities.PitcherVideoClip.list(null, 500).catch(() => []);
+      videoClips = broader.filter(r => canonicalKey(r.pitcher_name) === key);
+    }
+    const videoByType = {};
+    for (const v of videoClips) videoByType[normalizePitch(v.pitch_type)] = v;
+    arsenal = arsenal.map(r => {
+      const vc = videoByType[normalizePitch(r.pitch_type)];
+      return vc ? { ...r, video_url: vc.video_url, video_thumbnail_url: vc.video_thumbnail_url || r.video_thumbnail_url } : r;
+    });
 
     setSeasonArsenal([...arsenal].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0)));
     setActiveArsenalIdx(0);
