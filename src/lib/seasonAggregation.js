@@ -95,7 +95,7 @@ async function fetchAllPitches(lastFirstName) {
 }
 
 // ── Core builder ──────────────────────────────────────────────────────────────
-export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, teamFullName, onProgress) {
+export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, teamFullName, onProgress, validTeamCodes) {
   if (isPlaceholder(lastFirstName)) return;
 
   if (onProgress) onProgress(`Fetching pitches for ${lastFirstName}…`);
@@ -123,6 +123,17 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
     base44.entities.PitcherSeasonRates, {}, '-created_date', { max: 3000 }
   )).filter(r => canonicalNameKey(r.pitcher_name) === myKey);
 
+  // AUDIT: exhibition/all-star game team codes (e.g. "202_CCL", "202_CCL1")
+  // are never registered as real Teams. If the code driving this rebuild
+  // isn't a known registered code, don't let it clobber the pitcher's real
+  // season team label — keep whatever is already on file.
+  let effectiveTeamCode = teamTrackmanCode;
+  let effectiveTeamFullName = teamFullName;
+  if (validTeamCodes && !validTeamCodes.has(teamTrackmanCode)) {
+    const priorTeam = existingRates[0]?.pitcher_team || existingArsenal[0]?.pitcher_team;
+    if (priorTeam) { effectiveTeamCode = priorTeam; effectiveTeamFullName = priorTeam; }
+  }
+
   // Build arsenal rows (usage_pct stored as whole-number 0-100 on season rows)
   const arsenalRows = Object.entries(groups).map(([pitch_type, rs]) => {
     const count = rs.length;
@@ -141,7 +152,7 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
 
     const record = {
       pitcher_name: lastFirstName,
-      pitcher_team: teamTrackmanCode,
+      pitcher_team: effectiveTeamCode,
       game_id: 'season',
       pitch_type,
       count,
@@ -188,7 +199,7 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
   }
   const newRates = await base44.entities.PitcherSeasonRates.create({
     pitcher_name: lastFirstName,
-    pitcher_team: teamTrackmanCode,
+    pitcher_team: effectiveTeamCode,
     total_pitches: total,
     updated_date: new Date().toISOString(),
     ...rates,
@@ -257,7 +268,8 @@ async function fetchAllDistinctPitchers(nameToCode) {
 // files, instead of hammering the API with a full-league rebuild every import.
 export async function rebuildPitchersByName(pitcherEntries, allTeams, onProgress) {
   const nameToCode = {};
-  (allTeams || []).forEach(t => { if (t.trackman_code) nameToCode[t.name] = t.trackman_code; });
+  const validTeamCodes = new Set();
+  (allTeams || []).forEach(t => { if (t.trackman_code) { nameToCode[t.name] = t.trackman_code; validTeamCodes.add(t.trackman_code); } });
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const seen = new Set();
@@ -273,10 +285,10 @@ export async function rebuildPitchersByName(pitcherEntries, allTeams, onProgress
     const teamCode = nameToCode[team] || team || '';
     if (onProgress) onProgress(`Rebuilding ${lastFirst} (${done + 1}/${unique.length})…`);
     try {
-      await rebuildPitcherSeason(lastFirst, teamCode, team, null);
+      await rebuildPitcherSeason(lastFirst, teamCode, team, null, validTeamCodes);
     } catch (e) {
       await sleep(1000);
-      try { await rebuildPitcherSeason(lastFirst, teamCode, team, null); } catch (e2) { /* skip */ }
+      try { await rebuildPitcherSeason(lastFirst, teamCode, team, null, validTeamCodes); } catch (e2) { /* skip */ }
     }
     done++;
     await sleep(200);
@@ -326,8 +338,9 @@ export async function snapshotTeamSeasonStats(teamTrackmanCode, allTeams) {
 export async function rebuildAllPitcherSeasons(allTeams, onProgress) {
   const codeToName = {};
   const nameToCode = {};
+  const validTeamCodes = new Set();
   (allTeams || []).forEach(t => {
-    if (t.trackman_code) { codeToName[t.trackman_code] = t.name; nameToCode[t.name] = t.trackman_code; }
+    if (t.trackman_code) { codeToName[t.trackman_code] = t.name; nameToCode[t.name] = t.trackman_code; validTeamCodes.add(t.trackman_code); }
   });
 
   // NO GLOBAL WIPE — per-pitcher create-then-delete in rebuildPitcherSeason.
@@ -339,10 +352,10 @@ export async function rebuildAllPitcherSeasons(allTeams, onProgress) {
   for (const { name, teamCode, teamFullName } of pairs) {
     if (onProgress) onProgress(`Rebuilding ${name} (${done + 1}/${pairs.length})…`);
     try {
-      await rebuildPitcherSeason(name, teamCode, teamFullName, null);
+      await rebuildPitcherSeason(name, teamCode, teamFullName, null, validTeamCodes);
     } catch (e) {
       await sleep(1000);
-      try { await rebuildPitcherSeason(name, teamCode, teamFullName, null); } catch (e2) { /* skip */ }
+      try { await rebuildPitcherSeason(name, teamCode, teamFullName, null, validTeamCodes); } catch (e2) { /* skip */ }
     }
     done++;
     await sleep(200);
