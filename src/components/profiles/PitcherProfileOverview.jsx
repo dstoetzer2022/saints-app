@@ -30,7 +30,7 @@ const n0 = v => v == null ? '—' : Math.round(v).toString();
 
 function sHead(label, sub) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${C.edge}` }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 9, paddingBottom: 6, borderBottom: `1px solid ${C.edge}` }}>
       <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>{label}</span>
       {sub && <span style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>{sub}</span>}
     </div>
@@ -54,14 +54,14 @@ function StatPill({ item }) {
       onMouseLeave={() => setHovered(false)}
       style={{
         background: hovered ? C.raised : C.surface,
-        border: `1px solid ${hovered ? C.gold : C.edge}`, borderRadius: 8,
-        padding: '10px 16px', minWidth: 72, textAlign: 'center',
+        border: `1px solid ${hovered ? C.gold : C.edge}`, borderRadius: 7,
+        padding: '7px 13px', minWidth: 64, textAlign: 'center',
         transition: 'all 0.15s ease',
         transform: hovered ? 'translateY(-1px)' : 'none',
       }}
     >
-      <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{item.label}</div>
-      <div style={{ fontSize: 17, fontWeight: 900, color: item.gold ? C.gold : C.white, marginTop: 3, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{item.value}</div>
+      <div style={{ fontSize: 8.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{item.label}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: item.gold ? C.gold : C.white, marginTop: 2, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{item.value}</div>
     </div>
   );
 }
@@ -70,7 +70,7 @@ function StatPills({ items }) {
   const valid = items.filter(Boolean);
   if (!valid.length) return null;
   return (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20, justifyContent: 'center' }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, justifyContent: 'center' }}>
       {valid.map(it => <StatPill key={it.label} item={it} />)}
     </div>
   );
@@ -136,18 +136,18 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
         <div
           key={cat.title}
           style={{
-            paddingTop: i > 0 ? 14 : 0,
-            marginTop: i > 0 ? 14 : 0,
+            paddingTop: i > 0 ? 10 : 0,
+            marginTop: i > 0 ? 10 : 0,
             borderTop: i > 0 ? `1px solid ${C.edge}` : 'none',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-            <span style={{ width: 3, height: 11, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1.4, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+            <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
               {cat.title}
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 32px' }}>
             {cat.rows.map(row => {
               const rank = percentileRank(row.pool, row.raw);
               const display = row.invert && rank != null ? 100 - rank : rank;
@@ -156,7 +156,7 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
           </div>
         </div>
       ))}
-      <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
+      <div style={{ fontSize: 10, color: C.muted, marginTop: 6, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
     </div>
   );
 }
@@ -720,7 +720,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
       {hasPercentiles && (
         <>
           {sHead('Percentiles', 'vs CCL')}
-          <Card style={{ marginBottom: 18 }}>
+          <Card style={{ marginBottom: 14, padding: '12px 14px' }}>
             <PitcherPercentiles pitches={filteredPitches} allPitches={pitches} pitcherPool={pitcherPool} />
           </Card>
         </>

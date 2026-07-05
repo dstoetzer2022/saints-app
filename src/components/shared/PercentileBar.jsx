@@ -26,12 +26,12 @@ export default function PercentileBar({ label, value, percentile, invert = false
 
   if (percentile == null) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, fontFamily: FONT }}>
-        <div style={{ width: 160, flexShrink: 0, textAlign: 'right' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: LABEL }}>{label} </span>
-          <span style={{ fontSize: 12, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, fontFamily: FONT }}>
+        <div style={{ width: 150, flexShrink: 0, textAlign: 'right' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: LABEL }}>{label} </span>
+          <span style={{ fontSize: 11.5, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
         </div>
-        <div style={{ flex: 1, fontSize: 11, color: MUTED, fontStyle: 'italic' }}>small sample</div>
+        <div style={{ flex: 1, fontSize: 10.5, color: MUTED, fontStyle: 'italic' }}>small sample</div>
       </div>
     );
   }
@@ -41,39 +41,39 @@ export default function PercentileBar({ label, value, percentile, invert = false
   const color = markerColor(displayPct);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, fontFamily: FONT }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, fontFamily: FONT }}>
       {/* Label + value on the left */}
-      <div style={{ width: 160, flexShrink: 0, textAlign: 'right' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: LABEL }}>{label} </span>
-        <span style={{ fontSize: 12, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
+      <div style={{ width: 150, flexShrink: 0, textAlign: 'right' }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: LABEL }}>{label} </span>
+        <span style={{ fontSize: 11.5, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
       </div>
 
       {/* Track */}
-      <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.07)', borderRadius: 4, position: 'relative', overflow: 'visible' }}>
+      <div style={{ flex: 1, height: 7, background: 'rgba(255,255,255,0.07)', borderRadius: 3.5, position: 'relative', overflow: 'visible' }}>
         {/* Filled portion */}
         <div style={{
           position: 'absolute', left: 0, top: 0, height: '100%',
           width: `${barPct}%`,
           background: `linear-gradient(to right, #1e4a7a, ${color})`,
-          borderRadius: 4,
+          borderRadius: 3.5,
         }} />
         {/* Bubble marker */}
         <div style={{
           position: 'absolute',
-          left: `calc(${barPct}% - 14px)`,
-          top: -10,
-          width: 28,
-          height: 28,
+          left: `calc(${barPct}% - 11px)`,
+          top: -7.5,
+          width: 22,
+          height: 22,
           borderRadius: '50%',
           background: color,
-          border: '2.5px solid #080f17',
-          boxShadow: `0 2px 6px rgba(0,0,0,0.6), 0 0 8px ${color}55`,
+          border: '2px solid #080f17',
+          boxShadow: `0 2px 5px rgba(0,0,0,0.6), 0 0 6px ${color}55`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{Math.round(displayPct)}</span>
+          <span style={{ fontSize: 9, fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{Math.round(displayPct)}</span>
         </div>
       </div>
     </div>
