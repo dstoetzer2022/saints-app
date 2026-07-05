@@ -62,8 +62,56 @@ function PlayerRow({ player, active, onClick }) {
   );
 }
 
+// Inline-editable jersey number cell. Click to edit, Enter/blur to save.
+// Writes to the Player entity — the canonical, editable source of jersey numbers.
+function JerseyCell({ value, onSave, color }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const inputRef = React.useRef(null);
+
+  useEffect(() => { setDraft(value || ''); }, [value]);
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed !== (value || '')) onSave(trimmed);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') { setDraft(value || ''); setEditing(false); }
+        }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: 44, fontSize: 18, fontWeight: 900, color: C.white, fontFamily: FONT,
+          background: 'rgba(255,255,255,0.07)', border: `1.5px solid ${C.gold}`, borderRadius: 5,
+          padding: '2px 6px', outline: 'none', fontVariantNumeric: 'tabular-nums',
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={e => { e.stopPropagation(); setEditing(true); }}
+      style={{ fontSize: 18, fontWeight: 900, color, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.5, cursor: 'pointer' }}
+      title="Click to edit"
+    >
+      {value || '—'}
+    </span>
+  );
+}
+
 // ── Wide roster table for desktop/TV ──────────────────────────
-function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team }) {
+function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSaveJersey }) {
   const accentColor = team?.primary_color || C.gold;
   const allPlayers = [
     ...pitchers.map(p => ({ ...p, _section: 'Pitchers' })),
@@ -133,8 +181,12 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team }) {
                       onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = C.raised; }}
                       onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
                     >
-                      <td style={{ padding: '9px 14px', fontSize: 18, fontWeight: 900, color: isActive ? C.gold : C.white, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.5 }}>
-                        {p.jerseyNumber || '—'}
+                      <td style={{ padding: '9px 14px', fontWeight: 900 }}>
+                        <JerseyCell
+                          value={p.jerseyNumber}
+                          color={isActive ? C.gold : C.white}
+                          onSave={val => onSaveJersey(p.name, val)}
+                        />
                       </td>
                       <td style={{ padding: '9px 14px' }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: isActive ? C.white : C.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -181,6 +233,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [sidebarTab, setSidebarTab] = useState(initialTab === 'hitters' ? 'hitters' : 'pitchers');
   const [showRunnerReport, setShowRunnerReport] = useState(false);
   const [showPitcherCatcherReport, setShowPitcherCatcherReport] = useState(false);
+  const [playerRoster, setPlayerRoster] = useState([]);
 
   const teamName = team.name;
   const trackmanCode = team.trackman_code || teamName;
@@ -214,10 +267,12 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
         const seen = new Set();
         return [...(a||[]), ...(b||[])].filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
       }),
-    ]).then(([po, co, ro, teamArsenal, bp, tp]) => {
+      fetchAllFiltered(base44.entities.Player, { team: teamName }, 'name'),
+    ]).then(([po, co, ro, teamArsenal, bp, tp, playerRosterRows]) => {
       setPitcherObs(po);
       setCatcherObs(co);
       setRunnerObs(ro);
+      setPlayerRoster(playerRosterRows || []);
 
       // teamArsenal is already scoped to this team server-side — every season pitcher
       // for the team appears here regardless of the raw-pitch page. Use it directly.
@@ -358,6 +413,15 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       h.positions = positionsMap[key] ? [...positionsMap[key]] : [];
     });
 
+    // Player entity is the canonical, editable source for jersey numbers (via the
+    // roster editor below) — it overrides whatever scouting rows happened to record.
+    playerRoster.forEach(pl => {
+      if (!pl.name || !pl.jersey_number) return;
+      const key = canonicalNameKey(pl.name);
+      if (pitcherMap[key]) pitcherMap[key].jerseyNumber = pl.jersey_number;
+      if (hitterMap[key]) hitterMap[key].jerseyNumber = pl.jersey_number;
+    });
+
     const sortByJersey = arr => arr.sort((a, b) => {
       const na = parseInt(a.jerseyNumber) || 999;
       const nb = parseInt(b.jerseyNumber) || 999;
@@ -398,7 +462,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       pitchers: pitcherList,
       hitters: hitterList,
     };
-  }, [pitcherObs, catcherObs, runnerObs, pitches, batterPitches]);
+  }, [pitcherObs, catcherObs, runnerObs, pitches, batterPitches, playerRoster]);
 
   // Total game count (rough) — exclude synthetic arsenal rows
   const gameCount = useMemo(() => {
@@ -410,6 +474,28 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   }, [pitches, batterPitches]);
 
   const initials = team.name ? team.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '??';
+
+  const saveJerseyNumber = async (playerName, value) => {
+    try {
+      const existing = await base44.entities.Player.filter({ name: playerName, team: teamName }, undefined, 1);
+      if (existing?.length) {
+        await base44.entities.Player.update(existing[0].id, { jersey_number: value });
+      } else {
+        await base44.entities.Player.create({ name: playerName, team: teamName, jersey_number: value });
+      }
+      setPlayerRoster(prev => {
+        const idx = prev.findIndex(pl => canonicalNameKey(pl.name) === canonicalNameKey(playerName));
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], jersey_number: value };
+          return copy;
+        }
+        return [...prev, { name: playerName, team: teamName, jersey_number: value }];
+      });
+    } catch {
+      // Swallow — the input reverts to its prior value on next render if the write failed.
+    }
+  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: C.base, fontFamily: FONT, overflow: 'hidden' }}>
@@ -517,6 +603,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                   activePlayer={activePlayer}
                   onSelect={p => { setActivePlayer(p); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
                   team={team}
+                  onSaveJersey={saveJerseyNumber}
                 />
               </div>
               <div className="narrow-roster-empty" style={{ flex: 1, display: 'none', alignItems: 'center', justifyContent: 'center' }}>
