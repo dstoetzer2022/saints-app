@@ -614,58 +614,50 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: C.base, minHeight: 0, overflow: 'hidden' }}>
 
-      {/* Profile header */}
-      <div style={{ padding: '14px 28px 14px', background: '#0e253a', borderBottom: `1px solid ${C.edge}`, flexShrink: 0 }}>
+      {/* Profile header — single horizontal band: back · jersey · identity · edit controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 28px', background: '#0e253a', borderBottom: `1px solid ${C.edge}`, flexShrink: 0 }}>
         <button
           onClick={onBack}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: C.muted, fontFamily: FONT, padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}
+          title="Back to Roster"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: C.muted, fontFamily: FONT, padding: 4, flexShrink: 0 }}
         >
-          ← Back to Roster
+          ←
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {/* Jersey number */}
-          {player.jerseyNumber && (
-            <div style={{ flexShrink: 0 }}>
-              <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1, letterSpacing: -2, color: '#b8860b', fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>
-                #{player.jerseyNumber}
-              </div>
-            </div>
-          )}
-          {/* Identity block */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, lineHeight: 1.2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 26, fontWeight: 900, color: '#ffffff', letterSpacing: -0.5, fontFamily: FONT, lineHeight: 1 }}>
-                {player.name}
-              </span>
-              {/* Bats/Throws badges */}
-              {player.bats && (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(184,134,11,0.2)', color: '#c6b583', fontFamily: FONT }}>
-                  B: {player.bats}
-                </span>
-              )}
-              {player.throws && (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(184,134,11,0.2)', color: '#c6b583', fontFamily: FONT }}>
-                  T: {player.throws}
-                </span>
-              )}
-              {player.hand && !player.bats && !player.throws && (
-                <HandChip isPitcher={isPitcher} hand={player.hand} />
-              )}
-            </div>
-            {school && (
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#c6b583', fontFamily: FONT }}>
-                {school}
+        {/* Jersey number */}
+        {player.jerseyNumber && (
+          <div style={{ flexShrink: 0, fontSize: 30, fontWeight: 900, lineHeight: 1, letterSpacing: -1.5, color: '#b8860b', fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>
+            #{player.jerseyNumber}
+          </div>
+        )}
+        {/* Identity block */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1.15 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 22, fontWeight: 900, color: '#ffffff', letterSpacing: -0.5, fontFamily: FONT, lineHeight: 1 }}>
+              {player.name}
+            </span>
+            {/* Bats/Throws badges */}
+            {player.bats && (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(184,134,11,0.2)', color: '#c6b583', fontFamily: FONT }}>
+                B: {player.bats}
               </span>
             )}
-            <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', fontFamily: FONT }}>
-              {team.name} · {isPitcher ? 'Pitcher' : 'Hitter'}
-            </span>
+            {player.throws && (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(184,134,11,0.2)', color: '#c6b583', fontFamily: FONT }}>
+                T: {player.throws}
+              </span>
+            )}
+            {player.hand && !player.bats && !player.throws && (
+              <HandChip isPitcher={isPitcher} hand={player.hand} />
+            )}
           </div>
-          {/* Edit bar — jersey + school only */}
-          <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <ExportProfileButton />
-            <PlayerInfoBar playerName={trackmanName} onSchoolChange={setSchool} />
-          </div>
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.55)', fontFamily: FONT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {[school, `${team.name} · ${isPitcher ? 'Pitcher' : 'Hitter'}`].filter(Boolean).join(' · ')}
+          </span>
+        </div>
+        {/* Edit bar — jersey + school only */}
+        <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ExportProfileButton />
+          <PlayerInfoBar playerName={trackmanName} onSchoolChange={setSchool} />
         </div>
       </div>
 

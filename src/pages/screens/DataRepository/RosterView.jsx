@@ -497,69 +497,15 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
     }
   };
 
+  const reportLabel = sidebarTab === 'hitters' ? 'Baserunner Report' : 'Pitcher & Catcher Report';
+  const openReport = () => sidebarTab === 'hitters' ? setShowRunnerReport(true) : setShowPitcherCatcherReport(true);
+
   return (
     <div style={{ display: 'flex', height: '100vh', background: C.base, fontFamily: FONT, overflow: 'hidden' }}>
 
-      {/* ── Sidebar ── */}
-      <div style={{ width: 240, flexShrink: 0, background: C.surface, borderRight: `1px solid ${C.edge}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        {/* Top section */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: `1px solid ${C.edge}` }}>
-          <button
-            onClick={onBack}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: C.muted, fontFamily: FONT, padding: 0, marginBottom: 14 }}
-          >
-            ← {team.name}
-          </button>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {team.logo_url
-              ? <img src={team.logo_url} alt={team.name} style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 5, border: `1px solid ${C.rim}`, background: C.raised }} />
-              : (
-                <div style={{ width: 40, height: 40, borderRadius: 5, background: C.raised, border: `1px solid ${C.rim}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: FONT }}>
-                  {initials}
-                </div>
-              )
-            }
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: C.white, letterSpacing: -0.3, fontFamily: FONT }}>{team.name}</div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, marginTop: 1, fontFamily: FONT }}>
-                {[team.division && team.division + ' Division', gameCount > 0 && gameCount + ' games'].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Print report button — only the report relevant to this screen */}
-        <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.edge}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {sidebarTab === 'hitters' ? (
-            <button
-              onClick={() => setShowRunnerReport(true)}
-              style={{
-                width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
-                borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
-                fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
-              }}
-            >
-              🖨 Baserunner Report
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowPitcherCatcherReport(true)}
-              style={{
-                width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
-                borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
-                fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
-              }}
-            >
-              🖨 Pitcher & Catcher Report
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* ── Main panel ── */}
       {activePlayer ? (
+        /* Profile view is edge-to-edge — the rail collapses; PlayerProfile owns its own back control */
         <PlayerProfile
           player={activePlayer}
           team={team}
@@ -568,34 +514,83 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           onNavigate={p => setActivePlayer(p)}
         />
       ) : (
-        <div style={{ flex: 1, background: C.base, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {/* Wide table — shown on desktop/TV, hidden below 768px via inline media is not possible,
-              so we use a CSS class trick via the <style> tag already present */}
-          {loading ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 24, height: 24, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            </div>
-          ) : (
-            <>
-              <div className="wide-roster-table" style={{ flex: 1, overflow: 'hidden' }}>
-                <WideRosterTable
-                  pitchers={sidebarTab === 'pitchers' ? pitchers : []}
-                  hitters={sidebarTab === 'hitters' ? hitters : []}
-                  activePlayer={activePlayer}
-                  onSelect={p => { setActivePlayer(p); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
-                  team={team}
-                  onSaveJersey={saveJerseyNumber}
-                />
-              </div>
-              <div className="narrow-roster-empty" style={{ flex: 1, display: 'none', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', color: C.faint }}>
-                  <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>⚾</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: FONT }}>Select a player</div>
+        <>
+          {/* ── Icon rail (list view only) ── */}
+          <div style={{ width: 48, flexShrink: 0, background: C.surface, borderRight: `1px solid ${C.edge}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '14px 0', overflow: 'hidden' }}>
+            <button
+              onClick={onBack}
+              title={`Back to ${team.name}`}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontFamily: FONT, fontSize: 18, lineHeight: 1, padding: 4 }}
+            >
+              ←
+            </button>
+            {team.logo_url
+              ? <img src={team.logo_url} alt={team.name} title={team.name} style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 5, border: `1px solid ${C.rim}`, background: C.raised }} />
+              : (
+                <div title={team.name} style={{ width: 32, height: 32, borderRadius: 5, background: C.raised, border: `1px solid ${C.rim}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: C.gold, fontFamily: FONT }}>
+                  {initials}
+                </div>
+              )
+            }
+            <button
+              onClick={openReport}
+              title={reportLabel}
+              style={{ background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`, borderRadius: 5, cursor: 'pointer', color: C.gold, fontFamily: FONT, fontSize: 15, lineHeight: 1, padding: '6px 7px' }}
+            >
+              🖨
+            </button>
+          </div>
+
+          {/* ── Roster panel ── */}
+          <div style={{ flex: 1, background: C.base, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Header strip — team identity (once) + the report relevant to this screen */}
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBottom: `1px solid ${C.edge}`, background: C.surface }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: C.white, letterSpacing: -0.3, fontFamily: FONT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.name}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, marginTop: 1, fontFamily: FONT }}>
+                  {[team.division && team.division + ' Division', gameCount > 0 && gameCount + ' games'].filter(Boolean).join(' · ')}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+              <button
+                onClick={openReport}
+                style={{
+                  flexShrink: 0, background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
+                  borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: C.gold,
+                  fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
+                }}
+              >
+                🖨 {reportLabel}
+              </button>
+            </div>
+
+            {/* Wide table — shown on desktop/TV, hidden below 768px via inline media is not possible,
+                so we use a CSS class trick via the <style> tag already present */}
+            {loading ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 24, height: 24, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            ) : (
+              <>
+                <div className="wide-roster-table" style={{ flex: 1, overflow: 'hidden' }}>
+                  <WideRosterTable
+                    pitchers={sidebarTab === 'pitchers' ? pitchers : []}
+                    hitters={sidebarTab === 'hitters' ? hitters : []}
+                    activePlayer={activePlayer}
+                    onSelect={p => { setActivePlayer(p); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
+                    team={team}
+                    onSaveJersey={saveJerseyNumber}
+                  />
+                </div>
+                <div className="narrow-roster-empty" style={{ flex: 1, display: 'none', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ textAlign: 'center', color: C.faint }}>
+                    <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>⚾</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, fontFamily: FONT }}>Select a player</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </>
       )}
 
       <style>{`
