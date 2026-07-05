@@ -231,6 +231,16 @@ export function stdDev(arr) {
   return Math.sqrt(variance);
 }
 
+// Circular mean of angles in degrees (e.g. spin_axis, a clock-face direction
+// where 359° and 1° should average to 0°, not 180°).
+export function circularMean(degs) {
+  const valid = (degs || []).filter(d => d != null && Number.isFinite(d));
+  if (!valid.length) return null;
+  let sx = 0, sy = 0;
+  for (const d of valid) { const r = d * Math.PI / 180; sx += Math.cos(r); sy += Math.sin(r); }
+  return ((Math.atan2(sy / valid.length, sx / valid.length) * 180 / Math.PI) + 360) % 360;
+}
+
 export function percentile(value, pool) {
   // AUDIT: an empty pool used to render a plausible-looking "50th percentile".
   if (!pool || pool.length === 0 || value == null) return null;

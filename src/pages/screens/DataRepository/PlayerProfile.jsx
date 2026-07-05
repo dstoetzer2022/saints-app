@@ -11,6 +11,8 @@ import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
 import { lazy, Suspense } from 'react';
 const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
+import ExportProfileButton from '@/components/shared/ExportProfileButton';
+import ProfileCompareTab from '@/components/shared/ProfileCompareTab';
 import PasswordGate from '@/components/shared/PasswordGate';
 import { C, FONT } from '@/lib/darkTheme';
 
@@ -604,10 +606,13 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       });
 
       setPitches(mergedPitches);
+      // AUDIT: setLeaguePitches was only called on the pitcher branch — the
+      // compare-tab player picker (and any future hitter feature needing the
+      // league set) had nothing to search on hitter profiles.
+      setLeaguePitches(leaguePitches);
       if (isPitcher) {
         setPitcherObs(obsA);
         setPitcherPool(buildPitcherPool(leaguePitches));
-        setLeaguePitches(leaguePitches);
       } else {
         setCatcherObs(obsB);
         setRunnerObs(obsC);
@@ -624,8 +629,8 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
     });
   }, [normalizedName, trackmanName, isPitcher]);
 
-  const tabs = isPitcher ? ['overview', '3dflight', 'trailcuration', 'gamelog'] : ['overview', 'gamelog'];
-  const tabLabels = { overview: 'Overview', '3dflight': '3D Flight', trailcuration: 'Trail Curation', gamelog: 'Game Log' };
+  const tabs = isPitcher ? ['overview', '3dflight', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
+  const tabLabels = { overview: 'Overview', '3dflight': '3D Flight', trailcuration: 'Trail Curation', gamelog: 'Game Log', compare: 'Compare' };
 
   // Eyebrow
   const eyebrow = `${team.name} · ${isPitcher ? 'Pitcher' : 'Hitter'}`;
@@ -681,14 +686,15 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
             </span>
           </div>
           {/* Edit bar — jersey + school only */}
-          <div style={{ flexShrink: 0 }}>
+          <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ExportProfileButton />
             <PlayerInfoBar playerName={trackmanName} onSchoolChange={setSchool} />
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0, padding: '0 32px' }}>
+      <div className="no-print" style={{ display: 'flex', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0, padding: '0 32px' }}>
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             background: 'none', border: 'none', cursor: 'pointer',
@@ -705,7 +711,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: (tab === '3dflight' || tab === 'trailcuration') ? 'hidden' : 'auto', padding: (tab === '3dflight' || tab === 'trailcuration') ? 0 : '28px 32px 80px', display: (tab === '3dflight' || tab === 'trailcuration') ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
+      <div data-print-root style={{ flex: 1, overflowY: (tab === '3dflight' || tab === 'trailcuration') ? 'hidden' : 'auto', padding: (tab === '3dflight' || tab === 'trailcuration') ? 0 : '28px 32px 80px', display: (tab === '3dflight' || tab === 'trailcuration') ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
             <div style={{ width: 26, height: 26, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -730,6 +736,14 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
             )}
             {tab === 'gamelog' && (
               <GameLog playerName={player.name} isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} />
+            )}
+            {tab === 'compare' && (
+              <ProfileCompareTab
+                currentName={player.name}
+                currentPitches={pitches}
+                isPitcher={isPitcher}
+                leaguePitches={leaguePitches}
+              />
             )}
           </>
         )}

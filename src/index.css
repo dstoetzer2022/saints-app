@@ -67,4 +67,18 @@
   .no-print { display: none !important; }
   body { background: white !important; }
   header { display: none !important; }
+  /* AUDIT (Savant-parity export): print-friendly player profile — expand the
+     scrollable content region to full height and drop dark backgrounds so
+     stat cards print legibly instead of dark-on-dark. */
+  [data-print-root] {
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  [data-print-root] * {
+    background: white !important;
+    color: #111 !important;
+    border-color: #ccc !important;
+  }
 }

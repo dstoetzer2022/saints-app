@@ -3,8 +3,158 @@
  * Matches SaintsScoutEngine logic exactly.
  */
 
-import { normalizePitch } from '@/lib/ds';
-import { canonicalNameKey, isSwing as isSwingRow, isWhiff } from '@/lib/statsUtils';
+import { normalizePitch, getPitchColor } from '@/lib/ds';
+import { canonicalNameKey, isSwing as isSwingRow, isWhiff, isStrike, circularMean, isFastballVeloType } from '@/lib/statsUtils';
+
+// ── Savant-parity feature helpers ─────────────────────────────────────────────
+// Shared source for all new profile-page additions (pitcher AND hitter), so
+// CSW%/K-BB%, release point, extension, spin direction, zone splits, and the
+// rolling trend chart each have exactly one implementation.
+
+const hasLoc = p => Number.isFinite(parseFloat(p.plate_loc_height)) && Number.isFinite(parseFloat(p.plate_loc_side));
+const inZone = p => {
+  const h = parseFloat(p.plate_loc_height), s = parseFloat(p.plate_loc_side);
+  return Number.isFinite(h) && Number.isFinite(s) && h >= 1.5 && h <= 3.5 && s >= -0.83 && s <= 0.83;
+};
+
+// CSW% (called strikes + whiffs / total) and K-BB% (K rate minus BB rate,
+// approximated from kor_bb outcomes per plate appearance seen in these rows).
+export function cswKbb(rows) {
+  const n = rows.length;
+  if (!n) return { cswPct: null, kbbPct: null, n: 0 };
+  const csw = rows.filter(r => r.pitch_call === 'StrikeCalled' || isWhiff(r)).length;
+  const cswPct = Math.round((csw / n) * 100);
+  // kor_bb marks the pitch that ends a PA in a K or BB; count once per PA.
+  const paEnders = rows.filter(r => r.kor_bb === 'Strikeout' || r.kor_bb === 'Walk');
+  let kbbPct = null;
+  if (paEnders.length >= 10) {
+    const k = paEnders.filter(r => r.kor_bb === 'Strikeout').length;
+    const bb = paEnders.filter(r => r.kor_bb === 'Walk').length;
+    kbbPct = Math.round(((k - bb) / paEnders.length) * 100);
+  }
+  return { cswPct, kbbPct, n };
+}
+
+// Release point scatter, grouped by canonical pitch type for coloring.
+export function releasePoints(rows) {
+  const groups = {};
+  for (const r of rows) {
+    const x = parseFloat(r.rel_side), y = parseFloat(r.rel_height);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const type = normalizePitch(r.tagged_pitch_type || r.pitch_type);
+    (groups[type] = groups[type] || []).push({ x, y });
+  }
+  return Object.entries(groups)
+    .map(([type, points]) => ({ type, color: getPitchColor(type), points }))
+    .sort((a, b) => b.points.length - a.points.length);
+}
+
+// Extension: season mean + per-pitch-type breakdown.
+export function extensionBreakdown(rows) {
+  const vals = rows.map(r => parseFloat(r.extension)).filter(Number.isFinite);
+  const seasonMean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  const groups = {};
+  for (const r of rows) {
+    const v = parseFloat(r.extension);
+    if (!Number.isFinite(v)) continue;
+    const type = normalizePitch(r.tagged_pitch_type || r.pitch_type);
+    (groups[type] = groups[type] || []).push(v);
+  }
+  const byType = Object.entries(groups)
+    .map(([type, vs]) => ({ type, mean: vs.reduce((a, b) => a + b, 0) / vs.length, n: vs.length }))
+    .sort((a, b) => b.n - a.n);
+  return { seasonMean, n: vals.length, byType };
+}
+
+// Spin direction ("clock face"), per pitch type. spin_axis is a known data-
+// quality gap at certain venues (Chabot College Field, confirmed audit finding)
+// — any type with zero valid spin_axis values is explicitly null-gated rather
+// than rendering a misleading blank/zero wheel.
+export function spinDirectionByType(rows) {
+  const groups = {};
+  for (const r of rows) {
+    const type = normalizePitch(r.tagged_pitch_type || r.pitch_type);
+    (groups[type] = groups[type] || []).push(r.spin_axis != null ? parseFloat(r.spin_axis) : null);
+  }
+  return Object.entries(groups).map(([type, axes]) => {
+    const valid = axes.filter(Number.isFinite);
+    return {
+      type,
+      color: getPitchColor(type),
+      n: axes.length,
+      validN: valid.length,
+      axisDeg: valid.length ? circularMean(valid) : null,
+      nullGated: valid.length === 0,
+    };
+  }).sort((a, b) => b.n - a.n);
+}
+
+// Zone-split summary on a 3x3 grid spanning the zone plus one "chase ring"
+// bin on each side (side -1.5..1.5 ft, height 1.0..4.0 ft). Cells with fewer
+// than MIN_N pitches are flagged low-N and should render as neutral, not a
+// misleading extreme percentage off a handful of pitches.
+const MIN_N = 5;
+export function zoneGrid(rows, { swingOnly = false } = {}) {
+  const located = rows.filter(hasLoc);
+  const sideMin = -1.5, sideMax = 1.5, hMin = 1.0, hMax = 4.0;
+  const cellW = (sideMax - sideMin) / 3, cellH = (hMax - hMin) / 3;
+  const cells = Array.from({ length: 9 }, () => ({ count: 0, swings: 0, whiffs: 0 }));
+  for (const r of located) {
+    const s = parseFloat(r.plate_loc_side), h = parseFloat(r.plate_loc_height);
+    let col = Math.floor((s - sideMin) / cellW);
+    let row = 2 - Math.floor((h - hMin) / cellH); // row 0 = top (high pitches)
+    col = Math.max(0, Math.min(2, col));
+    row = Math.max(0, Math.min(2, row));
+    const cell = cells[row * 3 + col];
+    cell.count++;
+    if (isSwingRow(r)) { cell.swings++; if (isWhiff(r)) cell.whiffs++; }
+  }
+  const totalN = located.length;
+  return cells.map(c => ({
+    ...c,
+    usagePct: totalN ? Math.round((c.count / totalN) * 100) : null,
+    whiffPct: c.swings >= MIN_N ? Math.round((c.whiffs / c.swings) * 100) : null,
+    lowN: swingOnly ? c.swings < MIN_N : c.count < MIN_N,
+  }));
+}
+
+// Rolling per-game trend: fastball velo, whiff%, chase% by game, sorted by
+// date. Uses game_id + date already present on every TrackmanPitch row — no
+// separate GameLog fetch needed.
+export function rollingGameTrend(rows) {
+  const byGame = {};
+  for (const r of rows) {
+    if (!r.game_id) continue;
+    (byGame[r.game_id] = byGame[r.game_id] || { date: r.date, rows: [] }).rows.push(r);
+    if (!byGame[r.game_id].date && r.date) byGame[r.game_id].date = r.date;
+  }
+  return Object.entries(byGame).map(([gameId, { date, rows: gr }]) => {
+    const fb = gr.filter(r => isFastballVeloType(normalizePitch(r.tagged_pitch_type || r.pitch_type)))
+      .map(r => parseFloat(r.rel_speed)).filter(v => Number.isFinite(v) && v > 0);
+    const swings = gr.filter(isSwingRow);
+    const located = gr.filter(hasLoc);
+    const ooz = located.filter(r => !inZone(r));
+    return {
+      gameId, date,
+      n: gr.length,
+      veloMean: fb.length ? fb.reduce((a, b) => a + b, 0) / fb.length : null,
+      whiffPct: swings.length ? Math.round((gr.filter(isWhiff).length / swings.length) * 100) : null,
+      chasePct: ooz.length >= MIN_N ? Math.round((ooz.filter(isSwingRow).length / ooz.length) * 100) : null,
+    };
+  }).filter(g => g.date).sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+// Approximate "barrel rate" — a custom EV/LA threshold, NOT Statcast's
+// proprietary formula. Labeled as an approximation everywhere it's shown.
+export function approxBarrelRate(rows) {
+  const bip = rows.filter(r => r.exit_speed != null && r.launch_angle != null && r.play_result);
+  if (bip.length < MIN_N) return { barrelPct: null, n: bip.length };
+  const barrels = bip.filter(r => {
+    const ev = parseFloat(r.exit_speed), la = parseFloat(r.launch_angle);
+    return Number.isFinite(ev) && Number.isFinite(la) && ev >= 95 && la >= 10 && la <= 35;
+  });
+  return { barrelPct: Math.round((barrels.length / bip.length) * 100), n: bip.length };
+}
 
 // percentileRank: (below + equal*0.5) / n * 100, rounded
 export function percentileRank(arr, v) {

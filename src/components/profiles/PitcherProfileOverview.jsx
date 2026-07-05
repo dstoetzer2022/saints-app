@@ -1,13 +1,17 @@
 import React, { useMemo } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
-import { pitcherProfile, percentileRank, fmtStat } from '@/lib/profileStats';
+import {
+  pitcherProfile, percentileRank, fmtStat,
+  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, zoneGrid, rollingGameTrend,
+} from '@/lib/profileStats';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
-  CartesianGrid, ResponsiveContainer
+  CartesianGrid, ResponsiveContainer, ScatterChart, Scatter, ZAxis, Legend
 } from 'recharts';
 import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
+import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
 
 const pColor = pt => getPitchColor(pt);
 
@@ -741,6 +745,154 @@ function ScoutNotes({ pitcherObs }) {
   );
 }
 
+// ── Savant-parity: Release point scatter ────────────────────────
+function ReleasePointPlot({ pitches }) {
+  const groups = releasePoints(pitches);
+  if (!groups.length) return <div style={{ color: C.muted, fontSize: 12 }}>No release-point data.</div>;
+  return (
+    <div>
+      <ResponsiveContainer width="100%" height={220}>
+        <ScatterChart margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+          <CartesianGrid stroke={C.faint} />
+          <XAxis type="number" dataKey="x" name="rel side" unit="ft" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+          <YAxis type="number" dataKey="y" name="rel height" unit="ft" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+          <Tooltip contentStyle={{ background: C.raised, border: `1px solid ${C.edge}`, fontSize: 11 }} cursor={{ strokeDasharray: '3 3' }} />
+          {groups.map(g => (
+            <Scatter key={g.type} name={g.type} data={g.points} fill={g.color} opacity={0.8} />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+        {groups.map(g => (
+          <div key={g.type} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: C.muted }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: g.color, display: 'inline-block' }} />
+            {g.type}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Savant-parity: Extension ─────────────────────────────────────
+function ExtensionCard({ pitches }) {
+  const { seasonMean, byType } = extensionBreakdown(pitches);
+  if (seasonMean == null) return <div style={{ color: C.muted, fontSize: 12 }}>No extension data.</div>;
+  return (
+    <div>
+      <div style={{ fontSize: 26, fontWeight: 900, color: C.gold, ...FONT_STYLE }}>{seasonMean.toFixed(1)} ft</div>
+      <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.6 }}>Season avg extension</div>
+      {byType.map(t => (
+        <div key={t.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.edge}` }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.cream }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: pColor(t.type), display: 'inline-block' }} />
+            {t.type}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.white, fontVariantNumeric: 'tabular-nums' }}>{t.mean.toFixed(1)} ft</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Savant-parity: Spin direction wheel ──────────────────────────
+// Null-gated per pitch type: renders "no spin data" rather than a misleading
+// blank/zero wheel when spin_axis is missing (confirmed Chabot venue gap).
+function SpinWheel({ type, axisDeg, color }) {
+  const rad = axisDeg != null ? (axisDeg - 90) * Math.PI / 180 : null; // 0deg = 12 o'clock
+  const cx = 40, cy = 40, r = 30;
+  const tipX = rad != null ? cx + r * Math.cos(rad) : null;
+  const tipY = rad != null ? cy + r * Math.sin(rad) : null;
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <svg viewBox="0 0 80 80" width={72} height={72}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.edge} strokeWidth={1} />
+        <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={C.faint} strokeWidth={0.5} />
+        <line x1={cx - r} y1={cy} x2={cx + r} y2={cy} stroke={C.faint} strokeWidth={0.5} />
+        {tipX != null ? (
+          <>
+            <line x1={cx} y1={cy} x2={tipX} y2={tipY} stroke={color} strokeWidth={3} />
+            <circle cx={cx} cy={cy} r={3} fill={color} />
+          </>
+        ) : (
+          <text x={cx} y={cy + 4} textAnchor="middle" fontSize={9} fill={C.muted}>no data</text>
+        )}
+      </svg>
+      <div style={{ fontSize: 10, color: C.cream, fontWeight: 700 }}>{type}</div>
+      <div style={{ fontSize: 9, color: C.muted }}>{axisDeg != null ? `${Math.round(axisDeg / 30)}:00` : '—'}</div>
+    </div>
+  );
+}
+function SpinDirectionSection({ pitches }) {
+  const byType = spinDirectionByType(pitches).slice(0, 6);
+  if (!byType.length) return <div style={{ color: C.muted, fontSize: 12 }}>No spin data.</div>;
+  const allNull = byType.every(t => t.nullGated);
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+        {byType.map(t => <SpinWheel key={t.type} type={t.type} axisDeg={t.axisDeg} color={t.color} />)}
+      </div>
+      {allNull && (
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 10, fontStyle: 'italic' }}>
+          Spin axis isn't reported for any pitch here — likely a venue-side Trackman gap (confirmed at Chabot College Field), not a data error for this pitcher.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Savant-parity: Location heatmap (pitch-type filterable) ─────
+function LocationHeatmapSection({ pitches }) {
+  const types = useMemo(() => {
+    const counts = {};
+    pitches.forEach(p => { const t = normalizePitch(p.tagged_pitch_type || p.pitch_type); counts[t] = (counts[t] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  }, [pitches]);
+  const [selType, setSelType] = React.useState('All');
+  const filtered = selType === 'All' ? pitches : pitches.filter(p => normalizePitch(p.tagged_pitch_type || p.pitch_type) === selType);
+  const cells = zoneGrid(filtered);
+  return (
+    <div>
+      <select
+        value={selType}
+        onChange={e => setSelType(e.target.value)}
+        style={{ background: C.raised, color: C.cream, border: `1px solid ${C.edge}`, borderRadius: 5, padding: '5px 8px', fontSize: 11, marginBottom: 12, ...FONT_STYLE }}
+      >
+        <option value="All">All pitches</option>
+        {types.map(t => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <ZoneHeatmap cells={cells} mode="usage" label={`Location — ${selType} (n=${filtered.length})`} />
+    </div>
+  );
+}
+
+// ── Savant-parity: Rolling trend chart ───────────────────────────
+function RollingTrendSection({ pitches }) {
+  const trend = rollingGameTrend(pitches);
+  if (trend.length < 3) return <div style={{ color: C.muted, fontSize: 12 }}>Need at least 3 games for a trend line.</div>;
+  const data = trend.map(g => ({
+    game: new Date(g.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    Velo: g.veloMean != null ? +g.veloMean.toFixed(1) : null,
+    'Whiff%': g.whiffPct,
+    'Chase%': g.chasePct,
+  }));
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+        <CartesianGrid stroke={C.faint} />
+        <XAxis dataKey="game" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <YAxis yAxisId="left" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <Tooltip contentStyle={{ background: C.raised, border: `1px solid ${C.edge}`, fontSize: 11 }} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Line yAxisId="left" type="monotone" dataKey="Velo" stroke={C.gold} dot={false} strokeWidth={2} connectNulls />
+        <Line yAxisId="right" type="monotone" dataKey="Whiff%" stroke={C.green} dot={false} strokeWidth={2} connectNulls />
+        <Line yAxisId="right" type="monotone" dataKey="Chase%" stroke={C.red} dot={false} strokeWidth={2} connectNulls />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────
 export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPool, leaguePitches }) {
   const filteredPitches = useMemo(() => {
@@ -774,6 +926,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
   const swingsN = filteredPitches.filter(isSwing).length;
   const fps = filteredPitches.filter(p => p.balls === 0 && p.strikes === 0);
   const fpsStrikes = fps.filter(isStrike).length;
+  const { cswPct, kbbPct } = cswKbb(filteredPitches);
 
   return (
     <div style={FONT_STYLE}>
@@ -785,6 +938,8 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           filteredPitches.length ? { label: 'Strike%', value: pct(strikesN / filteredPitches.length) } : null,
           fps.length ? { label: 'FPS%', value: pct(fpsStrikes / fps.length) } : null,
           swingsN ? { label: 'Whiff%', value: pct(whiffsN / swingsN) } : null,
+          cswPct != null ? { label: 'CSW%', value: `${cswPct}%` } : null,
+          kbbPct != null ? { label: 'K-BB%', value: `${kbbPct}%` } : null,
           { label: 'Pitches', value: filteredPitches.length.toString() },
         ]} />
       )}
@@ -813,6 +968,51 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
               <ArsenalTable pitches={filteredPitches} />
             </Card>
           </div>
+        </>
+      )}
+
+      {/* Savant-parity: Release point + Extension */}
+      {hasData && (
+        <>
+          {sHead('Release Point · Extension')}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+            <Card style={{ flex: '2 1 380px' }}>
+              <ReleasePointPlot pitches={filteredPitches} />
+            </Card>
+            <Card style={{ flex: '1 1 220px' }}>
+              <ExtensionCard pitches={filteredPitches} />
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Savant-parity: Spin direction */}
+      {hasData && (
+        <>
+          {sHead('Spin Direction', 'clock face, by pitch type')}
+          <Card style={{ marginBottom: 18 }}>
+            <SpinDirectionSection pitches={filteredPitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Location heatmap */}
+      {hasData && (
+        <>
+          {sHead('Pitch Location')}
+          <Card style={{ marginBottom: 18 }}>
+            <LocationHeatmapSection pitches={filteredPitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Rolling trend */}
+      {filteredPitches.length >= 30 && (
+        <>
+          {sHead('Season Trend', 'by game')}
+          <Card style={{ marginBottom: 18 }}>
+            <RollingTrendSection pitches={filteredPitches} />
+          </Card>
         </>
       )}
 

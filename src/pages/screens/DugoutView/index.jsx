@@ -733,7 +733,10 @@ export default function DugoutView({ setScreen }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', flexWrap: orientation === 'vertical' ? 'wrap' : 'nowrap', overflowX: orientation === 'vertical' ? 'auto' : 'visible' }}>
+                {/* AUDIT (mockup-approved): stat pills WRAP into rows on portrait
+                    monitors instead of overflowX:auto — a non-touch TV had no
+                    way to scroll a clipped row. */}
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: orientation === 'vertical' ? 'wrap' : 'nowrap', rowGap: orientation === 'vertical' ? 6 : 0, overflowX: 'visible' }}>
                   {ttpVal != null && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
@@ -760,11 +763,13 @@ export default function DugoutView({ setScreen }) {
           {/* Body: 3D + video — side-by-side (horizontal) or stacked (vertical, for portrait monitors) */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
-              <div style={{ flex: orientation === 'vertical' ? 'none' : 1, display: 'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', gap: 12, minHeight: 0 }}>
+              {/* AUDIT (mockup-approved): the 3D/video row now fills whatever
+                  space remains on the monitor via flex-grow instead of sizing
+                  to fixed 220px/340px — viewport-relative, not device-specific. */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', gap: 12, minHeight: 0 }}>
                 {/* 3D canvas */}
                 <div style={{
-                  flex: orientation === 'vertical' ? 'none' : '1 1 0',
-                  height: orientation === 'vertical' ? 220 : 'auto',
+                  flex: orientation === 'vertical' ? '1 1 140px' : '1 1 0',
                   order: orientation === 'vertical' ? 2 : 0,
                   minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
                   border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)',
@@ -789,8 +794,7 @@ export default function DugoutView({ setScreen }) {
                 </div>
                 {/* Video */}
                 <div style={{
-                  flex: orientation === 'vertical' ? 'none' : '1 1 0',
-                  height: orientation === 'vertical' ? 340 : 'auto',
+                  flex: orientation === 'vertical' ? '1.3 1 160px' : '1 1 0',
                   order: orientation === 'vertical' ? 1 : 0,
                   minWidth: 0, display: 'flex',
                 }}>

@@ -1,12 +1,14 @@
 import React, { useMemo } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
-import { hitterTrackmanProfile, percentileRank, fmtStat } from '@/lib/profileStats';
+import { hitterTrackmanProfile, percentileRank, fmtStat, approxBarrelRate, zoneGrid, rollingGameTrend } from '@/lib/profileStats';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  LineChart, Line, Legend
 } from 'recharts';
 import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
+import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
 
 const FONT_STYLE = { fontFamily: FONT };
 
@@ -548,6 +550,7 @@ function OffenseLine({ pitches }) {
   }, [pitches]);
 
   if (!stats.ab) return null;
+  const { barrelPct } = approxBarrelRate(pitches);
   return (
     <StatPills items={[
       { label: 'AVG', value: n3(stats.avg) },
@@ -555,6 +558,7 @@ function OffenseLine({ pitches }) {
       stats.slg != null ? { label: 'SLG', value: n3(stats.slg) } : null,
       stats.ops != null ? { label: 'OPS', value: n3(stats.ops) } : null,
       stats.iso != null ? { label: 'ISO', value: n3(stats.iso) } : null,
+      barrelPct != null ? { label: 'Barrel% (approx)', value: `${barrelPct}%` } : null,
       { label: 'AB', value: String(stats.ab) },
       { label: 'H', value: String(stats.h) },
       stats.xbh ? { label: 'XBH', value: String(stats.xbh) } : null,
@@ -562,6 +566,43 @@ function OffenseLine({ pitches }) {
       { label: 'BB', value: String(stats.bb) },
       { label: 'K', value: String(stats.k) },
     ]} />
+  );
+}
+
+// ── Savant-parity: Zone-based swing/whiff heatmap ────────────────
+function ZoneSwingSection({ pitches }) {
+  const cells = zoneGrid(pitches, { swingOnly: true });
+  return <ZoneHeatmap cells={cells} mode="whiff" label={`Whiff% by zone (n=${pitches.length})`} />;
+}
+
+// ── Savant-parity: Rolling trend (exit velo, whiff%, chase%) ─────
+function HitterRollingTrendSection({ pitches }) {
+  const trend = rollingGameTrend(pitches);
+  if (trend.length < 3) return <div style={{ color: C.muted, fontSize: 12 }}>Need at least 3 games for a trend line.</div>;
+  const data = trend.map(g => {
+    const gameRows = pitches.filter(p => p.game_id === g.gameId);
+    const evs = gameRows.map(p => parseFloat(p.exit_speed)).filter(Number.isFinite);
+    return {
+      game: new Date(g.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      'Exit velo': evs.length ? +(evs.reduce((a, b) => a + b, 0) / evs.length).toFixed(1) : null,
+      'Whiff%': g.whiffPct,
+      'Chase%': g.chasePct,
+    };
+  });
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+        <CartesianGrid stroke={C.faint} />
+        <XAxis dataKey="game" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <YAxis yAxisId="left" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <Tooltip contentStyle={{ background: C.raised, border: `1px solid ${C.edge}`, fontSize: 11 }} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Line yAxisId="left" type="monotone" dataKey="Exit velo" stroke={C.gold} dot={false} strokeWidth={2} connectNulls />
+        <Line yAxisId="right" type="monotone" dataKey="Whiff%" stroke={C.green} dot={false} strokeWidth={2} connectNulls />
+        <Line yAxisId="right" type="monotone" dataKey="Chase%" stroke={C.red} dot={false} strokeWidth={2} connectNulls />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -611,6 +652,26 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
           {sHead('Plate Discipline', `${pitches.length} pitches seen`)}
           <Card style={{ marginBottom: 18 }}>
             <PlateDiscipline pitches={pitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Zone-based whiff heatmap */}
+      {hasTrackman && (
+        <>
+          {sHead('Swing & Whiff by Zone')}
+          <Card style={{ marginBottom: 18 }}>
+            <ZoneSwingSection pitches={pitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Rolling trend */}
+      {pitches.length >= 30 && (
+        <>
+          {sHead('Season Trend', 'by game')}
+          <Card style={{ marginBottom: 18 }}>
+            <HitterRollingTrendSection pitches={pitches} />
           </Card>
         </>
       )}
