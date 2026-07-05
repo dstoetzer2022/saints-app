@@ -599,7 +599,108 @@ export function leagueAvgWoba(leaguePitches) {
   const w = actualWoba(leaguePitches || []);
   return w ? w.woba : null;
 }
-// Requires ≥20 pitches per pitcher to qualify
+
+// ── xHR (distance-only, would-be-HR-across-CCL-parks) ────────────────────
+// APPROXIMATION: uses hit_distance vs. fence distance by spray angle ONLY —
+// no wall height, because no CCL park's wall-height-by-angle data exists
+// anywhere (same category of gap as the missing Game score field). A low
+// liner and a moonshot landing at the same spot count identically here.
+// Restricting to LA 20-40 (true fly-ball shape) is a partial compensation,
+// not a fix.
+//
+// Each park entry is {lf, lfGap, cf, rfGap, rf} in feet, angles fixed at
+// foul line=45°, gap=22.5°, straightaway=0° (bearing convention: 0=CF,
+// negative=left, positive=right, matching hit_distance/bearing fields).
+// Parks with incomplete public dimensions are marked partial:true and
+// excluded from the "would-be-HR in N of M parks" denominator rather than
+// guessing at their missing numbers — fill these in as real data surfaces.
+export const CCL_PARK_DIMENSIONS = {
+  ARR_SEC: { name: 'Brookside Park (Arroyo Seco Saints)', lf: 374, lfGap: 370, cf: 365, rfGap: 345, rf: 345 },
+  SAN_LUI: { name: 'Sinsheimer Stadium (SLO Blues)', lf: 325, lfGap: 375, cf: 390, rfGap: 370, rf: 320 },
+  SAN_BAR: { name: 'Santa Barbara High School (Foresters)', lf: 325, lfGap: 370, cf: 385, rfGap: 370, rf: 325 },
+  SON_STO: { name: 'Arnold Field (Sonoma Stompers)', lf: 304, lfGap: 330, cf: 435, rfGap: 345, rf: 310 },
+  WAL_CRE: { name: 'Monte Vista High School (Crawdads)', lf: 300, lfGap: 325, cf: 375, rfGap: 315, rf: 290 },
+  ORA_COU2: { name: 'OC Great Park (Riptide)', lf: 325, lfGap: 375, cf: 400, rfGap: 375, rf: 325 },
+  CON_OAK: { name: 'Ventura College Pirate Park (Conejo Oaks)', lf: 331, lfGap: 371, cf: 462, rfGap: 382, rf: 315 },
+  MLB_ACA: { name: 'MLB Academy (Academy Barons)', lf: 325, lfGap: 370, cf: 400, rfGap: 365, rf: 320 },
+  MEN_PAR: { name: 'Baylands Park (Menlo Park Legends)', lf: 320, lfGap: 360, cf: 380, rfGap: 365, rf: 315 },
+  // San Francisco Seagulls' listed home (San Bruno) uses a portable fence
+  // with inconsistent dimensions game-to-game — not usable for a fixed xHR
+  // model. Chabot College substitutes as their nearest fixed-dimension
+  // venue, per Derek. (Chabot is also the venue with the known spin_axis
+  // null gap noted elsewhere in this app — same physical field.)
+  SAN_FRA4: { name: 'Chabot College (SF Seagulls, sub for San Bruno)', lf: 330, lfGap: 365, cf: 385, rfGap: 370, rf: 330 },
+  // These 5 are travel/affiliate programs with no CCL home park (they only
+  // play road games in this league) — null by design, not a data gap.
+  PHI_BAS: null, ALA_MER: null, SAN_DIE25: null, SAN_DIE_24: null, SAN_MAR6: null,
+};
+
+function fenceDistanceAt(park, bearingDeg) {
+  if (!park) return null;
+  const pts = [];
+  if (park.lf != null) pts.push([-45, park.lf]);
+  if (park.lfGap != null) pts.push([-22.5, park.lfGap]);
+  if (park.cf != null) pts.push([0, park.cf]);
+  if (park.rfGap != null) pts.push([22.5, park.rfGap]);
+  if (park.rf != null) pts.push([45, park.rf]);
+  if (pts.length < 2) return null;
+  const b = Math.max(-45, Math.min(45, bearingDeg));
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [a1, d1] = pts[i], [a2, d2] = pts[i + 1];
+    if (b >= a1 && b <= a2) {
+      const t = (b - a1) / (a2 - a1);
+      return d1 + (d2 - d1) * t;
+    }
+  }
+  return b < pts[0][0] ? pts[0][1] : pts[pts.length - 1][1];
+}
+
+// Returns { clearedIn, ofParks, parkNames } for one batted ball, or null if
+// it isn't a real fly-ball candidate (LA outside 20-40) or is missing
+// bearing/distance. clearedIn/ofParks only count parks with usable data.
+export function xHRForRow(row) {
+  const dist = row.hit_distance, bearing = row.bearing, la = row.launch_angle;
+  if (dist == null || bearing == null || la == null || la < 20 || la > 40) return null;
+  const usable = Object.entries(CCL_PARK_DIMENSIONS).filter(([, p]) => p && !p.partial);
+  if (!usable.length) return null;
+  const cleared = usable.filter(([, p]) => dist >= fenceDistanceAt(p, bearing));
+  return { clearedIn: cleared.length, ofParks: usable.length, parkNames: cleared.map(([, p]) => p.name) };
+}
+
+// Season aggregate: for how many of a player's fly balls would N parks have
+// been a HR, on average — a "how home-run-friendly does this profile play"
+// number rather than a per-ball detail.
+export function xHRProfile(rows) {
+  const results = rows.map(xHRForRow).filter(Boolean);
+  if (!results.length) return null;
+  const ofParks = results[0].ofParks;
+  const noDoubters = results.filter(r => r.clearedIn === ofParks).length;
+  const someParks = results.filter(r => r.clearedIn > 0 && r.clearedIn < ofParks).length;
+  const noParks = results.filter(r => r.clearedIn === 0).length;
+  return {
+    n: results.length,
+    ofParks,
+    noDoubters, someParks, noParks,
+    noDoubterPct: noDoubters / results.length,
+    someParksPct: someParks / results.length,
+    noParksPct: noParks / results.length,
+  };
+}
+
+// Per-park breakdown: of this player's fly-ball sample, what % would have
+// left each of the 10 parks. Sorted largest-to-smallest CF so the pattern
+// (this hitter/pitcher plays big in small parks only, etc.) is readable at
+// a glance.
+export function xHRParkBreakdown(rows) {
+  const candidates = rows.filter(r => r.hit_distance != null && r.bearing != null && r.launch_angle != null && r.launch_angle >= 20 && r.launch_angle <= 40);
+  if (candidates.length < MIN_N) return null;
+  const usable = Object.entries(CCL_PARK_DIMENSIONS).filter(([, p]) => p);
+  const parks = usable.map(([code, p]) => {
+    const clears = candidates.filter(r => r.hit_distance >= fenceDistanceAt(p, r.bearing)).length;
+    return { code, name: p.name, cf: p.cf, count: clears, pct: clears / candidates.length };
+  }).sort((a, b) => b.cf - a.cf);
+  return { n: candidates.length, parks };
+}
 export function buildPitcherPool(allPitches) {
   // AUDIT: key on canonicalNameKey — raw-string grouping split one pitcher
   // into multiple sub-threshold pool entries on spelling variants.

@@ -13,6 +13,7 @@ import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
+import XHRParkTable from '@/components/shared/XHRParkTable';
 
 const FONT_STYLE = { fontFamily: FONT };
 
@@ -640,6 +641,16 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
           {sHead('Platoon Splits', 'vs pitcher handedness')}
           <Card style={{ marginBottom: 18 }}>
             <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
+          </Card>
+        </>
+      )}
+
+      {/* xHR: would-be home runs by CCL park (distance-only approximation) */}
+      {hasTrackman && (
+        <>
+          {sHead('xHR by Park', 'approx, distance-only')}
+          <Card style={{ marginBottom: 18 }}>
+            <XHRParkTable rows={pitches} direction="for" />
           </Card>
         </>
       )}

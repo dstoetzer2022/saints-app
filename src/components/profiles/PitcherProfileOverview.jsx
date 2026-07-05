@@ -17,6 +17,7 @@ import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
+import XHRParkTable from '@/components/shared/XHRParkTable';
 
 const pColor = pt => getPitchColor(pt);
 
@@ -925,6 +926,16 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           {sHead('Platoon Splits', 'allowed, vs batter handedness')}
           <Card style={{ marginBottom: 18 }}>
             <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" />
+          </Card>
+        </>
+      )}
+
+      {/* xHR: would-be home runs allowed by CCL park (distance-only approximation) */}
+      {hasData && (
+        <>
+          {sHead('xHR Against by Park', 'approx, distance-only')}
+          <Card style={{ marginBottom: 18 }}>
+            <XHRParkTable rows={filteredPitches} direction="against" />
           </Card>
         </>
       )}
