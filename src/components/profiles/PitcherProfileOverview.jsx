@@ -65,11 +65,22 @@ function StatPills({ items }) {
 }
 
 // ── Percentile section ─────────────────────────────────────────
-function PitcherPercentiles({ pitches, pitcherPool }) {
+function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   const prof = useMemo(() => pitcherProfile(pitches), [pitches]);
   if (!prof || !pitcherPool) return null;
   const P = pitcherPool;
   const n = P.qualifiedN;
+
+  // AUDIT: Max FB must match the stat-pill value above, which intentionally
+  // uses ALL pitches (bypassing the 4%-noise filter) so a rare/mislabeled
+  // fastball tag isn't dropped. Percentile ranking still uses the same pool,
+  // just the raw value being ranked is computed the same way as the pill.
+  const maxFbSource = allPitches || pitches;
+  const maxFbVelos = maxFbSource
+    .filter(p => isFastballVeloType(normalizePitch(p.tagged_pitch_type || p.pitch_type)))
+    .map(p => p.rel_speed)
+    .filter(v => v != null && v > 0);
+  const maxFbVelo = maxFbVelos.length ? Math.max(...maxFbVelos) : null;
 
   const rv = P.xGrid ? runValue(pitches, P.leagueWoba, { invert: true }) : null;
   const xe = P.xGrid ? xERA(pitches, P.xGrid, P.leagueWoba) : null;
@@ -77,7 +88,7 @@ function PitcherPercentiles({ pitches, pitcherPool }) {
 
   const rows = [
     { label: 'Avg FB', value: prof.fb?.avgVelo != null ? n1(prof.fb.avgVelo) : null, raw: prof.fb?.avgVelo, pool: P.fbVelo, invert: false },
-    { label: 'Max FB', value: prof.fb?.maxVelo != null ? n1(prof.fb.maxVelo) : null, raw: prof.fb?.maxVelo, pool: P.maxVelo, invert: false },
+    { label: 'Max FB', value: maxFbVelo != null ? n1(maxFbVelo) : null, raw: maxFbVelo, pool: P.maxVelo, invert: false },
     { label: 'FB Spin', value: prof.fb?.avgSpin != null ? n0(prof.fb.avgSpin) : null, raw: prof.fb?.avgSpin, pool: P.fbSpin, invert: false },
     { label: 'BB Spin', value: prof.bb?.avgSpin != null ? n0(prof.bb.avgSpin) : null, raw: prof.bb?.avgSpin, pool: P.bbSpin, invert: false },
     { label: 'K%', value: pct(prof.kPct), raw: prof.kPct, pool: P.kPct, invert: false },
@@ -810,7 +821,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         <>
           {sHead('Percentiles', 'vs CCL')}
           <Card style={{ marginBottom: 18 }}>
-            <PitcherPercentiles pitches={filteredPitches} pitcherPool={pitcherPool} />
+            <PitcherPercentiles pitches={filteredPitches} allPitches={pitches} pitcherPool={pitcherPool} />
           </Card>
         </>
       )}
