@@ -60,7 +60,7 @@ function ContourCell({ pts, label, n }) {
         <line x1={zTL.x - 14} y1={zTL.y} x2={zTL.x - 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
         <line x1={zBR.x + 14} y1={zTL.y} x2={zBR.x + 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
         <rect x={zTL.x.toFixed(1)} y={zTL.y.toFixed(1)} width={(zBR.x - zTL.x).toFixed(1)} height={(zBR.y - zTL.y).toFixed(1)} fill="none" stroke={C.cream} strokeWidth={1.4} />
-        <polygon points={`${px0},${plateY} ${px0 + plateW},${plateY} ${px0 + plateW},${plateY + plateH * 0.5} ${CX},${plateY + plateH} ${px0},${plateY + plateH * 0.5}`} fill="none" stroke={C.muted} strokeWidth={1.2} />
+        <polygon points={`${CX},${plateY} ${px0 + plateW},${plateY + plateH * 0.5} ${px0 + plateW},${plateY + plateH} ${px0},${plateY + plateH} ${px0},${plateY + plateH * 0.5}`} fill="none" stroke={C.muted} strokeWidth={1.2} />
       </svg>
       <div style={{ fontSize: 10, fontWeight: 700, color: C.cream, marginTop: 6, fontFamily: FONT }}>{label}</div>
       <div style={{ fontSize: 9, color: C.muted, fontFamily: FONT }}>n={n}</div>

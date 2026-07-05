@@ -70,11 +70,21 @@ export function extensionBreakdown(rows) {
 // quality gap at certain venues (Chabot College Field, confirmed audit finding)
 // — any type with zero valid spin_axis values is explicitly null-gated rather
 // than rendering a misleading blank/zero wheel.
+// AUDIT (spin-direction clock bug): raw Trackman spin_axis is the physical
+// angular-momentum tilt, which is 180° antiparallel to the conventional
+// "Tilt" clock everyone actually uses (12:00 = pure backspin/rise, matching
+// the RISE label at the top of the movement plot). Verified against this
+// app's own horz_break/induced_vert_break: a heavy-rise, near-zero-HB
+// four-seam was plotting near 6-7 o'clock on the raw value instead of the
+// expected ~12-1 o'clock. Flipping by 180° here (once, at the source) fixes
+// every consumer instead of patching the SVG math per component.
 export function spinDirectionByType(rows) {
   const groups = {};
   for (const r of rows) {
     const type = normalizePitch(r.tagged_pitch_type || r.pitch_type);
-    (groups[type] = groups[type] || []).push(r.spin_axis != null ? parseFloat(r.spin_axis) : null);
+    const raw = r.spin_axis != null ? parseFloat(r.spin_axis) : null;
+    const tilt = Number.isFinite(raw) ? (raw + 180) % 360 : null;
+    (groups[type] = groups[type] || []).push(tilt);
   }
   return Object.entries(groups).map(([type, axes]) => {
     const valid = axes.filter(Number.isFinite);
