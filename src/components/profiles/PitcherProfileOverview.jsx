@@ -50,14 +50,14 @@ function StatPills({ items }) {
   const valid = items.filter(Boolean);
   if (!valid.length) return null;
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20, justifyContent: 'center' }}>
       {valid.map(it => (
         <div key={it.label} style={{
-          background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 7,
-          padding: '8px 12px', minWidth: 64, textAlign: 'center',
+          background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 8,
+          padding: '10px 16px', minWidth: 72, textAlign: 'center',
         }}>
           <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{it.label}</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: it.gold ? C.gold : C.white, marginTop: 2, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{it.value}</div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: it.gold ? C.gold : C.white, marginTop: 3, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{it.value}</div>
         </div>
       ))}
     </div>
@@ -86,10 +86,9 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   const xe = P.xGrid ? xERA(pitches, P.xGrid, P.leagueWoba) : null;
   const xs = P.xGrid ? xStatsForRows(pitches, P.xGrid) : null;
 
-  const rows = [
+  const rowDefs = [
     { label: 'Avg FB', value: prof.fb?.avgVelo != null ? n1(prof.fb.avgVelo) : null, raw: prof.fb?.avgVelo, pool: P.fbVelo, invert: false },
     { label: 'Max FB', value: maxFbVelo != null ? n1(maxFbVelo) : null, raw: maxFbVelo, pool: P.maxVelo, invert: false },
-    { label: 'FB Spin', value: prof.fb?.avgSpin != null ? n0(prof.fb.avgSpin) : null, raw: prof.fb?.avgSpin, pool: P.fbSpin, invert: false },
     { label: 'BB Spin', value: prof.bb?.avgSpin != null ? n0(prof.bb.avgSpin) : null, raw: prof.bb?.avgSpin, pool: P.bbSpin, invert: false },
     { label: 'K%', value: pct(prof.kPct), raw: prof.kPct, pool: P.kPct, invert: false },
     { label: 'Free pass%', value: pct(prof.bbPct), raw: prof.bbPct, pool: P.bbPct, invert: true },
@@ -104,54 +103,38 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
     { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
     { label: 'xERA (approx)', value: xe != null ? xe.toFixed(2) : null, raw: xe, pool: P.xERA, invert: true },
     { label: 'xBA against (approx)', value: xs?.xBA != null ? fmtStat(xs.xBA) : null, raw: xs?.xBA, pool: P.xBAAgainst, invert: true },
-  ].filter(r => r.value != null && r.value !== '—');
+  ];
 
-  if (!rows.length) return null;
+  const byLabel = Object.fromEntries(rowDefs.map(r => [r.label, r]));
+  const CATEGORIES = [
+    { title: 'Run Prevention', labels: ['Run Value', 'xERA (approx)', 'xBA against (approx)', 'BABIP'] },
+    { title: 'Stuff', labels: ['Avg FB', 'Max FB', 'BB Spin', 'Extension'] },
+    { title: 'Plate Discipline', labels: ['K%', 'Free pass%', 'Whiff%', 'Chase%'] },
+    { title: 'Contact Quality', labels: ['Avg EV against', 'Hard%', 'Soft%', 'GB%'] },
+  ];
+
+  const sections = CATEGORIES
+    .map(cat => ({ ...cat, rows: cat.labels.map(l => byLabel[l]).filter(r => r && r.value != null && r.value !== '—') }))
+    .filter(cat => cat.rows.length);
+
+  if (!sections.length) return null;
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
-        {rows.map(row => {
-          const rank = percentileRank(row.pool, row.raw);
-          const display = row.invert && rank != null ? 100 - rank : rank;
-          return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} />;
-        })}
-      </div>
+      {sections.map((cat, i) => (
+        <div key={cat.title} style={{ marginBottom: i < sections.length - 1 ? 16 : 0 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1.6, textTransform: 'uppercase', color: C.muted, marginBottom: 8 }}>
+            {cat.title}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
+            {cat.rows.map(row => {
+              const rank = percentileRank(row.pool, row.raw);
+              const display = row.invert && rank != null ? 100 - rank : rank;
+              return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} />;
+            })}
+          </div>
+        </div>
+      ))}
       <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
-    </div>
-  );
-}
-
-// ── Velocity Bands histogram ───────────────────────────────────
-function VeloHistogram({ pitches }) {
-  const data = useMemo(() => {
-    const fbRows = pitches.filter(p => {
-      const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-      return isFastballVeloType(pt);
-    });
-    const velos = fbRows.map(r => r.rel_speed).filter(v => v != null && v > 0);
-    if (velos.length < 5) return null;
-    const minV = Math.floor(Math.min(...velos));
-    const maxV = Math.ceil(Math.max(...velos));
-    const bands = [];
-    for (let v = minV; v <= maxV; v++) bands.push({ velo: v, count: 0 });
-    velos.forEach(v => {
-      const i = Math.min(Math.round(v) - minV, bands.length - 1);
-      if (i >= 0) bands[i].count++;
-    });
-    return bands;
-  }, [pitches]);
-
-  if (!data) return null;
-  return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, ...FONT_STYLE }}>FB family velocity distribution</div>
-      <ResponsiveContainer width="100%" height={100}>
-        <BarChart data={data} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
-          <XAxis dataKey="velo" tick={{ fontSize: 9, fill: C.muted }} interval={2} />
-          <YAxis tick={{ fontSize: 9, fill: C.muted }} width={22} />
-          <Bar dataKey="count" fill={C.gold} radius={[2, 2, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -159,6 +142,8 @@ function VeloHistogram({ pitches }) {
 // ── Arsenal detail table ───────────────────────────────────────
 function ArsenalTable({ pitches }) {
   const total = pitches.length;
+  const { seasonMean: seasonExt, byType: extByType } = useMemo(() => extensionBreakdown(pitches), [pitches]);
+  const extMap = useMemo(() => Object.fromEntries((extByType || []).map(t => [t.type, t.mean])), [extByType]);
   const detail = useMemo(() => {
     const map = {};
     pitches.forEach(p => {
@@ -193,9 +178,10 @@ function ArsenalTable({ pitches }) {
           zWhiffPct: zSwings ? zWhiffs / zSwings : null,
           chasePct: ooz.length ? chases / ooz.length : null,
           avgEV: mean(evs),
+          extension: extMap[pt],
         };
       });
-  }, [pitches]);
+  }, [pitches, extMap, total]);
 
   if (!detail.length) return null;
   const isFB = pt => ['Fastball','Four-Seam','Sinker','Cutter'].includes(pt);
@@ -203,37 +189,45 @@ function ArsenalTable({ pitches }) {
   const td = { padding: '7px 8px', fontSize: 12, textAlign: 'right', color: C.cream, fontVariantNumeric: 'tabular-nums', borderBottom: `0.5px solid ${C.edge}`, ...FONT_STYLE };
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead>
-          <tr>
-            {['Pitch','Use%','Velo','Max','Spin','Str%','Whiff%','Zone%','Z-Sw%','Z-Wh%','Chase%','EV'].map((h, i) => (
-              <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {detail.map(d => (
-            <tr key={d.pt} style={{ background: 'transparent' }}>
-              <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 6 }} />
-                {d.pt}
-              </td>
-              <td style={td}>{(d.usage * 100).toFixed(0)}%</td>
-              <td style={{ ...td, fontWeight: 700, color: C.white }}>{n1(d.avgVelo)}</td>
-              <td style={{ ...td, color: C.muted }}>{isFB(d.pt) && d.maxVelo != null ? n1(d.maxVelo) : '—'}</td>
-              <td style={td}>{n0(d.avgSpin)}</td>
-              <td style={td}>{pct(d.strikePct)}</td>
-              <td style={{ ...td, color: d.whiffPct != null && d.whiffPct >= 0.28 ? C.green : C.cream }}>{pct(d.whiffPct)}</td>
-              <td style={td}>{pct(d.zonePct)}</td>
-              <td style={td}>{pct(d.zSwingPct)}</td>
-              <td style={td}>{pct(d.zWhiffPct)}</td>
-              <td style={td}>{pct(d.chasePct)}</td>
-              <td style={td}>{n1(d.avgEV)}</td>
+    <div>
+      {seasonExt != null && (
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, ...FONT_STYLE }}>
+          Season avg extension <b style={{ color: C.gold, fontSize: 13 }}>{seasonExt.toFixed(1)} ft</b>
+        </div>
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr>
+              {['Pitch','Use%','Velo','Max','Spin','Ext','Str%','Whiff%','Zone%','Z-Sw%','Z-Wh%','Chase%','EV'].map((h, i) => (
+                <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {detail.map(d => (
+              <tr key={d.pt} style={{ background: 'transparent' }}>
+                <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 6 }} />
+                  {d.pt}
+                </td>
+                <td style={td}>{(d.usage * 100).toFixed(0)}%</td>
+                <td style={{ ...td, fontWeight: 700, color: C.white }}>{n1(d.avgVelo)}</td>
+                <td style={{ ...td, color: C.muted }}>{isFB(d.pt) && d.maxVelo != null ? n1(d.maxVelo) : '—'}</td>
+                <td style={td}>{n0(d.avgSpin)}</td>
+                <td style={td}>{d.extension != null ? d.extension.toFixed(1) : '—'}</td>
+                <td style={td}>{pct(d.strikePct)}</td>
+                <td style={{ ...td, color: d.whiffPct != null && d.whiffPct >= 0.28 ? C.green : C.cream }}>{pct(d.whiffPct)}</td>
+                <td style={td}>{pct(d.zonePct)}</td>
+                <td style={td}>{pct(d.zSwingPct)}</td>
+                <td style={td}>{pct(d.zWhiffPct)}</td>
+                <td style={td}>{pct(d.chasePct)}</td>
+                <td style={td}>{n1(d.avgEV)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -344,30 +338,22 @@ function HandednessSplits({ pitches }) {
   );
 }
 
-// ── Contact Allowed section ───────────────────────────────────
+// ── Contact Allowed + Batted Ball & Contact Quality, combined ─
 function ContactSection({ pitches }) {
-  const { bip, evValues, gbPct, ldPct, fbPct, puPct, hardPct, avgEV, babip } = useMemo(() => {
+  const { bip, hardPct, avgEV, babip } = useMemo(() => {
     const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0);
-    let gb = 0, ld = 0, fb = 0, pu = 0, hard = 0, evSum = 0, evCount = 0;
-    let bipHits = 0, hrN = 0;
-    const evValues = [];
+    let hard = 0, evSum = 0, evCount = 0, bipHits = 0, hrN = 0;
     bip.forEach(p => {
-      const la = p.launch_angle, ev = p.exit_speed;
-      const laType = la == null ? null : la < 10 ? 'GB' : la < 25 ? 'LD' : la < 50 ? 'FB' : 'PU';
-      if (laType === 'GB') gb++; else if (laType === 'LD') ld++; else if (laType === 'FB') fb++; else if (laType === 'PU') pu++;
+      const ev = p.exit_speed;
       if (ev != null && ev >= 95) hard++;
-      if (ev != null) { evSum += ev; evCount++; evValues.push(ev); }
+      if (ev != null) { evSum += ev; evCount++; }
       if (['Single','Double','Triple'].includes(p.play_result)) bipHits++;
       if (p.play_result === 'HomeRun') hrN++;
     });
     const bipN = bip.length;
     const babipDen = bipN - hrN;
     return {
-      bip, evValues,
-      gbPct: bipN ? gb / bipN : null,
-      ldPct: bipN ? ld / bipN : null,
-      fbPct: bipN ? fb / bipN : null,
-      puPct: bipN ? pu / bipN : null,
+      bip,
       hardPct: evCount ? hard / evCount : null,
       avgEV: evCount ? evSum / evCount : null,
       babip: babipDen > 0 ? bipHits / babipDen : null,
@@ -376,70 +362,24 @@ function ContactSection({ pitches }) {
 
   if (bip.length < 5) return null;
 
-  // EV box plot
-  const sorted = [...evValues].sort((a, b) => a - b);
-  const q = p => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-  const stats = { min: sorted[0], q1: q(0.25), med: q(0.5), q3: q(0.75), max: sorted[sorted.length - 1], avg: mean(evValues) };
-  const span = (stats.max - stats.min) || 1;
-  const pos = v => ((v - stats.min) / span) * 100;
-
   return (
     <div>
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 240px' }}>
-          {/* Batted ball type bar */}
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 5, ...FONT_STYLE }}>Batted-ball type</div>
-          <div style={{ display: 'flex', height: 20, borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.edge}` }}>
-            {[['GB', gbPct, '#8c6d3f'], ['LD', ldPct, '#2c7a4b'], ['FB', fbPct, '#2c6080'], ['PU', puPct, '#9a9a9a']]
-              .filter(([, p]) => p != null && p > 0)
-              .map(([lbl, p, col]) => (
-                <div key={lbl} style={{ width: (p * 100) + '%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff' }}>
-                  {p >= 0.1 ? lbl : ''}
-                </div>
-              ))}
-          </div>
-          <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-            {[['GB', gbPct, '#c49a5a'], ['LD', ldPct, '#4ab87a'], ['FB', fbPct, '#4a95c0'], ['PU', puPct, '#aaaaaa']]
-              .filter(([, p]) => p != null)
-              .map(([lbl, p, col]) => (
-                <span key={lbl} style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}>
-                  <b style={{ color: col }}>{lbl}</b> {(p * 100).toFixed(0)}%
-                </span>
-              ))}
-          </div>
+      {/* Summary pills */}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16, fontSize: 11, color: C.cream, ...FONT_STYLE }}>
+        <span><b style={{ color: C.gold }}>BABIP</b> {babip != null ? fmtStat(babip) : '—'}</span>
+        <span><b style={{ color: C.gold }}>Hard%</b> {pct(hardPct)}</span>
+        <span><b style={{ color: C.gold }}>Avg EV</b> {n1(avgEV)}</span>
+        <span><b style={{ color: C.muted }}>n={bip.length}</b></span>
+      </div>
 
-          {/* EV box plot */}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, ...FONT_STYLE }}>Exit velo distribution</div>
-            <div style={{ position: 'relative', height: 34, marginBottom: 4 }}>
-              <div style={{ position: 'absolute', top: 16, left: 0, right: 0, height: 2, background: C.edge }} />
-              <div style={{ position: 'absolute', top: 10, left: pos(stats.q1) + '%', width: (pos(stats.q3) - pos(stats.q1)) + '%', height: 14, background: 'rgba(44,123,182,.35)', border: `1.5px solid #2c7bb6`, borderRadius: 3 }} />
-              <div style={{ position: 'absolute', top: 8, left: pos(stats.med) + '%', width: 2.5, height: 18, background: C.white }} />
-              <div style={{ position: 'absolute', top: 12, left: `calc(${pos(stats.avg)}% - 4px)`, width: 8, height: 8, borderRadius: '50%', background: C.gold, border: `1.5px solid ${C.base}` }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted, ...FONT_STYLE }}>
-              <span>{stats.min.toFixed(0)}</span>
-              <span style={{ color: C.white, fontWeight: 700 }}>med {stats.med.toFixed(0)}</span>
-              <span>{stats.max.toFixed(0)} mph</span>
-            </div>
-          </div>
-
-          {/* Summary stats */}
-          <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap', fontSize: 11, color: C.cream, ...FONT_STYLE }}>
-            <span><b style={{ color: C.gold }}>BABIP</b> {babip != null ? fmtStat(babip) : '—'}</span>
-            <span><b style={{ color: C.gold }}>Hard%</b> {pct(hardPct)}</span>
-            <span><b style={{ color: C.gold }}>Avg EV</b> {n1(avgEV)}</span>
-            <span><b style={{ color: C.muted }}>n={bip.length}</b></span>
-          </div>
+      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: '2 1 380px' }}>
+          <BattedBallContactPanel rows={pitches} />
         </div>
-
-        {/* Spray chart */}
-        {bip.length > 0 && (
-          <div style={{ flex: '0 0 auto', maxWidth: 300 }}>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textAlign: 'center', ...FONT_STYLE }}>Spray (contact allowed)</div>
-            <SprayChart pitches={pitches} />
-          </div>
-        )}
+        <div style={{ flex: '1 1 240px', maxWidth: 300 }}>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textAlign: 'center', ...FONT_STYLE }}>Spray (contact allowed)</div>
+          <SprayChart pitches={pitches} />
+        </div>
       </div>
     </div>
   );
@@ -669,73 +609,6 @@ function ReleasePointPlot({ pitches }) {
   );
 }
 
-// ── Savant-parity: Extension ─────────────────────────────────────
-function ExtensionCard({ pitches }) {
-  const { seasonMean, byType } = extensionBreakdown(pitches);
-  if (seasonMean == null) return <div style={{ color: C.muted, fontSize: 12 }}>No extension data.</div>;
-  return (
-    <div>
-      <div style={{ fontSize: 26, fontWeight: 900, color: C.gold, ...FONT_STYLE }}>{seasonMean.toFixed(1)} ft</div>
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.6 }}>Season avg extension</div>
-      {byType.map(t => (
-        <div key={t.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.edge}` }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.cream }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: pColor(t.type), display: 'inline-block' }} />
-            {t.type}
-          </span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.white, fontVariantNumeric: 'tabular-nums' }}>{t.mean.toFixed(1)} ft</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Savant-parity: Spin direction wheel ──────────────────────────
-// Null-gated per pitch type: renders "no spin data" rather than a misleading
-// blank/zero wheel when spin_axis is missing (confirmed Chabot venue gap).
-function SpinWheel({ type, axisDeg, color }) {
-  const rad = axisDeg != null ? (axisDeg - 90) * Math.PI / 180 : null; // 0deg = 12 o'clock
-  const cx = 40, cy = 40, r = 30;
-  const tipX = rad != null ? cx + r * Math.cos(rad) : null;
-  const tipY = rad != null ? cy + r * Math.sin(rad) : null;
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <svg viewBox="0 0 80 80" width={72} height={72}>
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.edge} strokeWidth={1} />
-        <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={C.faint} strokeWidth={0.5} />
-        <line x1={cx - r} y1={cy} x2={cx + r} y2={cy} stroke={C.faint} strokeWidth={0.5} />
-        {tipX != null ? (
-          <>
-            <line x1={cx} y1={cy} x2={tipX} y2={tipY} stroke={color} strokeWidth={3} />
-            <circle cx={cx} cy={cy} r={3} fill={color} />
-          </>
-        ) : (
-          <text x={cx} y={cy + 4} textAnchor="middle" fontSize={9} fill={C.muted}>no data</text>
-        )}
-      </svg>
-      <div style={{ fontSize: 10, color: C.cream, fontWeight: 700 }}>{type}</div>
-      <div style={{ fontSize: 9, color: C.muted }}>{axisDeg != null ? `${Math.round(axisDeg / 30)}:00` : '—'}</div>
-    </div>
-  );
-}
-function SpinDirectionSection({ pitches }) {
-  const byType = spinDirectionByType(pitches).slice(0, 6);
-  if (!byType.length) return <div style={{ color: C.muted, fontSize: 12 }}>No spin data.</div>;
-  const allNull = byType.every(t => t.nullGated);
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-        {byType.map(t => <SpinWheel key={t.type} type={t.type} axisDeg={t.axisDeg} color={t.color} />)}
-      </div>
-      {allNull && (
-        <div style={{ fontSize: 10, color: C.muted, marginTop: 10, fontStyle: 'italic' }}>
-          Spin axis isn't reported for any pitch here — likely a venue-side Trackman gap (confirmed at Chabot College Field), not a data error for this pitcher.
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Savant-parity: Location heatmap (pitch-type filterable) ─────
 // ── Savant-parity: Rolling trend chart ───────────────────────────
 function RollingTrendSection({ pitches }) {
@@ -826,6 +699,33 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
+      {/* Savant-parity: Location density contour + spin direction, combined per pitch type */}
+      {hasData && (
+        <>
+          {sHead('Pitch Location · Spin', 'KDE density contour with spin clock, by pitch type')}
+          <Card style={{ marginBottom: 18 }}>
+            <LocationContourPlot groups={
+              (() => {
+                const byType = filteredPitches.reduce((m, p) => {
+                  const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+                  (m[pt] = m[pt] || []).push(p);
+                  return m;
+                }, {});
+                const spinByType = Object.fromEntries(spinDirectionByType(filteredPitches).map(s => [s.type, s]));
+                return Object.entries(byType)
+                  .sort((a, b) => b[1].length - a[1].length)
+                  .map(([label, pitches]) => ({
+                    label, pitches,
+                    axisDeg: spinByType[label]?.axisDeg,
+                    color: spinByType[label]?.color,
+                    spinGated: spinByType[label]?.nullGated,
+                  }));
+              })()
+            } />
+          </Card>
+        </>
+      )}
+
       {/* Arsenal + Movement side by side */}
       {hasData && (
         <>
@@ -833,7 +733,6 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
             <Card style={{ flex: '1 1 340px' }}>
               <MovementScatterCircular pitches={filteredPitches} leagueAvg={leagueAvg} />
-              <VeloHistogram pitches={filteredPitches} />
             </Card>
             <Card style={{ flex: '2 1 400px', overflow: 'hidden', padding: '14px 0' }}>
               <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
@@ -843,43 +742,12 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Savant-parity: Release point + Extension */}
+      {/* Savant-parity: Release point */}
       {hasData && (
         <>
-          {sHead('Release Point · Extension')}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
-            <Card style={{ flex: '2 1 380px' }}>
-              <ReleasePointPlot pitches={filteredPitches} />
-            </Card>
-            <Card style={{ flex: '1 1 220px' }}>
-              <ExtensionCard pitches={filteredPitches} />
-            </Card>
-          </div>
-        </>
-      )}
-
-      {/* Savant-parity: Spin direction */}
-      {hasData && (
-        <>
-          {sHead('Spin Direction', 'clock face, by pitch type')}
+          {sHead('Release Point')}
           <Card style={{ marginBottom: 18 }}>
-            <SpinDirectionSection pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Location density contour, per pitch type */}
-      {hasData && (
-        <>
-          {sHead('Pitch Location', 'KDE density contour, by pitch type')}
-          <Card style={{ marginBottom: 18 }}>
-            <LocationContourPlot groups={
-              Object.entries(filteredPitches.reduce((m, p) => {
-                const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-                (m[pt] = m[pt] || []).push(p);
-                return m;
-              }, {})).sort((a, b) => b[1].length - a[1].length).map(([label, pitches]) => ({ label, pitches }))
-            } />
+            <ReleasePointPlot pitches={filteredPitches} />
           </Card>
         </>
       )}
@@ -911,22 +779,12 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Contact against */}
+      {/* Contact against — batted ball profile, contact quality, and spray, combined */}
       {hasData && (
         <>
-          {sHead('Contact Against')}
+          {sHead('Contact Against', 'batted ball profile & contact quality')}
           <Card style={{ marginBottom: 18 }}>
             <ContactSection pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Batted ball profile, contact quality, EV histogram */}
-      {hasData && (
-        <>
-          {sHead('Batted Ball & Contact Quality')}
-          <Card style={{ marginBottom: 18 }}>
-            <BattedBallContactPanel rows={filteredPitches} />
           </Card>
         </>
       )}

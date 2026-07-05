@@ -230,7 +230,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [batterPitches, setBatterPitches] = useState([]);
   const [activePlayer, setActivePlayer] = useState(null);
   const [_scope, _setScope] = useState('season');
-  const [sidebarTab, setSidebarTab] = useState(initialTab === 'hitters' ? 'hitters' : 'pitchers');
+  const sidebarTab = initialTab === 'hitters' ? 'hitters' : 'pitchers';
   const [showRunnerReport, setShowRunnerReport] = useState(false);
   const [showPitcherCatcherReport, setShowPitcherCatcherReport] = useState(false);
   const [playerRoster, setPlayerRoster] = useState([]);
@@ -530,50 +530,31 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           </div>
         </div>
 
-        {/* Print report buttons */}
+        {/* Print report button — only the report relevant to this screen */}
         <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.edge}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <button
-            onClick={() => setShowRunnerReport(true)}
-            style={{
-              width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
-              borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
-              fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
-            }}
-          >
-            🖨 Baserunner Report
-          </button>
-          <button
-            onClick={() => setShowPitcherCatcherReport(true)}
-            style={{
-              width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
-              borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
-              fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
-            }}
-          >
-            🖨 Pitcher & Catcher Report
-          </button>
-        </div>
-
-        {/* Pitchers / Hitters toggle */}
-        <div style={{ padding: '10px 16px' }}>
-          <div style={{ display: 'flex', background: C.raised, borderRadius: 6, border: `1px solid ${C.rim}`, overflow: 'hidden' }}>
-            {[['pitchers', 'Pitchers'], ['hitters', 'Hitters']].map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setSidebarTab(key)}
-                style={{
-                  flex: 1, background: sidebarTab === key ? C.gold : 'none',
-                  border: 'none', cursor: 'pointer',
-                  padding: '8px 0', fontFamily: FONT, fontSize: 11, fontWeight: 800,
-                  letterSpacing: 0.8, textTransform: 'uppercase',
-                  color: sidebarTab === key ? C.base : C.muted,
-                  transition: 'background 0.15s, color 0.15s',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {sidebarTab === 'hitters' ? (
+            <button
+              onClick={() => setShowRunnerReport(true)}
+              style={{
+                width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
+                borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
+                fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
+              }}
+            >
+              🖨 Baserunner Report
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowPitcherCatcherReport(true)}
+              style={{
+                width: '100%', background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
+                borderRadius: 5, padding: '7px 10px', fontSize: 11, fontWeight: 700, color: C.gold,
+                fontFamily: FONT, cursor: 'pointer', textAlign: 'left', letterSpacing: 0.2,
+              }}
+            >
+              🖨 Pitcher & Catcher Report
+            </button>
+          )}
         </div>
       </div>
 

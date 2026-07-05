@@ -33,7 +33,27 @@ function divergingColor(t) {
   return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
 
-function ContourCell({ pts, label, n }) {
+function MiniSpinClock({ axisDeg, color }) {
+  const size = 24, cx = size / 2, cy = size / 2, r = size / 2 - 3;
+  const rad = axisDeg != null ? (axisDeg - 90) * Math.PI / 180 : null;
+  const tipX = rad != null ? cx + r * Math.cos(rad) : null;
+  const tipY = rad != null ? cy + r * Math.sin(rad) : null;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.edge} strokeWidth={1} />
+      {tipX != null ? (
+        <>
+          <line x1={cx} y1={cy} x2={tipX} y2={tipY} stroke={color || C.gold} strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={1.6} fill={color || C.gold} />
+        </>
+      ) : (
+        <circle cx={cx} cy={cy} r={1.2} fill={C.muted} />
+      )}
+    </svg>
+  );
+}
+
+function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated }) {
   const contours = useMemo(() => {
     if (pts.length < 15) return null;
     return contourDensity().x(d => d[0]).y(d => d[1]).size([CW, CH]).bandwidth(18).thresholds(14)(pts);
@@ -62,13 +82,18 @@ function ContourCell({ pts, label, n }) {
         <rect x={zTL.x.toFixed(1)} y={zTL.y.toFixed(1)} width={(zBR.x - zTL.x).toFixed(1)} height={(zBR.y - zTL.y).toFixed(1)} fill="none" stroke={C.cream} strokeWidth={1.4} />
         <polygon points={`${CX},${plateY} ${px0 + plateW},${plateY + plateH * 0.5} ${px0 + plateW},${plateY + plateH} ${px0},${plateY + plateH} ${px0},${plateY + plateH * 0.5}`} fill="none" stroke={C.muted} strokeWidth={1.2} />
       </svg>
-      <div style={{ fontSize: 10, fontWeight: 700, color: C.cream, marginTop: 6, fontFamily: FONT }}>{label}</div>
-      <div style={{ fontSize: 9, color: C.muted, fontFamily: FONT }}>n={n}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.cream, fontFamily: FONT }}>{label}</span>
+        {axisDeg !== undefined && <MiniSpinClock axisDeg={axisDeg} color={spinColor} />}
+      </div>
+      <div style={{ fontSize: 9, color: C.muted, fontFamily: FONT }}>
+        n={n}{axisDeg != null ? ` · spin ${Math.round(axisDeg / 30) % 12 || 12}:00` : (spinGated ? ' · no spin data' : '')}
+      </div>
     </div>
   );
 }
 
-// groups: [{ label, color, pitches }] — pitches need plate_loc_side/height.
+// groups: [{ label, color, pitches, axisDeg, spinGated }] — pitches need plate_loc_side/height.
 export default function LocationContourPlot({ groups }) {
   const cells = useMemo(() => groups.map(g => {
     const pts = g.pitches
@@ -77,14 +102,16 @@ export default function LocationContourPlot({ groups }) {
         const { x, y } = toPx(parseFloat(p.plate_loc_side), parseFloat(p.plate_loc_height));
         return [x, y];
       });
-    return { label: g.label, pts, n: pts.length };
+    return { label: g.label, pts, n: pts.length, axisDeg: g.axisDeg, spinColor: g.color, spinGated: g.spinGated };
   }).filter(c => c.n > 0), [groups]);
 
   if (!cells.length) return <div style={{ color: C.muted, fontSize: 12 }}>No location data.</div>;
 
   return (
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-      {cells.map(c => <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} />)}
+      {cells.map(c => (
+        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} />
+      ))}
     </div>
   );
 }
