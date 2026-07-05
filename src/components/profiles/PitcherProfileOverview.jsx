@@ -619,11 +619,19 @@ function ReleasePointPlot({ pitches }) {
   if (!groups.length) return <div style={{ color: C.muted, fontSize: 12 }}>No release-point data.</div>;
   return (
     <div>
-      <ResponsiveContainer width="100%" height={220}>
-        <ScatterChart margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+      <ResponsiveContainer width="100%" aspect={1}>
+        <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid stroke={C.faint} />
-          <XAxis type="number" dataKey="x" name="rel side" unit="ft" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
-          <YAxis type="number" dataKey="y" name="rel height" unit="ft" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+          <XAxis
+            type="number" dataKey="x" name="rel side" unit="ft"
+            domain={[-4, 4]} ticks={[-4, -3, -2, -1, 0, 1, 2, 3, 4]}
+            tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint}
+          />
+          <YAxis
+            type="number" dataKey="y" name="rel height" unit="ft"
+            domain={[0, 8]} ticks={[0, 1, 2, 3, 4, 5, 6, 7, 8]}
+            tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint}
+          />
           <Tooltip contentStyle={{ background: C.raised, border: `1px solid ${C.edge}`, fontSize: 11 }} cursor={{ strokeDasharray: '3 3' }} />
           {groups.map(g => (
             <Scatter key={g.type} name={g.type} data={g.points} fill={g.color} opacity={0.8} />
@@ -759,28 +767,21 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Arsenal + Movement side by side */}
+      {/* Movement + Release Point side by side, arsenal table below */}
       {hasData && (
         <>
-          {sHead('Arsenal · Movement', `${filteredPitches.length} pitches`)}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+          {sHead('Movement · Release Point', `${filteredPitches.length} pitches`)}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
             <Card style={{ flex: '1 1 340px' }}>
               <MovementScatterCircular pitches={filteredPitches} leagueAvg={leagueAvg} />
             </Card>
-            <Card style={{ flex: '2 1 400px', overflow: 'hidden', padding: '14px 0' }}>
-              <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
-              <ArsenalTable pitches={filteredPitches} />
+            <Card style={{ flex: '1 1 340px' }}>
+              <ReleasePointPlot pitches={filteredPitches} />
             </Card>
           </div>
-        </>
-      )}
-
-      {/* Savant-parity: Release point */}
-      {hasData && (
-        <>
-          {sHead('Release Point')}
-          <Card style={{ marginBottom: 18 }}>
-            <ReleasePointPlot pitches={filteredPitches} />
+          <Card style={{ marginBottom: 18, overflow: 'hidden', padding: '14px 0' }}>
+            <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
+            <ArsenalTable pitches={filteredPitches} />
           </Card>
         </>
       )}
