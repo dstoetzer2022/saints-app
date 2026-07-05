@@ -14,7 +14,31 @@ const STAT_DEFS = [
   { key: 'whiffPct', label: 'Whiff%', fmt: pct },
 ];
 
-function SplitCard({ split }) {
+function MixBar({ mix }) {
+  if (!mix || !mix.order.length) return null;
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${C.edge}`, paddingTop: 10 }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5, ...FONT_STYLE }}>Pitch Mix</div>
+      <div style={{ display: 'flex', height: 16, borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.edge}` }}>
+        {mix.order.map(({ t, c, color }) => (
+          <div key={t} title={`${t} ${Math.round(c / mix.total * 100)}%`}
+            style={{ width: (c / mix.total * 100) + '%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', overflow: 'hidden' }}>
+            {c / mix.total > 0.14 ? t.slice(0, 2) : ''}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+        {mix.order.map(({ t, c, color }) => (
+          <span key={t} style={{ fontSize: 9, color: C.muted, ...FONT_STYLE }}>
+            <b style={{ color }}>{t.slice(0, 2)}</b> {Math.round(c / mix.total * 100)}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SplitCard({ split, mix }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -39,19 +63,22 @@ function SplitCard({ split }) {
           </div>
         ))}
       </div>
+      <MixBar mix={mix} />
     </div>
   );
 }
 
 // side: 'batter_hand' for a pitcher's allowed splits (vs RHH/LHH),
 // 'pitcher_hand' for a hitter's own splits (vs RHP/LHP).
-export default function PlatoonSplitsTable({ rows, side }) {
+// pitchMixByLabel (optional): { RHH: { total, order: [{t, c, color}] }, LHH: {...} } —
+// pass to fold a per-hand pitch-usage bar into each split card (pitcher profiles only).
+export default function PlatoonSplitsTable({ rows, side, pitchMixByLabel }) {
   const splits = useMemo(() => platoonSplitRows(rows, side), [rows, side]);
   if (splits.length < 2) return <div style={{ color: C.muted, fontSize: 12 }}>Need enough pitches against both hands to split.</div>;
 
   return (
     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-      {splits.map(s => <SplitCard key={s.label} split={s} />)}
+      {splits.map(s => <SplitCard key={s.label} split={s} mix={pitchMixByLabel?.[s.label]} />)}
     </div>
   );
 }

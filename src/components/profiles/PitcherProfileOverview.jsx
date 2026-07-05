@@ -166,14 +166,17 @@ function ArsenalTable({ pitches }) {
   const total = pitches.length;
   const { seasonMean: seasonExt, byType: extByType } = useMemo(() => extensionBreakdown(pitches), [pitches]);
   const extMap = useMemo(() => Object.fromEntries((extByType || []).map(t => [t.type, t.mean])), [extByType]);
-  const detail = useMemo(() => {
+  const { detail, rTotal, lTotal } = useMemo(() => {
     const map = {};
+    let rTotal = 0, lTotal = 0;
     pitches.forEach(p => {
       const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
       if (!map[pt]) map[pt] = [];
       map[pt].push(p);
+      if (p.batter_hand === 'Right') rTotal++;
+      else if (p.batter_hand === 'Left') lTotal++;
     });
-    return Object.entries(map)
+    const detail = Object.entries(map)
       .sort((a, b) => b[1].length - a[1].length)
       .map(([pt, rows]) => {
         const velos = rows.map(r => r.rel_speed).filter(v => v != null && v > 0);
@@ -188,6 +191,8 @@ function ArsenalTable({ pitches }) {
         const chases = ooz.filter(isSwing).length;
         const bip = rows.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0);
         const evs = bip.map(r => r.exit_speed).filter(v => v != null);
+        const rCount = rows.filter(r => r.batter_hand === 'Right').length;
+        const lCount = rows.filter(r => r.batter_hand === 'Left').length;
         return {
           pt, count: rows.length, usage: rows.length / total,
           color: pColor(pt),
@@ -201,14 +206,17 @@ function ArsenalTable({ pitches }) {
           chasePct: ooz.length ? chases / ooz.length : null,
           avgEV: mean(evs),
           extension: extMap[pt],
+          rUsage: rCount, lUsage: lCount,
         };
       });
+    return { detail, rTotal, lTotal };
   }, [pitches, extMap, total]);
 
   if (!detail.length) return null;
   const isFB = pt => ['Fastball','Four-Seam','Sinker','Cutter'].includes(pt);
   const th = { padding: '6px 8px', fontSize: 9, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'right', whiteSpace: 'nowrap', ...FONT_STYLE };
   const td = { padding: '7px 8px', fontSize: 12, textAlign: 'right', color: C.cream, fontVariantNumeric: 'tabular-nums', borderBottom: `0.5px solid ${C.edge}`, ...FONT_STYLE };
+  const hasHandSplit = rTotal > 0 && lTotal > 0;
 
   return (
     <div>
@@ -221,7 +229,11 @@ function ArsenalTable({ pitches }) {
         <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
             <tr>
-              {['Pitch','Use%','Velo','Max','Spin','Ext','Str%','Whiff%','Zone%','Z-Sw%','Z-Wh%','Chase%','EV'].map((h, i) => (
+              {[
+                'Pitch', 'Use%',
+                ...(hasHandSplit ? ['vs R', 'vs L'] : []),
+                'Velo', 'Max', 'Spin', 'Ext', 'Str%', 'Whiff%', 'Zone%', 'Z-Sw%', 'Z-Wh%', 'Chase%', 'EV',
+              ].map((h, i) => (
                 <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
               ))}
             </tr>
@@ -239,6 +251,12 @@ function ArsenalTable({ pitches }) {
                   {d.pt}
                 </td>
                 <td style={td}>{(d.usage * 100).toFixed(0)}%</td>
+                {hasHandSplit && (
+                  <>
+                    <td style={td}>{rTotal ? Math.round(d.rUsage / rTotal * 100) + '%' : '—'}</td>
+                    <td style={td}>{lTotal ? Math.round(d.lUsage / lTotal * 100) + '%' : '—'}</td>
+                  </>
+                )}
                 <td style={{ ...td, fontWeight: 700, color: C.white }}>{n1(d.avgVelo)}</td>
                 <td style={{ ...td, color: C.muted }}>{isFB(d.pt) && d.maxVelo != null ? n1(d.maxVelo) : '—'}</td>
                 <td style={td}>{n0(d.avgSpin)}</td>
@@ -317,58 +335,26 @@ function CountSplitsTable({ pitches }) {
   );
 }
 
-// ── Handedness splits ─────────────────────────────────────────
-function HandednessSplits({ pitches }) {
-  const { vsR, vsL, types } = useMemo(() => {
-    const vsR = {}, vsL = {};
-    let rTotal = 0, lTotal = 0;
-    pitches.forEach(p => {
-      const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-      const side = p.batter_hand;
-      if (side === 'Right') { vsR[pt] = (vsR[pt] || 0) + 1; rTotal++; }
-      else if (side === 'Left') { vsL[pt] = (vsL[pt] || 0) + 1; lTotal++; }
-    });
-    const types = [...new Set([...Object.keys(vsR),...Object.keys(vsL)])];
-    return { vsR: { types: vsR, total: rTotal }, vsL: { types: vsL, total: lTotal }, types };
-  }, [pitches]);
-
-  if (!types.length || (!vsR.total && !vsL.total)) return null;
-  const getPct = (side, t) => side.total > 0 ? Math.round((side.types[t] || 0) / side.total * 100) + '%' : '—';
-
-  // Horizontal segmented bars
-  const MixBar = ({ side, label }) => {
-    if (!side.total) return null;
-    const order = types.map(t => ({ t, c: side.types[t] || 0 })).sort((a, b) => b.c - a.c).filter(x => x.c > 0);
-    return (
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 4, ...FONT_STYLE }}>
-          {label} <span style={{ color: C.muted, fontWeight: 400 }}>({side.total})</span>
-        </div>
-        <div style={{ display: 'flex', height: 20, borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.edge}` }}>
-          {order.map(({ t, c }) => (
-            <div key={t} title={`${t} ${Math.round(c / side.total * 100)}%`}
-              style={{ width: (c / side.total * 100) + '%', background: pColor(t), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff', overflow: 'hidden' }}>
-              {c / side.total > 0.12 ? t.slice(0, 2) : ''}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
-          {order.map(({ t, c }) => (
-            <span key={t} style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}>
-              <b style={{ color: pColor(t) }}>{t.slice(0, 2)}</b> {Math.round(c / side.total * 100)}%
-            </span>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div>
-      <MixBar side={vsR} label="vs RHH" />
-      <MixBar side={vsL} label="vs LHH" />
-    </div>
-  );
+// ── Pitch mix by batter handedness (feeds into Platoon Splits cards) ──
+function pitchMixByHand(pitches) {
+  const byHand = { RHH: {}, LHH: {} };
+  const totals = { RHH: 0, LHH: 0 };
+  pitches.forEach(p => {
+    const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+    const key = p.batter_hand === 'Right' ? 'RHH' : p.batter_hand === 'Left' ? 'LHH' : null;
+    if (!key) return;
+    byHand[key][pt] = (byHand[key][pt] || 0) + 1;
+    totals[key]++;
+  });
+  const result = {};
+  for (const key of ['RHH', 'LHH']) {
+    if (!totals[key]) continue;
+    const order = Object.entries(byHand[key])
+      .map(([t, c]) => ({ t, c, color: pColor(t) }))
+      .sort((a, b) => b.c - a.c);
+    result[key] = { total: totals[key], order };
+  }
+  return result;
 }
 
 // ── Contact Allowed + Batted Ball & Contact Quality, combined ─
@@ -796,20 +782,13 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Count + Handedness splits */}
+      {/* Count splits */}
       {hasData && (
         <>
-          {sHead('Count Splits · Handedness')}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
-            <Card style={{ flex: '1 1 280px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Selection by Count</div>
-              <CountSplitsTable pitches={filteredPitches} />
-            </Card>
-            <Card style={{ flex: '1 1 240px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Usage by Handedness</div>
-              <HandednessSplits pitches={filteredPitches} />
-            </Card>
-          </div>
+          {sHead('Count Splits', 'pitch selection by count')}
+          <Card style={{ marginBottom: 18 }}>
+            <CountSplitsTable pitches={filteredPitches} />
+          </Card>
         </>
       )}
 
@@ -823,12 +802,12 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Savant-parity: Platoon splits (allowed, vs RHH/LHH) */}
+      {/* Savant-parity: Platoon splits, results + pitch mix, by batter handedness */}
       {hasData && (
         <>
-          {sHead('Platoon Splits', 'allowed, vs batter handedness')}
+          {sHead('Platoon Splits', 'results & pitch mix, vs batter handedness')}
           <Card style={{ marginBottom: 18 }}>
-            <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" />
+            <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" pitchMixByLabel={pitchMixByHand(filteredPitches)} />
           </Card>
         </>
       )}
