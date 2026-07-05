@@ -1,9 +1,42 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { C, FONT } from '@/lib/darkTheme';
 
 // Canonical field geometry constants
 const W = 400, H = 380;
 const CX = W / 2, CY = H - 20; // home plate position (bottom center)
 const MAX_DIST = 420;
+
+const HIT_TYPES = [
+  { key: 'all', label: 'All types' },
+  { key: 'GB', label: 'Ground balls' },
+  { key: 'LD', label: 'Line drives' },
+  { key: 'FB', label: 'Fly balls' },
+  { key: 'PU', label: 'Pop ups' },
+];
+const EV_BINS = [
+  { key: 'all', label: 'All exit velos' },
+  { key: 'soft', label: '<80 mph' },
+  { key: 'med', label: '80–94 mph' },
+  { key: 'hard', label: '95+ mph' },
+];
+const RESULT_FILTERS = [
+  { key: 'all', label: 'All balls in play' },
+  { key: 'hits', label: 'Hits only' },
+];
+
+function hitTypeOf(la) {
+  if (la == null) return null;
+  return la < 10 ? 'GB' : la < 25 ? 'LD' : la < 50 ? 'FB' : 'PU';
+}
+function evBinOf(ev) {
+  if (ev == null || ev <= 0) return null;
+  return ev >= 95 ? 'hard' : ev >= 80 ? 'med' : 'soft';
+}
+
+const selectStyle = {
+  background: C.raised, color: C.cream, border: `1px solid ${C.edge}`, borderRadius: 5,
+  padding: '5px 8px', fontSize: 11, fontFamily: FONT,
+};
 
 // Convert bearing (degrees, 0=CF, neg=LF, pos=RF) + distance to SVG coords
 function toXY(bearing, dist) {
@@ -38,28 +71,59 @@ function foulPt(side, dist) { // side: -1 = left, 1 = right
 }
 
 export default function SprayChart({ pitches }) {
-  const { points, stats } = useMemo(() => {
-    const bip = pitches.filter(p => p.bearing != null && p.hit_distance != null && p.hit_distance > 0);
+  const [resultFilter, setResultFilter] = useState('all');
+  const [hitType, setHitType] = useState('all');
+  const [evBin, setEvBin] = useState('all');
+
+  const { points, stats, totalBip } = useMemo(() => {
+    const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.bearing != null && p.hit_distance != null && p.hit_distance > 0);
+    const filtered = bip.filter(p => {
+      if (resultFilter === 'hits' && !['Single', 'Double', 'Triple', 'HomeRun'].includes(p.play_result)) return false;
+      if (hitType !== 'all' && hitTypeOf(p.launch_angle) !== hitType) return false;
+      if (evBin !== 'all' && evBinOf(p.exit_speed) !== evBin) return false;
+      return true;
+    });
     let hard = 0, med = 0, soft = 0;
-    const points = bip.map(p => {
+    const points = filtered.map(p => {
       const ev = p.exit_speed;
-      // Color by EV: hard=red, medium=gold, soft=teal, unknown=gray
-      let color, label;
-      if (ev >= 95)       { color = '#E24B4A'; label = 'hard'; hard++; }
-      else if (ev >= 80)  { color = '#EF9F27'; label = 'med';  med++;  }
-      else if (ev > 0)    { color = '#1D9E75'; label = 'soft'; soft++; }
-      else                { color = '#888780'; label = null; }
+      let color;
+      if (ev >= 95)       { color = '#E24B4A'; hard++; }
+      else if (ev >= 80)  { color = '#EF9F27'; med++;  }
+      else if (ev > 0)    { color = '#1D9E75'; soft++; }
+      else                { color = '#888780'; }
       // Hit type shape: GB=square, LD=diamond, FB=circle, PU=triangle
       const la = p.launch_angle;
       const shape = la == null ? 'circle' : la < 10 ? 'square' : la < 25 ? 'diamond' : la < 50 ? 'circle' : 'triangle';
       const { x, y } = toXY(p.bearing, p.hit_distance);
       return { x, y, color, shape, ev, dist: p.hit_distance };
     });
-    return { points, stats: { hard, med, soft, total: bip.length } };
-  }, [pitches]);
+    return { points, stats: { hard, med, soft, total: filtered.length }, totalBip: bip.length };
+  }, [pitches, resultFilter, hitType, evBin]);
 
+  const controls = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 10 }}>
+      <select value={resultFilter} onChange={e => setResultFilter(e.target.value)} style={selectStyle}>
+        {RESULT_FILTERS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <select value={hitType} onChange={e => setHitType(e.target.value)} style={selectStyle}>
+        {HIT_TYPES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <select value={evBin} onChange={e => setEvBin(e.target.value)} style={selectStyle}>
+        {EV_BINS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+
+  if (!totalBip) {
+    return <p style={{ textAlign: 'center', color: C.muted, padding: 32, fontSize: 13, fontFamily: FONT }}>No batted ball data</p>;
+  }
   if (!points.length) {
-    return <p style={{ textAlign: 'center', color: '#888', padding: 32, fontSize: 13 }}>No batted ball data</p>;
+    return (
+      <div>
+        {controls}
+        <p style={{ textAlign: 'center', color: C.muted, padding: 32, fontSize: 13, fontFamily: FONT }}>No batted balls match this filter.</p>
+      </div>
+    );
   }
 
   const lfWall = foulPt(-1, MAX_DIST);
@@ -96,6 +160,7 @@ export default function SprayChart({ pitches }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      {controls}
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: 360, display: 'block' }}>
         {/* Outfield grass */}
         <path d={`M ${CX} ${CY} L ${lfWall.x} ${lfWall.y} A ${H-60} ${H-60} 0 0 1 ${rfWall.x} ${rfWall.y} Z`}
@@ -134,7 +199,7 @@ export default function SprayChart({ pitches }) {
       </svg>
 
       {/* Legend row */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 8, fontSize: 10, color: '#888', fontFamily: "'Archivo',sans-serif" }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 8, fontSize: 10, color: C.muted, fontFamily: FONT }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#E24B4A', display: 'inline-block' }} /> Hard 95+
           {stats.hard > 0 && <span style={{ color: '#E24B4A', fontWeight: 700 }}>({stats.hard})</span>}
@@ -148,12 +213,12 @@ export default function SprayChart({ pitches }) {
           {stats.soft > 0 && <span style={{ color: '#1D9E75', fontWeight: 700 }}>({stats.soft})</span>}
         </span>
       </div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4, fontSize: 10, color: '#888', fontFamily: "'Archivo',sans-serif" }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4, fontSize: 10, color: C.muted, fontFamily: FONT }}>
         <span>● FB/LD</span>
         <span>■ GB</span>
         <span>◆ LD</span>
         <span>▲ PU</span>
-        <span style={{ color: '#aaa' }}>n={stats.total}</span>
+        <span style={{ color: C.cream }}>n={stats.total} of {totalBip}</span>
       </div>
     </div>
   );

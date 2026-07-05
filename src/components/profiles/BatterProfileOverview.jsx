@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
-import { hitterTrackmanProfile, percentileRank, fmtStat, approxBarrelRate, zoneGrid, rollingGameTrend } from '@/lib/profileStats';
+import { hitterTrackmanProfile, percentileRank, fmtStat, approxBarrelRate, zoneGrid, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend
@@ -10,6 +10,7 @@ import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwi
 import { C, FONT } from '@/lib/darkTheme';
 import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
+import SprayChart from '@/components/charts/SprayChart';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 
@@ -65,6 +66,9 @@ function HitterPercentiles({ pitches, hitterPool }) {
   const P = hitterPool;
   const n = P.qualifiedN;
 
+  const rv = P.xGrid ? runValue(pitches, P.leagueWoba, { invert: false }) : null;
+  const xs = P.xGrid ? xStatsForRows(pitches, P.xGrid) : null;
+
   const rows = [
     { label: 'Avg EV', value: n1(tm.avgEV), raw: tm.avgEV, pool: P.avgEV, invert: false },
     { label: 'Max EV', value: n1(tm.maxEV), raw: tm.maxEV, pool: P.maxEV, invert: false },
@@ -77,6 +81,14 @@ function HitterPercentiles({ pitches, hitterPool }) {
     { label: 'AirPull%', value: pct(tm.airPullPct), raw: tm.airPullPct, pool: P.airPullPct, invert: false },
     { label: 'Whiff% (↓ good)', value: pct(tm.whiffPct), raw: tm.whiffPct, pool: P.whiffPct, invert: true },
     { label: 'Chase% (↓ good)', value: pct(tm.chasePct), raw: tm.chasePct, pool: P.chasePct, invert: true },
+    { label: 'BB%', value: pct(tm.bbPct), raw: tm.bbPct, pool: P.bbPct, invert: false },
+    { label: 'Launch Angle', value: tm.avgLaunchAngle != null ? n1(tm.avgLaunchAngle) + '°' : null, raw: tm.avgLaunchAngle, pool: P.launchAngle, invert: false },
+    { label: 'EV90', value: n1(tm.ev90), raw: tm.ev90, pool: P.ev90, invert: false },
+    { label: 'LA @ EV90', value: tm.laAtEv90 != null ? n1(tm.laAtEv90) + '°' : null, raw: tm.laAtEv90, pool: P.laAtEv90, invert: false },
+    { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
+    { label: 'xBA (approx)', value: xs?.xBA != null ? n3(xs.xBA) : null, raw: xs?.xBA, pool: P.xBA, invert: false },
+    { label: 'xwOBA (approx)', value: xs?.xwOBA != null ? n3(xs.xwOBA) : null, raw: xs?.xwOBA, pool: P.xwOBA, invert: false },
+    { label: 'xSLG (approx)', value: xs?.xSLG != null ? n3(xs.xSLG) : null, raw: xs?.xSLG, pool: P.xSLG, invert: false },
   ].filter(r => r.value != null && r.value !== '—');
 
   if (!rows.length) return null;
@@ -90,73 +102,6 @@ function HitterPercentiles({ pitches, hitterPool }) {
         })}
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL hitters (Trackman)</div>
-    </div>
-  );
-}
-
-// ── Spray chart ───────────────────────────────────────────────
-function SprayChart({ pitches }) {
-  const { sprayPts } = useMemo(() => {
-    const bip = pitches.filter(p => p.pitch_call === 'InPlay');
-    const sprayPts = bip
-      .filter(p => p.bearing != null && p.hit_distance != null)
-      .map(p => {
-        const la = p.launch_angle;
-        const type = la == null ? null : la < 10 ? 'GB' : la < 25 ? 'LD' : la < 50 ? 'FB' : 'PU';
-        return { bearing: p.bearing, dist: p.hit_distance, type, exit_speed: p.exit_speed };
-      });
-    return { sprayPts };
-  }, [pitches]);
-
-  if (!sprayPts.length) return null;
-
-  const SIZE = 210;
-  const cx = SIZE / 2, cy = SIZE - 10, R = SIZE - 28;
-  const batterHand = pitches.find(p => p.batter_hand)?.batter_hand;
-  const evColor = (ev) => {
-    if (ev >= 95) return '#E24B4A';
-    if (ev >= 80) return '#EF9F27';
-    if (ev > 0)   return '#1D9E75';
-    return '#888780';
-  };
-
-  return (
-    <div>
-      <svg width={SIZE} height={SIZE} style={{ display: 'block', margin: '0 auto', background: 'rgba(0,0,0,.25)', borderRadius: 7 }}>
-        {/* Outfield grass */}
-        <path d={`M ${cx - R*0.71} ${cy - R*0.71} A ${R} ${R} 0 0 1 ${cx + R*0.71} ${cy - R*0.71} Z`}
-          fill="rgba(29,158,117,.12)" />
-        {/* Foul lines */}
-        <line x1={cx} y1={cy} x2={cx - R*0.71} y2={cy - R*0.71} stroke="rgba(255,255,255,.2)" strokeWidth={1} />
-        <line x1={cx} y1={cy} x2={cx + R*0.71} y2={cy - R*0.71} stroke="rgba(255,255,255,.2)" strokeWidth={1} />
-        {/* Wall arc */}
-        <path d={`M ${cx - R*0.71} ${cy - R*0.71} A ${R} ${R} 0 0 1 ${cx + R*0.71} ${cy - R*0.71}`}
-          fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={1.5} />
-        {/* Infield diamond */}
-        <rect x={cx-13} y={cy-28} width={26} height={26} fill="rgba(180,140,80,.15)" stroke="rgba(255,255,255,.2)" strokeWidth={1}
-          transform={`rotate(45 ${cx} ${cy-15})`} />
-        {/* Home plate */}
-        <polygon points={`${cx},${cy-6} ${cx+4},${cy-2} ${cx+4},${cy+2} ${cx-4},${cy+2} ${cx-4},${cy-2}`}
-          fill="rgba(255,255,255,.6)" />
-        {/* Pull/Oppo labels */}
-        {batterHand && (<>
-          <text x={8} y={cy - R*0.71 + 11} fontSize={8} fontWeight={700} fill="rgba(255,255,255,.45)" fontFamily={FONT}>{batterHand === 'Left' ? 'Oppo' : 'Pull'}</text>
-          <text x={SIZE - 8} y={cy - R*0.71 + 11} textAnchor="end" fontSize={8} fontWeight={700} fill="rgba(255,255,255,.45)" fontFamily={FONT}>{batterHand === 'Left' ? 'Pull' : 'Oppo'}</text>
-        </>)}
-        {/* Dots colored by EV */}
-        {sprayPts.map((p, i) => {
-          const rad = (p.bearing * Math.PI) / 180;
-          const d = Math.min(p.dist, 420) / 420;
-          const px = cx + Math.sin(rad) * d * R * 0.71;
-          const py = cy - Math.cos(rad) * d * R * 0.71;
-          return <circle key={i} cx={px} cy={py} r={4} fill={evColor(p.exit_speed)} fillOpacity={0.85} stroke="rgba(0,0,0,.3)" strokeWidth={0.5} />;
-        })}
-      </svg>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 5, fontSize: 9, color: C.muted, ...FONT_STYLE }}>
-        <span><b style={{ color: '#E24B4A' }}>●</b> 95+</span>
-        <span><b style={{ color: '#EF9F27' }}>●</b> 80–94</span>
-        <span><b style={{ color: '#1D9E75' }}>●</b> &lt;80</span>
-      </div>
     </div>
   );
 }

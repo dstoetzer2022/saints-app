@@ -180,6 +180,16 @@ function mean(arr) {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+// Quantile of a single player's own distribution (e.g. EV90 = quantile(evs, 0.9)).
+// Distinct from percentileRank, which ranks a value against a POOL of other
+// players — this ranks a value against the player's OWN sample.
+function quantile(arr, q) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)));
+  return sorted[idx];
+}
+
 function isBIP(p) {
   return p.pitch_call === 'InPlay' && p.hit_distance > 0;
 }
@@ -223,6 +233,15 @@ function pitchOutcomes(rows) {
   const whiffs = rows.filter(p => p.pitch_call === 'StrikeSwinging').length;
   const swings = rows.filter(p => isSwing(p.pitch_call)).length;
 
+  // Chase% (swings on out-of-zone pitches / out-of-zone pitches) and avg EV
+  // against — new percentile-bar metrics, computed here so the single-pitcher
+  // view and the pool builder share one implementation.
+  const ooz = rows.filter(isOutOfZone);
+  const chaseSwings = ooz.filter(p => isSwing(p.pitch_call));
+  const chasePct = ooz.length ? chaseSwings.length / ooz.length : null;
+  const avgEVAgainst = evs.length ? mean(evs) : null;
+  const extensionMean = extensionBreakdown(rows).seasonMean;
+
   return {
     hardPct: evs.length ? hardHit.length / evs.length : null,
     softPct: evs.length ? softHit.length / evs.length : null,
@@ -230,6 +249,9 @@ function pitchOutcomes(rows) {
     whiffPct: swings ? whiffs / swings : null,
     babip,
     bipCount: bip.length,
+    chasePct,
+    avgEVAgainst,
+    extensionMean,
   };
 }
 
@@ -371,6 +393,27 @@ export function hitterTrackmanProfile(rows) {
   // O-Contact: swings on OOZ pitches that made contact (not StrikeSwinging)
   const oWhiffs = ooz.filter(p => p.pitch_call === 'StrikeSwinging').length;
 
+  // BB% — new percentile-bar metric. PA-ending count mirrors the pitcher-side
+  // kPct/bbPct denominator (InPlay, K, BB, or HBP).
+  const bbCount = rows.filter(r => r.kor_bb === 'Walk').length;
+  const paEndingCount = rows.filter(r =>
+    r.pitch_call === 'InPlay' || r.kor_bb === 'Strikeout' || r.kor_bb === 'Walk' || r.pitch_call === 'HitByPitch'
+  ).length;
+  const bbPct = paEndingCount ? bbCount / paEndingCount : null;
+
+  // Launch angle, EV90 (90th percentile of this hitter's own EV distribution)
+  // and the average launch angle of just the batted balls at/above that
+  // threshold — "what does this hitter do with his hardest-hit contact".
+  const las = bip.map(p => p.launch_angle).filter(v => v != null && Number.isFinite(v));
+  const avgLaunchAngle = las.length ? mean(las) : null;
+  const ev90 = evs.length >= MIN_N ? quantile(evs, 0.9) : null;
+  const laAtEv90 = ev90 != null
+    ? (() => {
+        const qualifying = bip.filter(p => p.exit_speed >= ev90 && p.launch_angle != null && Number.isFinite(p.launch_angle));
+        return qualifying.length ? mean(qualifying.map(p => p.launch_angle)) : null;
+      })()
+    : null;
+
   return {
     avgEV: mean(evs),
     maxEV: evs.length ? Math.max(...evs) : null,
@@ -389,10 +432,163 @@ export function hitterTrackmanProfile(rows) {
     babip,
     battedBalls: bipN,
     avg: avg_,
+    bbPct,
+    avgLaunchAngle,
+    ev90,
+    laAtEv90,
   };
 }
 
-// ── buildPitcherPool: build distribution arrays from all TrackmanPitch rows ──
+// ── xStats: leaguewide EV×LA expected-outcome grid (xBA/xwOBA/xSLG) ──────
+// APPROXIMATION of Statcast's proprietary EV/LA model, built from CCL's own
+// pooled batted-ball outcomes rather than MLB's — necessarily coarser (CCL's
+// full-season BIP count is in the low thousands, not millions). Labeled
+// "(approx)" everywhere it's surfaced, same convention as approxBarrelRate
+// and contactQualityBreakdown above.
+const EV_BIN_EDGES = [70, 80, 90, 95, 100]; // 6 bins: <70,70-80,80-90,90-95,95-100,100+
+const LA_BIN_EDGES = [0, 10, 20, 30, 40];   // 6 bins: <0,0-10,10-20,20-30,30-40,40+
+const XSTATS_MIN_N = 8;
+
+function binIndex(v, edges) {
+  for (let i = 0; i < edges.length; i++) if (v < edges[i]) return i;
+  return edges.length;
+}
+
+// Standard published sabermetric wOBA linear weights — NOT fit to CCL data.
+// These are stable across levels/contexts the same way run-value-by-count
+// tables are, which is why it's defensible to borrow them (unlike SIERA's
+// regression coefficients, which genuinely need a large fitting sample).
+export const WOBA_WEIGHTS = { BB: 0.69, HBP: 0.72, '1B': 0.89, '2B': 1.27, '3B': 1.62, HR: 2.10 };
+export const WOBA_SCALE = 1.15;
+// No earned-run field exists anywhere in this app's schema (Game has no
+// score/runs field), so there is no CCL ground truth to calibrate an ERA
+// scale against. This anchor is an external assumption (typical summer
+// wood-bat-league ERA) purely so xERA reads on a familiar scale — the
+// PERCENTILE RANK is the reliable part of this stat, not the absolute number.
+const LEAGUE_ERA_ANCHOR = 5.00;
+const PA_PER_9 = 38;
+
+function tbValueOf(result) {
+  if (result === 'Single') return 1;
+  if (result === 'Double') return 2;
+  if (result === 'Triple') return 3;
+  if (result === 'HomeRun') return 4;
+  return 0;
+}
+function wobaValueOf(result) {
+  if (result === 'Single') return WOBA_WEIGHTS['1B'];
+  if (result === 'Double') return WOBA_WEIGHTS['2B'];
+  if (result === 'Triple') return WOBA_WEIGHTS['3B'];
+  if (result === 'HomeRun') return WOBA_WEIGHTS.HR;
+  return 0;
+}
+
+export function buildXStatsGrid(leaguePitches) {
+  const cells = {};
+  for (const r of leaguePitches || []) {
+    if (r.pitch_call !== 'InPlay') continue;
+    const ev = parseFloat(r.exit_speed), la = parseFloat(r.launch_angle);
+    if (!Number.isFinite(ev) || !Number.isFinite(la) || !r.play_result) continue;
+    const key = `${binIndex(ev, EV_BIN_EDGES)}-${binIndex(la, LA_BIN_EDGES)}`;
+    const c = (cells[key] = cells[key] || { hits: 0, tb: 0, woba: 0, n: 0 });
+    c.n++;
+    if (['Single', 'Double', 'Triple', 'HomeRun'].includes(r.play_result)) c.hits++;
+    c.tb += tbValueOf(r.play_result);
+    c.woba += wobaValueOf(r.play_result);
+  }
+  const grid = {};
+  for (const key of Object.keys(cells)) {
+    const c = cells[key];
+    if (c.n < XSTATS_MIN_N) continue;
+    grid[key] = { hitProb: c.hits / c.n, tbAvg: c.tb / c.n, wobaAvg: c.woba / c.n, n: c.n };
+  }
+  return grid;
+}
+
+function xStatsLookup(grid, ev, la) {
+  return grid[`${binIndex(ev, EV_BIN_EDGES)}-${binIndex(la, LA_BIN_EDGES)}`] || null;
+}
+
+// Applies the grid to one player's own rows to get xBA/xSLG/xwOBA. K
+// contributes 0 everywhere; BB/HBP contribute their fixed wOBA weight to
+// xwOBA only (they already happened, so there's nothing to "expect"); any
+// BIP missing EV/LA, or landing in a too-sparse grid cell, is excluded from
+// the average rather than guessed at.
+export function xStatsForRows(rows, grid) {
+  if (!grid || !Object.keys(grid).length) return null;
+  let hitSum = 0, tbSum = 0, wobaSum = 0, gridded = 0;
+  const bb = rows.filter(r => r.kor_bb === 'Walk').length;
+  const hbp = rows.filter(r => r.pitch_call === 'HitByPitch').length;
+  const k = rows.filter(r => r.kor_bb === 'Strikeout').length;
+  const bip = rows.filter(isBIP);
+  bip.forEach(r => {
+    const ev = parseFloat(r.exit_speed), la = parseFloat(r.launch_angle);
+    if (!Number.isFinite(ev) || !Number.isFinite(la)) return;
+    const cell = xStatsLookup(grid, ev, la);
+    if (!cell) return;
+    hitSum += cell.hitProb; tbSum += cell.tbAvg; wobaSum += cell.wobaAvg; gridded++;
+  });
+  const ab = gridded + k;
+  const pa = ab + bb + hbp;
+  if (ab < MIN_N) return null;
+  return {
+    xBA: hitSum / ab,
+    xSLG: tbSum / ab,
+    xwOBA: pa ? (wobaSum + bb * WOBA_WEIGHTS.BB + hbp * WOBA_WEIGHTS.HBP) / pa : null,
+    n: gridded, ab, pa,
+  };
+}
+
+// ── Run value (linear weights, runs above/below average) ─────────────────
+// Uses ACTUAL outcomes (real hits/BB/K), converted to wOBA with the
+// published weights above, then to runs via WOBA_SCALE. leagueWoba is this
+// pool's own real league-average wOBA (computed once, passed in) — so the
+// baseline is CCL-native even though the weights themselves are borrowed.
+export function actualWoba(rows) {
+  let h1 = 0, h2 = 0, h3 = 0, hr = 0, bb = 0, hbp = 0, ab = 0;
+  rows.forEach(r => {
+    if (r.kor_bb === 'Walk') { bb++; return; }
+    if (r.pitch_call === 'HitByPitch') { hbp++; return; }
+    if (r.kor_bb === 'Strikeout') { ab++; return; }
+    if (!['Out', 'Single', 'Double', 'Triple', 'HomeRun', 'Error', 'FieldersChoice', 'Sacrifice'].includes(r.play_result)) return;
+    if (r.play_result === 'Sacrifice') return;
+    ab++;
+    if (r.play_result === 'Single') h1++;
+    else if (r.play_result === 'Double') h2++;
+    else if (r.play_result === 'Triple') h3++;
+    else if (r.play_result === 'HomeRun') hr++;
+  });
+  const pa = ab + bb + hbp;
+  if (!pa) return null;
+  const wobaNum = h1 * WOBA_WEIGHTS['1B'] + h2 * WOBA_WEIGHTS['2B'] + h3 * WOBA_WEIGHTS['3B']
+    + hr * WOBA_WEIGHTS.HR + bb * WOBA_WEIGHTS.BB + hbp * WOBA_WEIGHTS.HBP;
+  return { woba: wobaNum / pa, pa };
+}
+
+// invert=true for pitchers: flips the sign so positive = runs SAVED (better),
+// matching the "higher is better" convention every other percentile bar uses.
+export function runValue(rows, leagueWoba, { invert = false } = {}) {
+  const w = actualWoba(rows);
+  if (!w || leagueWoba == null) return null;
+  const delta = (w.woba - leagueWoba) / WOBA_SCALE * w.pa;
+  return invert ? -delta : delta;
+}
+
+// xERA (approx) — same run-value math applied to xwOBA-against instead of
+// actual wOBA-against, read against the external LEAGUE_ERA_ANCHOR above.
+export function xERA(rows, grid, leagueWoba) {
+  const x = xStatsForRows(rows, grid);
+  if (!x || x.xwOBA == null || leagueWoba == null) return null;
+  const runsPerPADelta = (x.xwOBA - leagueWoba) / WOBA_SCALE;
+  return LEAGUE_ERA_ANCHOR + runsPerPADelta * PA_PER_9;
+}
+
+// League-average actual wOBA across all PAs in the pool — the baseline both
+// runValue() and xERA() compare against.
+export function leagueAvgWoba(leaguePitches) {
+  const w = actualWoba(leaguePitches || []);
+  return w ? w.woba : null;
+}
 // Requires ≥20 pitches per pitcher to qualify
 export function buildPitcherPool(allPitches) {
   // AUDIT: key on canonicalNameKey — raw-string grouping split one pitcher
@@ -405,10 +601,14 @@ export function buildPitcherPool(allPitches) {
     byPitcher[k].push(p);
   });
 
+  const grid = buildXStatsGrid(allPitches);
+  const leagueWoba = leagueAvgWoba(allPitches);
+
   const pool = {
     fbVelo: [], maxVelo: [], fbSpin: [], bbSpin: [],
     kPct: [], bbPct: [], hardPct: [], softPct: [],
     gbPct: [], whiffPct: [], babip: [],
+    chasePct: [], avgEVAgainst: [], extension: [], runValue: [], xERA: [], xBAAgainst: [],
     qualifiedN: 0,
   };
 
@@ -428,8 +628,19 @@ export function buildPitcherPool(allPitches) {
     if (prof.gbPct != null) pool.gbPct.push(prof.gbPct);
     if (prof.whiffPct != null) pool.whiffPct.push(prof.whiffPct);
     if (prof.babip != null) pool.babip.push(prof.babip);
+    if (prof.chasePct != null) pool.chasePct.push(prof.chasePct);
+    if (prof.avgEVAgainst != null) pool.avgEVAgainst.push(prof.avgEVAgainst);
+    if (prof.extensionMean != null) pool.extension.push(prof.extensionMean);
+    const rv = runValue(rows, leagueWoba, { invert: true });
+    if (rv != null) pool.runValue.push(rv);
+    const xe = xERA(rows, grid, leagueWoba);
+    if (xe != null) pool.xERA.push(xe);
+    const xs = xStatsForRows(rows, grid);
+    if (xs?.xBA != null) pool.xBAAgainst.push(xs.xBA);
   });
 
+  pool.xGrid = grid;
+  pool.leagueWoba = leagueWoba;
   return pool;
 }
 
@@ -443,11 +654,15 @@ export function buildHitterPool(allPitches) {
     byBatter[k].push(p);
   });
 
+  const grid = buildXStatsGrid(allPitches);
+  const leagueWoba = leagueAvgWoba(allPitches);
+
   const pool = {
     avgEV: [], maxEV: [], hardPct: [], gbPct: [],
     airPullPct: [], whiffPct: [], chasePct: [],
     oSwingPct: [], fStrikePct: [], zContactPct: [], oContactPct: [],
     slg: [], obp: [], iso: [], babip: [],
+    runValue: [], xBA: [], xwOBA: [], xSLG: [], bbPct: [], launchAngle: [], ev90: [], laAtEv90: [],
     qualifiedN: 0,
   };
 
@@ -470,8 +685,20 @@ export function buildHitterPool(allPitches) {
     if (prof.obp != null) pool.obp.push(prof.obp);
     if (prof.iso != null) pool.iso.push(prof.iso);
     if (prof.babip != null) pool.babip.push(prof.babip);
+    if (prof.bbPct != null) pool.bbPct.push(prof.bbPct);
+    if (prof.avgLaunchAngle != null) pool.launchAngle.push(prof.avgLaunchAngle);
+    if (prof.ev90 != null) pool.ev90.push(prof.ev90);
+    if (prof.laAtEv90 != null) pool.laAtEv90.push(prof.laAtEv90);
+    const rv = runValue(rows, leagueWoba, { invert: false });
+    if (rv != null) pool.runValue.push(rv);
+    const xs = xStatsForRows(rows, grid);
+    if (xs?.xBA != null) pool.xBA.push(xs.xBA);
+    if (xs?.xwOBA != null) pool.xwOBA.push(xs.xwOBA);
+    if (xs?.xSLG != null) pool.xSLG.push(xs.xSLG);
   });
 
+  pool.xGrid = grid;
+  pool.leagueWoba = leagueWoba;
   return pool;
 }
 

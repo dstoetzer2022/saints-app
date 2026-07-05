@@ -4,7 +4,7 @@ import PercentileBar from '@/components/shared/PercentileBar';
 import {
   pitcherProfile, percentileRank, fmtStat,
   cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend,
-  leagueMovementProfile,
+  leagueMovementProfile, runValue, xERA, xStatsForRows,
 } from '@/lib/profileStats';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
@@ -14,6 +14,7 @@ import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType } from '@/lib
 import { C, FONT } from '@/lib/darkTheme';
 import MovementScatterCircular from '@/components/charts/MovementScatterCircular';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
+import SprayChart from '@/components/charts/SprayChart';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 
@@ -69,6 +70,10 @@ function PitcherPercentiles({ pitches, pitcherPool }) {
   const P = pitcherPool;
   const n = P.qualifiedN;
 
+  const rv = P.xGrid ? runValue(pitches, P.leagueWoba, { invert: true }) : null;
+  const xe = P.xGrid ? xERA(pitches, P.xGrid, P.leagueWoba) : null;
+  const xs = P.xGrid ? xStatsForRows(pitches, P.xGrid) : null;
+
   const rows = [
     { label: 'Avg FB', value: prof.fb?.avgVelo != null ? n1(prof.fb.avgVelo) : null, raw: prof.fb?.avgVelo, pool: P.fbVelo, invert: false },
     { label: 'Max FB', value: prof.fb?.maxVelo != null ? n1(prof.fb.maxVelo) : null, raw: prof.fb?.maxVelo, pool: P.maxVelo, invert: false },
@@ -81,6 +86,12 @@ function PitcherPercentiles({ pitches, pitcherPool }) {
     { label: 'GB%', value: pct(prof.gbPct), raw: prof.gbPct, pool: P.gbPct, invert: false },
     { label: 'Whiff%', value: pct(prof.whiffPct), raw: prof.whiffPct, pool: P.whiffPct, invert: false },
     { label: 'BABIP', value: prof.babip != null ? fmtStat(prof.babip) : null, raw: prof.babip, pool: P.babip, invert: true },
+    { label: 'Chase%', value: pct(prof.chasePct), raw: prof.chasePct, pool: P.chasePct, invert: false },
+    { label: 'Avg EV against', value: n1(prof.avgEVAgainst), raw: prof.avgEVAgainst, pool: P.avgEVAgainst, invert: true },
+    { label: 'Extension', value: prof.extensionMean != null ? prof.extensionMean.toFixed(1) + ' ft' : null, raw: prof.extensionMean, pool: P.extension, invert: false },
+    { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
+    { label: 'xERA (approx)', value: xe != null ? xe.toFixed(2) : null, raw: xe, pool: P.xERA, invert: true },
+    { label: 'xBA against (approx)', value: xs?.xBA != null ? fmtStat(xs.xBA) : null, raw: xs?.xBA, pool: P.xBAAgainst, invert: true },
   ].filter(r => r.value != null && r.value !== '—');
 
   if (!rows.length) return null;
@@ -323,26 +334,24 @@ function HandednessSplits({ pitches }) {
 
 // ── Contact Allowed section ───────────────────────────────────
 function ContactSection({ pitches }) {
-  const { bip, sprayPts, evValues, gbPct, ldPct, fbPct, puPct, hardPct, avgEV, babip } = useMemo(() => {
+  const { bip, evValues, gbPct, ldPct, fbPct, puPct, hardPct, avgEV, babip } = useMemo(() => {
     const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0);
-    const sprayPts = [];
     let gb = 0, ld = 0, fb = 0, pu = 0, hard = 0, evSum = 0, evCount = 0;
     let bipHits = 0, hrN = 0;
     const evValues = [];
     bip.forEach(p => {
-      const la = p.launch_angle, ev = p.exit_speed, bearing = p.bearing, dist = p.hit_distance;
+      const la = p.launch_angle, ev = p.exit_speed;
       const laType = la == null ? null : la < 10 ? 'GB' : la < 25 ? 'LD' : la < 50 ? 'FB' : 'PU';
       if (laType === 'GB') gb++; else if (laType === 'LD') ld++; else if (laType === 'FB') fb++; else if (laType === 'PU') pu++;
       if (ev != null && ev >= 95) hard++;
       if (ev != null) { evSum += ev; evCount++; evValues.push(ev); }
-      if (bearing != null && dist != null) sprayPts.push({ bearing, dist, type: laType, exit_speed: ev });
       if (['Single','Double','Triple'].includes(p.play_result)) bipHits++;
       if (p.play_result === 'HomeRun') hrN++;
     });
     const bipN = bip.length;
     const babipDen = bipN - hrN;
     return {
-      bip, sprayPts, evValues,
+      bip, evValues,
       gbPct: bipN ? gb / bipN : null,
       ldPct: bipN ? ld / bipN : null,
       fbPct: bipN ? fb / bipN : null,
@@ -361,17 +370,6 @@ function ContactSection({ pitches }) {
   const stats = { min: sorted[0], q1: q(0.25), med: q(0.5), q3: q(0.75), max: sorted[sorted.length - 1], avg: mean(evValues) };
   const span = (stats.max - stats.min) || 1;
   const pos = v => ((v - stats.min) / span) * 100;
-
-  // Spray chart SVG — EV-based coloring on dark background
-  const SIZE = 190;
-  const cxS = SIZE / 2, cyS = SIZE - 10, R = SIZE - 28;
-  const evColor = (p) => {
-    const ev = p.exit_speed;
-    if (ev >= 95) return '#E24B4A';
-    if (ev >= 80) return '#EF9F27';
-    if (ev > 0)   return '#1D9E75';
-    return '#888780';
-  };
 
   return (
     <div>
@@ -424,44 +422,10 @@ function ContactSection({ pitches }) {
         </div>
 
         {/* Spray chart */}
-        {sprayPts.length > 0 && (
-          <div style={{ flex: '0 0 auto' }}>
+        {bip.length > 0 && (
+          <div style={{ flex: '0 0 auto', maxWidth: 300 }}>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textAlign: 'center', ...FONT_STYLE }}>Spray (contact allowed)</div>
-            <svg width={SIZE} height={SIZE} style={{ display: 'block', background: 'rgba(0,0,0,.25)', borderRadius: 7 }}>
-              {/* Outfield grass */}
-              <path d={`M ${cxS - R*0.71} ${cyS - R*0.71} A ${R} ${R} 0 0 1 ${cxS + R*0.71} ${cyS - R*0.71} Z`}
-                fill="rgba(29,158,117,.12)" />
-              {/* Foul lines */}
-              <line x1={cxS} y1={cyS} x2={cxS - R*0.71} y2={cyS - R*0.71} stroke="rgba(255,255,255,.2)" strokeWidth={1} />
-              <line x1={cxS} y1={cyS} x2={cxS + R*0.71} y2={cyS - R*0.71} stroke="rgba(255,255,255,.2)" strokeWidth={1} />
-              {/* Wall arc */}
-              <path d={`M ${cxS - R*0.71} ${cyS - R*0.71} A ${R} ${R} 0 0 1 ${cxS + R*0.71} ${cyS - R*0.71}`}
-                fill="none" stroke="rgba(255,255,255,.25)" strokeWidth={1.5} />
-              {/* Distance arc ~300ft */}
-              {(() => { const r2 = R * 0.71; return <path d={`M ${cxS - r2*0.71} ${cyS - r2*0.71} A ${r2} ${r2} 0 0 1 ${cxS + r2*0.71} ${cyS - r2*0.71}`} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={1} strokeDasharray="3 3" />; })()}
-              {/* Infield diamond */}
-              <rect x={cxS-14} y={cyS-30} width={28} height={28} fill="rgba(180,140,80,.15)" stroke="rgba(255,255,255,.2)" strokeWidth={1}
-                transform={`rotate(45 ${cxS} ${cyS-16})`} />
-              {/* Home plate */}
-              <polygon points={`${cxS},${cyS-6} ${cxS+4},${cyS-2} ${cxS+4},${cyS+2} ${cxS-4},${cyS+2} ${cxS-4},${cyS-2}`}
-                fill="rgba(255,255,255,.6)" />
-              {/* LF/RF labels */}
-              <text x={8} y={cyS - R*0.71 + 10} fontSize={8} fontWeight={700} fill="rgba(255,255,255,.35)" fontFamily="'Archivo',sans-serif">LF</text>
-              <text x={SIZE - 8} y={cyS - R*0.71 + 10} textAnchor="end" fontSize={8} fontWeight={700} fill="rgba(255,255,255,.35)" fontFamily="'Archivo',sans-serif">RF</text>
-              {/* Dots */}
-              {sprayPts.map((p, i) => {
-                const rad = (p.bearing * Math.PI) / 180;
-                const d = Math.min(p.dist, 420) / 420;
-                const px = cxS + Math.sin(rad) * d * R * 0.71;
-                const py = cyS - Math.cos(rad) * d * R * 0.71;
-                return <circle key={i} cx={px} cy={py} r={3.5} fill={evColor(p)} fillOpacity={0.85} stroke="rgba(0,0,0,.3)" strokeWidth={0.5} />;
-              })}
-            </svg>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 4, fontSize: 9, color: C.muted, ...FONT_STYLE }}>
-              <span><b style={{ color: '#E24B4A' }}>●</b> 95+</span>
-              <span><b style={{ color: '#EF9F27' }}>●</b> 80–94</span>
-              <span><b style={{ color: '#1D9E75' }}>●</b> &lt;80</span>
-            </div>
+            <SprayChart pitches={pitches} />
           </div>
         )}
       </div>
