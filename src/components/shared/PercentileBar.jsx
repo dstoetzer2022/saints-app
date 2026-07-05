@@ -21,13 +21,13 @@ function markerColor(pct) {
   }
 }
 
-export default function PercentileBar({ label, value, percentile, invert = false, unit = '' }) {
+export default function PercentileBar({ label, value, percentile, invert = false, unit = '', labelWidth = 150 }) {
   if (value == null) return null;
 
   if (percentile == null) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, fontFamily: FONT }}>
-        <div style={{ width: 150, flexShrink: 0, textAlign: 'right' }}>
+        <div style={{ width: labelWidth, flexShrink: 0, textAlign: 'right' }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, color: LABEL }}>{label} </span>
           <span style={{ fontSize: 11.5, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
         </div>
@@ -43,7 +43,7 @@ export default function PercentileBar({ label, value, percentile, invert = false
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, fontFamily: FONT }}>
       {/* Label + value on the left */}
-      <div style={{ width: 150, flexShrink: 0, textAlign: 'right' }}>
+      <div style={{ width: labelWidth, flexShrink: 0, textAlign: 'right' }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, color: LABEL }}>{label} </span>
         <span style={{ fontSize: 11.5, fontWeight: 900, color: VALUE, fontVariantNumeric: 'tabular-nums' }}>{value}{unit}</span>
       </div>

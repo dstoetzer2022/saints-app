@@ -132,31 +132,26 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   if (!sections.length) return null;
   return (
     <div>
-      {sections.map((cat, i) => (
-        <div
-          key={cat.title}
-          style={{
-            paddingTop: i > 0 ? 10 : 0,
-            marginTop: i > 0 ? 10 : 0,
-            borderTop: i > 0 ? `1px solid ${C.edge}` : 'none',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-            <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
-              {cat.title}
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 32px' }}>
-            {cat.rows.map(row => {
-              const rank = percentileRank(row.pool, row.raw);
-              const display = row.invert && rank != null ? 100 - rank : rank;
-              return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} />;
-            })}
-          </div>
-        </div>
-      ))}
-      <div style={{ fontSize: 10, color: C.muted, marginTop: 6, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {sections.map(cat => (
+          <Card key={cat.title} style={{ flex: '1 1 230px', padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
+                {cat.title}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {cat.rows.map(row => {
+                const rank = percentileRank(row.pool, row.raw);
+                const display = row.invert && rank != null ? 100 - rank : rank;
+                return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} labelWidth={118} />;
+              })}
+            </div>
+          </Card>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
     </div>
   );
 }
@@ -652,8 +647,14 @@ function RollingTrendSection({ pitches }) {
       <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
         <CartesianGrid stroke={C.faint} />
         <XAxis dataKey="game" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
-        <YAxis yAxisId="left" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
-        <YAxis yAxisId="right" orientation="right" tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint} />
+        <YAxis
+          yAxisId="left" domain={[60, 100]} ticks={[60, 65, 70, 75, 80, 85, 90, 95, 100]}
+          tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint}
+        />
+        <YAxis
+          yAxisId="right" orientation="right" domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+          tick={{ fill: C.muted, fontSize: 10 }} stroke={C.faint}
+        />
         <Tooltip contentStyle={{ background: C.raised, border: `1px solid ${C.edge}`, fontSize: 11 }} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Line yAxisId="left" type="monotone" dataKey="Velo" stroke={C.gold} dot={false} strokeWidth={2} connectNulls />
@@ -720,9 +721,9 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
       {hasPercentiles && (
         <>
           {sHead('Percentiles', 'vs CCL')}
-          <Card style={{ marginBottom: 14, padding: '12px 14px' }}>
+          <div style={{ marginBottom: 14 }}>
             <PitcherPercentiles pitches={filteredPitches} allPitches={pitches} pitcherPool={pitcherPool} />
-          </Card>
+          </div>
         </>
       )}
 
