@@ -12,24 +12,7 @@ import { lazy, Suspense } from 'react';
 const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import PasswordGate from '@/components/shared/PasswordGate';
-
-// ── Design tokens ─────────────────────────────────────────────
-const C = {
-  base:    '#080f17',
-  surface: '#0d1a26',
-  raised:  '#111f2e',
-  edge:    '#192c3e',
-  rim:     '#1e3448',
-  gold:    '#c8920c',
-  goldDim: '#8a6308',
-  cream:   '#edeae0',
-  muted:   '#7d93a6', // AUDIT: was #5a7080 (3.4:1 on surface — below WCAG AA for small text)
-  faint:   '#253545',
-  white:   '#f8f8f4',
-  green:   '#21c55d',
-  red:     '#e84040',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 // ── League pitch cache ────────────────────────────────────────────────────────
 // AUDIT: the league percentile pool was previously rebuilt on EVERY profile

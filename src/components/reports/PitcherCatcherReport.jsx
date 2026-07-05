@@ -1,18 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
-
-const C = {
-  base:    '#080f17',
-  surface: '#0d1a26',
-  edge:    '#192c3e',
-  gold:    '#c8920c',
-  cream:   '#edeae0',
-  muted:   '#5a7080',
-  faint:   '#253545',
-  white:   '#f8f8f4',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 function avg(arr) {
   if (!arr || !arr.length) return null;

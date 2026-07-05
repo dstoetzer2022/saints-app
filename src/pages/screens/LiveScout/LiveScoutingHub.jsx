@@ -29,7 +29,7 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
     <div style={{ background: NAVY_DARK, borderBottom: '1px solid rgba(198,181,131,0.18)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
       {onHome && (
         <button onClick={onHome} title="Back to home"
-          style={{ background: 'rgba(255,255,255,.07)', border: '0.5px solid rgba(255,255,255,.15)', borderRadius: 6, color: GOLD, fontSize: 16, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: FONT }}>
+          style={{ background: 'rgba(255,255,255,.07)', border: '0.5px solid rgba(255,255,255,.15)', borderRadius: 6, color: GOLD, fontSize: 16, width: 44, height: 44, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: FONT }}>
           ‹
         </button>
       )}
@@ -71,6 +71,7 @@ function HubBanner({ opponent, game, onCompleteGame, onToggleSub, showSub, dugou
         style={{ background: showSub ? 'rgba(239,68,68,0.18)' : 'rgba(198,181,131,0.12)', border: `1px solid ${showSub ? 'rgba(239,68,68,0.45)' : 'rgba(198,181,131,0.3)'}`, color: showSub ? '#f87171' : GOLD, borderRadius: 6, padding: '7px 12px', minHeight: 44, fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
         {showSub ? '✕ Cancel' : '⇄ Sub'}
       </button>
+      <div style={{ width: 1, alignSelf: 'stretch', minHeight: 28, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
       <button onClick={onCompleteGame}
         style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)', color: '#f87171', borderRadius: 6, padding: '7px 13px', minHeight: 44, fontWeight: 800, fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2, whiteSpace: 'nowrap', transition: 'all 0.15s' }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.3)'; }}
@@ -554,7 +555,7 @@ export default function LiveScoutingHub({ game, opponent, initialLineup, onBack,
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#0b1d2e' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: NAVY_DARK }}>
       <style>{`
         .hub-panel { background: rgba(255,255,255,0.04); border: 1px solid rgba(198,181,131,0.13); border-radius: 10px; }
         .dark-input { background: rgba(255,255,255,0.07) !important; border: 1px solid rgba(198,181,131,0.2) !important; border-radius: 6px !important; color: #f0ece0 !important; padding: 7px 10px !important; font-size: 13px !important; font-family: 'Archivo', sans-serif !important; width: 100%; outline: none; }

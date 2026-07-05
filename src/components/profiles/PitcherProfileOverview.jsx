@@ -7,15 +7,7 @@ import {
   CartesianGrid, ResponsiveContainer
 } from 'recharts';
 import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType } from '@/lib/statsUtils';
-
-// ── Design tokens ──────────────────────────────────────────────
-const C = {
-  base: '#080f17', surface: '#0d1a26', raised: '#111f2e',
-  edge: '#192c3e', rim: '#1e3448', gold: '#c8920c', goldDim: '#8a6308',
-  cream: '#edeae0', muted: '#5a7080', faint: '#253545',
-  white: '#f8f8f4', green: '#21c55d', amber: '#e8a800', red: '#e84040',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 const pColor = pt => getPitchColor(pt);
 

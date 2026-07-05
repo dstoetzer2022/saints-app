@@ -1,21 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-
-const C = {
-  base:    '#080f17',
-  surface: '#0d1a26',
-  raised:  '#111f2e',
-  edge:    '#192c3e',
-  rim:     '#1e3448',
-  gold:    '#c8920c',
-  cream:   '#edeae0',
-  muted:   '#5a7080',
-  faint:   '#253545',
-  white:   '#f8f8f4',
-  green:   '#21c55d',
-  amber:   '#e8a800',
-  red:     '#e84040',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 // Populated by the CCL scraper (see the standalone ccl-pitcher-tracker repo).
 // Point this at wherever the scraper's GitHub Action commits pitcher-rest.json —
@@ -171,7 +155,7 @@ export default function PitcherRestTracker({ team, onBack }) {
               <tr>
                 {['Pitcher', 'Role', 'Days rest', 'Avg pitches', 'Avg rest', 'Last outing', 'IP', 'Pitches', 'Last 5'].map((h, i) => (
                   <th key={h} style={{
-                    textAlign: i >= 6 && i !== 8 ? 'right' : 'left', padding: '10px 10px 8px', fontSize: 10.5,
+                    textAlign: [3, 4, 6, 7].includes(i) ? 'right' : 'left', padding: '10px 10px 8px', fontSize: 10.5,
                     textTransform: 'uppercase', letterSpacing: 1, color: C.muted, fontWeight: 700,
                     borderBottom: `1px solid ${C.edge}`, position: 'sticky', top: 0, background: C.base,
                   }}>

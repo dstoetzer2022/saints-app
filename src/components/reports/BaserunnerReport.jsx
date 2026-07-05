@@ -1,22 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
-
-const C = {
-  base:    '#080f17',
-  surface: '#0d1a26',
-  edge:    '#192c3e',
-  rim:     '#1e3448',
-  gold:    '#c8920c',
-  cream:   '#edeae0',
-  muted:   '#5a7080',
-  faint:   '#253545',
-  white:   '#f8f8f4',
-  green:   '#21c55d',
-  amber:   '#e8a800',
-  red:     '#e84040',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 const SPEED_COLOR = { fast: C.green, average: C.amber, slow: C.red };
 const AGGR_COLOR  = { aggressive: C.green, average: C.amber, passive: C.red };

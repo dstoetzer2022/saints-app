@@ -1,21 +1,9 @@
 import React, { useState } from 'react';
-
-const C = {
-  base:    '#080f17',
-  surface: '#0d1a26',
-  raised:  '#111f2e',
-  edge:    '#192c3e',
-  rim:     '#1e3448',
-  gold:    '#c8920c',
-  cream:   '#edeae0',
-  muted:   '#5a7080',
-  white:   '#f8f8f4',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
+import { C, FONT } from '@/lib/darkTheme';
 
 const TABS = [
   { key: 'pitchers', label: 'Pitching Staff', desc: 'Arsenal, usage, and per-pitcher profiles', icon: '⚾' },
-  { key: 'hitters', label: 'Hitters', desc: 'Zone profiles, spray charts, and hitter reports', icon: '🏏' },
+  { key: 'hitters', label: 'Hitters', desc: 'Zone profiles, spray charts, and hitter reports', icon: '🎯' },
   { key: 'rest', label: 'Pitcher Rest Tracker', desc: 'League-wide pitch counts and days rest', icon: '📋' },
 ];
 

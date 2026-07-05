@@ -6,15 +6,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
 import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
+import { C, FONT } from '@/lib/darkTheme';
 
-// ── Design tokens ──────────────────────────────────────────────
-const C = {
-  base: '#080f17', surface: '#0d1a26', raised: '#111f2e',
-  edge: '#192c3e', rim: '#1e3448', gold: '#c8920c', goldDim: '#8a6308',
-  cream: '#edeae0', muted: '#5a7080', faint: '#253545',
-  white: '#f8f8f4', green: '#21c55d', amber: '#e8a800', red: '#e84040',
-};
-const FONT = "'Archivo', system-ui, sans-serif";
 const FONT_STYLE = { fontFamily: FONT };
 
 const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
