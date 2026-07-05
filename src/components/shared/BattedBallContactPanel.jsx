@@ -30,8 +30,8 @@ const TIER_COLOR = { Barrel: C.green, Solid: '#4a95c0', FlareBurner: C.gold, Top
 function ContactQualityTable({ rows }) {
   const { tiers, n } = useMemo(() => contactQualityBreakdown(rows), [rows]);
   if (!tiers.length) return <div style={{ color: C.muted, fontSize: 12 }}>Need at least 5 balls in play.</div>;
-  const th = { padding: '5px 8px', fontSize: 9, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'right', ...FONT_STYLE };
-  const td = { padding: '6px 8px', fontSize: 12, textAlign: 'right', color: C.cream, fontVariantNumeric: 'tabular-nums', borderBottom: `0.5px solid ${C.edge}`, ...FONT_STYLE };
+  const th = { padding: '6px 8px', fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'right', background: C.surface, ...FONT_STYLE };
+  const td = { padding: '7px 8px', fontSize: 12, textAlign: 'right', color: C.cream, fontVariantNumeric: 'tabular-nums', borderBottom: `0.5px solid ${C.edge}`, ...FONT_STYLE };
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ borderCollapse: 'collapse', width: '100%' }}>
@@ -42,8 +42,13 @@ function ContactQualityTable({ rows }) {
           <th style={th}>wOBA (approx)</th>
         </tr></thead>
         <tbody>
-          {tiers.map(t => (
-            <tr key={t.key}>
+          {tiers.map((t, i) => (
+            <tr
+              key={t.key}
+              style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)', borderLeft: `3px solid ${TIER_COLOR[t.key]}44`, transition: 'background 0.1s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.raised; }}
+              onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
+            >
               <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: TIER_COLOR[t.key], marginRight: 6 }} />
                 {TIER_LABEL[t.key]}

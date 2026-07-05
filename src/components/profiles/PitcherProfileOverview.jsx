@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import {
@@ -46,20 +46,32 @@ function Card({ children, style }) {
 }
 
 // ── Stat Pills row ─────────────────────────────────────────────
+function StatPill({ item }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: hovered ? C.raised : C.surface,
+        border: `1px solid ${hovered ? C.gold : C.edge}`, borderRadius: 8,
+        padding: '10px 16px', minWidth: 72, textAlign: 'center',
+        transition: 'all 0.15s ease',
+        transform: hovered ? 'translateY(-1px)' : 'none',
+      }}
+    >
+      <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{item.label}</div>
+      <div style={{ fontSize: 17, fontWeight: 900, color: item.gold ? C.gold : C.white, marginTop: 3, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{item.value}</div>
+    </div>
+  );
+}
+
 function StatPills({ items }) {
   const valid = items.filter(Boolean);
   if (!valid.length) return null;
   return (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20, justifyContent: 'center' }}>
-      {valid.map(it => (
-        <div key={it.label} style={{
-          background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 8,
-          padding: '10px 16px', minWidth: 72, textAlign: 'center',
-        }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{it.label}</div>
-          <div style={{ fontSize: 17, fontWeight: 900, color: it.gold ? C.gold : C.white, marginTop: 3, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{it.value}</div>
-        </div>
-      ))}
+      {valid.map(it => <StatPill key={it.label} item={it} />)}
     </div>
   );
 }
@@ -121,9 +133,19 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   return (
     <div>
       {sections.map((cat, i) => (
-        <div key={cat.title} style={{ marginBottom: i < sections.length - 1 ? 16 : 0 }}>
-          <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1.6, textTransform: 'uppercase', color: C.muted, marginBottom: 8 }}>
-            {cat.title}
+        <div
+          key={cat.title}
+          style={{
+            paddingTop: i > 0 ? 14 : 0,
+            marginTop: i > 0 ? 14 : 0,
+            borderTop: i > 0 ? `1px solid ${C.edge}` : 'none',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+            <span style={{ width: 3, height: 11, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1.4, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
+              {cat.title}
+            </span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
             {cat.rows.map(row => {
@@ -205,8 +227,13 @@ function ArsenalTable({ pitches }) {
             </tr>
           </thead>
           <tbody>
-            {detail.map(d => (
-              <tr key={d.pt} style={{ background: 'transparent' }}>
+            {detail.map((d, i) => (
+              <tr
+                key={d.pt}
+                style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)', transition: 'background 0.1s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.raised; }}
+                onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
+              >
                 <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 6 }} />
                   {d.pt}
@@ -253,8 +280,9 @@ function CountSplitsTable({ pitches }) {
 
   if (!types.length) return null;
   const getPct = (bk, t) => totals[bk] > 0 ? Math.round((res[bk][t] || 0) / totals[bk] * 100) + '%' : '—';
-  const th = { padding: '5px 10px', fontSize: 9, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE };
-  const td = { padding: '6px 10px', fontSize: 12, color: C.cream, textAlign: 'center', borderBottom: `0.5px solid ${C.edge}`, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE };
+  const th = { padding: '6px 10px', fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 0.6, background: C.surface, ...FONT_STYLE };
+  const td = { padding: '7px 10px', fontSize: 12, color: C.cream, textAlign: 'center', borderBottom: `0.5px solid ${C.edge}`, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE };
+  const rows = [['ahead', 'Ahead'], ['even', 'Even'], ['behind', 'Behind']];
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -270,8 +298,13 @@ function CountSplitsTable({ pitches }) {
           </tr>
         </thead>
         <tbody>
-          {[['ahead', 'Ahead'], ['even', 'Even'], ['behind', 'Behind']].map(([k, lbl]) => (
-            <tr key={k}>
+          {rows.map(([k, lbl], i) => (
+            <tr
+              key={k}
+              style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)', transition: 'background 0.1s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.raised; }}
+              onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
+            >
               <td style={{ ...td, textAlign: 'left', fontWeight: 700, color: C.white }}>
                 {lbl} <span style={{ color: C.muted, fontWeight: 400 }}>({totals[k]})</span>
               </td>
