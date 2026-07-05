@@ -9,6 +9,9 @@ import {
 import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
 import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
+import LocationContourPlot from '@/components/charts/LocationContourPlot';
+import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
+import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 
 const FONT_STYLE = { fontFamily: FONT };
 
@@ -662,6 +665,36 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
           {sHead('Swing & Whiff by Zone')}
           <Card style={{ marginBottom: 18 }}>
             <ZoneSwingSection pitches={pitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Location density contour, pitches seen */}
+      {hasTrackman && (
+        <>
+          {sHead('Pitch Location', 'KDE density contour, all pitches seen')}
+          <Card style={{ marginBottom: 18 }}>
+            <LocationContourPlot groups={[{ label: 'Pitches seen', pitches }]} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Batted ball profile, contact quality, EV histogram */}
+      {hasTrackman && (
+        <>
+          {sHead('Batted Ball & Contact Quality')}
+          <Card style={{ marginBottom: 18 }}>
+            <BattedBallContactPanel rows={pitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Platoon splits, vs RHP/LHP */}
+      {hasTrackman && (
+        <>
+          {sHead('Platoon Splits', 'vs pitcher handedness')}
+          <Card style={{ marginBottom: 18 }}>
+            <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
           </Card>
         </>
       )}

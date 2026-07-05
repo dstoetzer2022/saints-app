@@ -4,7 +4,7 @@
  */
 
 import { normalizePitch, getPitchColor } from '@/lib/ds';
-import { canonicalNameKey, isSwing as isSwingRow, isWhiff, isStrike, circularMean, isFastballVeloType } from '@/lib/statsUtils';
+import { canonicalNameKey, isSwing as isSwingRow, isWhiff, isStrike, circularMean, isFastballVeloType, stdDev, sprayDistribution, normHand } from '@/lib/statsUtils';
 
 // ── Savant-parity feature helpers ─────────────────────────────────────────────
 // Shared source for all new profile-page additions (pitcher AND hitter), so
@@ -480,4 +480,165 @@ export function fmtStat(v, decimals = 3) {
   if (v == null) return '—';
   const s = v.toFixed(decimals);
   return s.startsWith('0.') ? s.slice(1) : s;
+}
+
+// ── Savant-parity: league-average movement by handedness, per pitch type ──
+// Powers the shaded "league avg (same-handed)" ellipse on the circular
+// movement plot — a RHP's Four-Seam is benchmarked against other RHP
+// Four-Seams, not the whole league regardless of arm side. Requires at
+// least MIN_N pitchers' worth of pitches per hand/type cell or it's omitted
+// (same minimum-N convention as the rest of the app).
+export function leagueMovementProfile(leaguePitches) {
+  const groups = {}; // hand -> type -> { hb: [], ivb: [] }
+  for (const r of leaguePitches || []) {
+    const hb = parseFloat(r.horz_break), ivb = parseFloat(r.induced_vert_break);
+    if (!Number.isFinite(hb) || !Number.isFinite(ivb)) continue;
+    const hand = r.pitcher_hand === 'Left' ? 'Left' : 'Right';
+    const type = normalizePitch(r.tagged_pitch_type || r.pitch_type);
+    const g = (groups[hand] = groups[hand] || {});
+    (g[type] = g[type] || { hb: [], ivb: [] });
+    g[type].hb.push(hb);
+    g[type].ivb.push(ivb);
+  }
+  const out = {};
+  for (const hand of Object.keys(groups)) {
+    out[hand] = {};
+    for (const type of Object.keys(groups[hand])) {
+      const { hb, ivb } = groups[hand][type];
+      if (hb.length < 20) continue; // pitch-level minimum, distinct from MIN_N cell rule
+      out[hand][type] = { hbMean: mean(hb), ivbMean: mean(ivb), hbSd: stdDev(hb), ivbSd: stdDev(ivb), n: hb.length };
+    }
+  }
+  return out;
+}
+
+// ── Savant-parity: contact-quality tiers (Weak/Topped/Under/Flare-Burner/
+// Solid/Barrel) ─────────────────────────────────────────────────────────
+// APPROXIMATION, not Statcast's proprietary EV/LA matrix — same caveat as
+// approxBarrelRate above, and deliberately reuses its EV>=95 / LA 10-35
+// barrel threshold so the two "barrel" numbers shown elsewhere in the app
+// never disagree with each other.
+export function contactQualityBreakdown(rows) {
+  const bip = rows.filter(r => r.exit_speed != null && r.launch_angle != null && r.play_result);
+  if (bip.length < MIN_N) return { tiers: [], n: bip.length };
+  const tierOf = (ev, la) => {
+    if (ev < 59) return 'Weak';
+    if (ev >= 95 && la >= 10 && la <= 35) return 'Barrel';
+    if (la < 10) return 'Topped';
+    if (la > 35) return 'Under';
+    if (ev >= 85) return 'Solid';
+    return 'FlareBurner';
+  };
+  const order = ['Barrel', 'Solid', 'FlareBurner', 'Topped', 'Under', 'Weak'];
+  const buckets = Object.fromEntries(order.map(k => [k, []]));
+  bip.forEach(r => {
+    const ev = parseFloat(r.exit_speed), la = parseFloat(r.launch_angle);
+    if (!Number.isFinite(ev) || !Number.isFinite(la)) return;
+    const t = tierOf(ev, la);
+    buckets[t].push({ ev, r });
+  });
+  const n = bip.length;
+  const wobaWeight = r => {
+    const res = r.play_result;
+    if (res === 'HomeRun') return 2.0;
+    if (res === 'Triple') return 1.6;
+    if (res === 'Double') return 1.25;
+    if (res === 'Single') return 0.9;
+    return 0;
+  };
+  const tiers = order.map(key => {
+    const items = buckets[key];
+    if (!items.length) return { key, pct: 0, avgEV: null, woba: null };
+    const evs = items.map(i => i.ev);
+    const wobaSum = items.reduce((s, i) => s + wobaWeight(i.r), 0);
+    return {
+      key,
+      pct: Math.round((items.length / n) * 100),
+      avgEV: mean(evs),
+      woba: wobaSum / items.length,
+      n: items.length,
+    };
+  });
+  return { tiers, n };
+}
+
+// ── Savant-parity: batted-ball profile (trajectory + pull/straight/oppo) ──
+// Trajectory buckets match the thresholds already used in ContactSection/
+// ContactProfile (LA<10 GB, 10-25 LD, 25-50 FB, >50 PU). Direction reuses
+// the existing sprayDistribution/sprayThird helpers rather than re-deriving
+// pull/oppo logic a third time.
+export function battedBallProfile(rows) {
+  const bip = rows.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0);
+  if (bip.length < MIN_N) return null;
+  let gb = 0, ld = 0, fb = 0, pu = 0;
+  bip.forEach(r => {
+    const la = r.launch_angle;
+    if (la == null || la < 10) gb++; else if (la < 25) ld++; else if (la < 50) fb++; else pu++;
+  });
+  const n = bip.length;
+  const hand = normHand(bip.find(r => r.batter_hand)?.batter_hand);
+  const spray = hand ? sprayDistribution(bip, hand) : null;
+  return {
+    n,
+    gbPct: gb / n, ldPct: ld / n, fbPct: fb / n, puPct: pu / n,
+    pullPct: spray?.pullPct ?? null, straightPct: spray?.midPct ?? null, oppoPct: spray?.oppoPct ?? null,
+  };
+}
+
+// ── Savant-parity: exit-velocity histogram bins ──────────────────────────
+export function evHistogramBins(rows, binWidth = 3) {
+  const evs = rows.filter(r => r.pitch_call === 'InPlay').map(r => r.exit_speed).filter(v => v != null && v > 0);
+  if (evs.length < MIN_N) return [];
+  const minV = Math.floor(Math.min(...evs) / binWidth) * binWidth;
+  const maxV = Math.ceil(Math.max(...evs) / binWidth) * binWidth;
+  const bins = [];
+  for (let v = minV; v < maxV; v += binWidth) bins.push({ lo: v, label: String(v), count: 0 });
+  evs.forEach(v => {
+    const i = Math.min(bins.length - 1, Math.max(0, Math.floor((v - minV) / binWidth)));
+    bins[i].count++;
+  });
+  return bins;
+}
+
+// ── Savant-parity: slash line from raw pitch rows ────────────────────────
+// Shared by the hitter's own OffenseLine AND pitcher-allowed platoon splits
+// — one implementation of AB/H/TB/BB/K accounting instead of three.
+export function slashLine(rows) {
+  let ab = 0, h = 0, tb = 0, hr = 0, xbh = 0, bb = 0, k = 0;
+  const isTerminal = p => ['Out', 'Single', 'Double', 'Triple', 'HomeRun', 'Error', 'FieldersChoice', 'Sacrifice'].includes(p.play_result);
+  rows.forEach(p => {
+    if (p.kor_bb === 'Walk') { bb++; return; }
+    if (p.kor_bb === 'Strikeout') { k++; ab++; return; }
+    if (isTerminal(p)) {
+      if (p.play_result === 'Sacrifice') return;
+      ab++;
+      if (p.play_result === 'Single') { h++; tb++; }
+      else if (p.play_result === 'Double') { h++; tb += 2; xbh++; }
+      else if (p.play_result === 'Triple') { h++; tb += 3; xbh++; }
+      else if (p.play_result === 'HomeRun') { h++; tb += 4; hr++; xbh++; }
+    }
+  });
+  const pa = ab + bb;
+  const avg = ab ? h / ab : null;
+  const slg = ab ? tb / ab : null;
+  const obp = pa ? (h + bb) / pa : null;
+  const iso = (slg != null && avg != null) ? slg - avg : null;
+  const ops = (obp != null && slg != null) ? obp + slg : null;
+  const swings = rows.filter(isSwingRow).length;
+  const whiffs = rows.filter(isWhiff).length;
+  return { pa, ab, h, tb, hr, xbh, bb, k, avg, slg, obp, iso, ops,
+    kPct: rows.length ? k / rows.length : null,
+    whiffPct: swings ? whiffs / swings : null };
+}
+
+// ── Savant-parity: platoon split rows, keyed by the opposite-role hand ───
+// side = 'batter_hand' (for a pitcher's allowed splits) or 'pitcher_hand'
+// (for a hitter's own splits vs L/R).
+export function platoonSplitRows(rows, side) {
+  const right = rows.filter(r => r[side] === 'Right');
+  const left = rows.filter(r => r[side] === 'Left');
+  return [
+    { label: side === 'batter_hand' ? 'RHH' : 'RHP', rows: right, stats: slashLine(right) },
+    { label: side === 'batter_hand' ? 'LHH' : 'LHP', rows: left, stats: slashLine(left) },
+  ].filter(s => s.rows.length >= MIN_N);
 }

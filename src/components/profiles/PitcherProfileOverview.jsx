@@ -3,7 +3,8 @@ import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import {
   pitcherProfile, percentileRank, fmtStat,
-  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, zoneGrid, rollingGameTrend,
+  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend,
+  leagueMovementProfile,
 } from '@/lib/profileStats';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
@@ -11,7 +12,10 @@ import {
 } from 'recharts';
 import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
-import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
+import MovementScatterCircular from '@/components/charts/MovementScatterCircular';
+import LocationContourPlot from '@/components/charts/LocationContourPlot';
+import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
+import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 
 const pColor = pt => getPitchColor(pt);
 
@@ -90,91 +94,6 @@ function PitcherPercentiles({ pitches, pitcherPool }) {
         })}
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL pitchers</div>
-    </div>
-  );
-}
-
-// ── Movement chart (HB vs iVB scatter) ────────────────────────
-function MovementChart({ pitches }) {
-  const byType = useMemo(() => {
-    const map = {};
-    pitches.forEach(p => {
-      const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-      if (!map[pt]) map[pt] = [];
-      map[pt].push(p);
-    });
-    return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-  }, [pitches]);
-
-  const total = pitches.length;
-  const W = 460, H = 240;
-  const cx0 = W / 2, cy0 = H / 2;
-  const HB_SCALE = 6, IVB_SCALE = 6;
-
-  // Determine handedness for ARM/GLOVE labels
-  const isLHP = pitches.some(p => p.pitcher_hand === 'Left');
-  const armLabel = isLHP ? 'GLOVE' : 'ARM';
-  const gloveLabel = isLHP ? 'ARM' : 'GLOVE';
-
-  const points = byType.map(([pt, rows]) => {
-    const hbs = rows.map(r => r.horz_break).filter(v => v != null);
-    const ivbs = rows.map(r => r.induced_vert_break).filter(v => v != null);
-    if (!hbs.length || !ivbs.length) return null;
-    return {
-      pt, color: pColor(pt),
-      hbMean: mean(hbs),
-      ivbMean: mean(ivbs),
-      usageFrac: rows.length / total,
-      count: rows.length,
-    };
-  }).filter(Boolean).sort((a, b) => a.count - b.count);
-
-  const toXY = (hb, ivb) => ({
-    x: Math.max(14, Math.min(W - 14, cx0 + hb * HB_SCALE)),
-    y: Math.max(14, Math.min(H - 14, cy0 - ivb * IVB_SCALE)),
-  });
-
-  return (
-    <div>
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
-        {byType.map(([pt, rows]) => (
-          <div key={pt} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: pColor(pt) }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, ...FONT_STYLE }}>{pt} {(rows.length / total * 100).toFixed(0)}%</span>
-          </div>
-        ))}
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', background: 'rgba(0,0,0,.2)', borderRadius: 6 }}>
-        {/* Grid */}
-        {[-20,-10,0,10,20].map(v => (
-          <g key={v}>
-            <line x1={cx0 + v * HB_SCALE} y1={6} x2={cx0 + v * HB_SCALE} y2={H-6}
-              stroke={v === 0 ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)'} strokeWidth={v === 0 ? 1.2 : 1} strokeDasharray={v === 0 ? '' : '3 3'} />
-            <line x1={6} y1={cy0 - v * IVB_SCALE} x2={W-6} y2={cy0 - v * IVB_SCALE}
-              stroke={v === 0 ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)'} strokeWidth={v === 0 ? 1.2 : 1} strokeDasharray={v === 0 ? '' : '3 3'} />
-            {v !== 0 && <text x={cx0 + v * HB_SCALE} y={H - 2} textAnchor="middle" fontSize={8} fill="rgba(90,112,128,.6)" fontFamily={FONT}>{v}"</text>}
-            {v !== 0 && <text x={3} y={cy0 - v * IVB_SCALE + 3} textAnchor="start" fontSize={8} fill="rgba(90,112,128,.6)" fontFamily={FONT}>{v}"</text>}
-          </g>
-        ))}
-        <text x={8} y={cy0 - 4} fontSize={8} fontWeight={700} fill="rgba(90,112,128,.7)" fontFamily={FONT}>RISE</text>
-        <text x={8} y={cy0 + 11} fontSize={8} fontWeight={700} fill="rgba(90,112,128,.7)" fontFamily={FONT}>DROP</text>
-        <text x={12} y={cy0 + 1} fontSize={8} fill="rgba(90,112,128,.5)" fontFamily={FONT}>{armLabel}</text>
-        <text x={W-12} y={cy0 + 1} textAnchor="end" fontSize={8} fill="rgba(90,112,128,.5)" fontFamily={FONT}>{gloveLabel}</text>
-        {/* Dots */}
-        {points.map(({ pt, color, hbMean, ivbMean, usageFrac }) => {
-          const r = Math.max(12, Math.min(28, 11 + usageFrac * 90));
-          const { x, y } = toXY(hbMean, ivbMean);
-          return (
-            <g key={pt}>
-              <circle cx={x} cy={y} r={r} fill={color} fillOpacity={0.9} stroke="rgba(0,0,0,.4)" strokeWidth={1.5} />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize={9} fontWeight={900} fill="#fff" fontFamily={FONT}>
-                {pt.length <= 2 ? pt : pt.slice(0,2).toUpperCase()}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
     </div>
   );
 }
@@ -842,30 +761,6 @@ function SpinDirectionSection({ pitches }) {
 }
 
 // ── Savant-parity: Location heatmap (pitch-type filterable) ─────
-function LocationHeatmapSection({ pitches }) {
-  const types = useMemo(() => {
-    const counts = {};
-    pitches.forEach(p => { const t = normalizePitch(p.tagged_pitch_type || p.pitch_type); counts[t] = (counts[t] || 0) + 1; });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([t]) => t);
-  }, [pitches]);
-  const [selType, setSelType] = React.useState('All');
-  const filtered = selType === 'All' ? pitches : pitches.filter(p => normalizePitch(p.tagged_pitch_type || p.pitch_type) === selType);
-  const cells = zoneGrid(filtered);
-  return (
-    <div>
-      <select
-        value={selType}
-        onChange={e => setSelType(e.target.value)}
-        style={{ background: C.raised, color: C.cream, border: `1px solid ${C.edge}`, borderRadius: 5, padding: '5px 8px', fontSize: 11, marginBottom: 12, ...FONT_STYLE }}
-      >
-        <option value="All">All pitches</option>
-        {types.map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
-      <ZoneHeatmap cells={cells} mode="usage" label={`Location — ${selType} (n=${filtered.length})`} />
-    </div>
-  );
-}
-
 // ── Savant-parity: Rolling trend chart ───────────────────────────
 function RollingTrendSection({ pitches }) {
   const trend = rollingGameTrend(pitches);
@@ -927,6 +822,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
   const fps = filteredPitches.filter(p => p.balls === 0 && p.strikes === 0);
   const fpsStrikes = fps.filter(isStrike).length;
   const { cswPct, kbbPct } = cswKbb(filteredPitches);
+  const leagueAvg = leagueMovementProfile(leaguePitches);
 
   return (
     <div style={FONT_STYLE}>
@@ -960,7 +856,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           {sHead('Arsenal · Movement', `${filteredPitches.length} pitches`)}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
             <Card style={{ flex: '1 1 340px' }}>
-              <MovementChart pitches={filteredPitches} />
+              <MovementScatterCircular pitches={filteredPitches} leagueAvg={leagueAvg} />
               <VeloHistogram pitches={filteredPitches} />
             </Card>
             <Card style={{ flex: '2 1 400px', overflow: 'hidden', padding: '14px 0' }}>
@@ -996,12 +892,18 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         </>
       )}
 
-      {/* Savant-parity: Location heatmap */}
+      {/* Savant-parity: Location density contour, per pitch type */}
       {hasData && (
         <>
-          {sHead('Pitch Location')}
+          {sHead('Pitch Location', 'KDE density contour, by pitch type')}
           <Card style={{ marginBottom: 18 }}>
-            <LocationHeatmapSection pitches={filteredPitches} />
+            <LocationContourPlot groups={
+              Object.entries(filteredPitches.reduce((m, p) => {
+                const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+                (m[pt] = m[pt] || []).push(p);
+                return m;
+              }, {})).sort((a, b) => b[1].length - a[1].length).map(([label, pitches]) => ({ label, pitches }))
+            } />
           </Card>
         </>
       )}
@@ -1039,6 +941,26 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           {sHead('Contact Against')}
           <Card style={{ marginBottom: 18 }}>
             <ContactSection pitches={filteredPitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Batted ball profile, contact quality, EV histogram */}
+      {hasData && (
+        <>
+          {sHead('Batted Ball & Contact Quality')}
+          <Card style={{ marginBottom: 18 }}>
+            <BattedBallContactPanel rows={filteredPitches} />
+          </Card>
+        </>
+      )}
+
+      {/* Savant-parity: Platoon splits (allowed, vs RHH/LHH) */}
+      {hasData && (
+        <>
+          {sHead('Platoon Splits', 'allowed, vs batter handedness')}
+          <Card style={{ marginBottom: 18 }}>
+            <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" />
           </Card>
         </>
       )}
