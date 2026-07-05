@@ -151,66 +151,42 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
   );
 }
 
-function GameLog({ playerName, isPitcher, team, allTeams, games }) {
-  const [gameData, setGameData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+function GameLog({ isPitcher, team, allTeams, games, pitches, pitcherObs, catcherObs, runnerObs }) {
+  // AUDIT: this component used to independently re-fetch TrackmanPitch with
+  // its own exact-match query, which had two bugs:
+  //  1. For hitters, it queried batter_name using the raw "First Last" player
+  //     name instead of converting to Trackman's "Last, First" form — so it
+  //     NEVER matched anything and every hitter's game log was empty.
+  //  2. It had no canonicalNameKey/nickname recovery, so any pitcher whose
+  //     name was logged under a variant spelling (e.g. a nickname like
+  //     "Joe" vs roster "Joseph") silently lost that game from the log.
+  // Fix: consume the parent's `pitches`/observation state, which is already
+  // fetched with the correct name form AND merged with canonical-key variant
+  // matches from the league cache. No independent re-fetch needed.
+  const groupBy = (rows, key) => {
+    const m = {};
+    for (const r of rows || []) { const k = r[key]; if (!k) continue; (m[k] = m[k] || []).push(r); }
+    return m;
+  };
 
-  useEffect(() => {
-    if (!games.length) { setLoading(false); return; }
-    // AUDIT: was 2-3 queries PER GAME fired concurrently (100+ calls per profile
-    // open — rate-limit territory). Now: fetch the player's rows/observations
-    // ONCE (paginated) and group by game_id client-side.
-    const tmName = isPitcher ? toTrackmanName(playerName) : playerName;
-    const normName = normalizeName(playerName);
-    let cancelled = false;
-    const groupBy = (rows, key) => {
-      const m = {};
-      for (const r of rows || []) { const k = r[key]; if (!k) continue; (m[k] = m[k] || []).push(r); }
-      return m;
-    };
-    const load = isPitcher
-      ? Promise.all([
-          fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: tmName }, 'inning'),
-          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normName }, 'pitcher_name'),
-        ]).then(([tp, po]) => {
-          const tpBy = groupBy(tp, 'game_id'), poBy = groupBy(po, 'game_id');
-          const map = {};
-          games.forEach(g => { map[g.id] = [tpBy[g.id] || [], poBy[g.id] || []]; });
-          return map;
-        })
-      : Promise.all([
-          fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: tmName }, 'inning'),
-          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normName }, 'catcher_name'),
-          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normName }, 'runner_name'),
-        ]).then(([tp, co, ro]) => {
-          const tpBy = groupBy(tp, 'game_id'), coBy = groupBy(co, 'game_id'), roBy = groupBy(ro, 'game_id');
-          const map = {};
-          games.forEach(g => { map[g.id] = [tpBy[g.id] || [], coBy[g.id] || [], roBy[g.id] || []]; });
-          return map;
-        });
-    load
-      .then(map => { if (!cancelled) { setGameData(map); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setGameData({}); setLoading(false); setError(true); } });
-    return () => { cancelled = true; };
-  }, [games, playerName, isPitcher]);
-
-  if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-      <div style={{ width: 22, height: 22, border: `2.5px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-    </div>
-  );
+  const gameData = React.useMemo(() => {
+    const tpBy = groupBy(pitches, 'game_id');
+    const map = {};
+    if (isPitcher) {
+      const poBy = groupBy(pitcherObs, 'game_id');
+      games.forEach(g => { map[g.id] = [tpBy[g.id] || [], poBy[g.id] || []]; });
+    } else {
+      const coBy = groupBy(catcherObs, 'game_id'), roBy = groupBy(runnerObs, 'game_id');
+      games.forEach(g => { map[g.id] = [tpBy[g.id] || [], coBy[g.id] || [], roBy[g.id] || []]; });
+    }
+    return map;
+  }, [pitches, pitcherObs, catcherObs, runnerObs, games, isPitcher]);
 
   const gamesWithData = games.filter(g => {
     const d = gameData[g.id];
     return d && d.some(arr => arr.length > 0);
   }).sort((a, b) => b.date?.localeCompare(a.date));
 
-  if (error) return (
-    <p style={{ color: C.red, textAlign: 'center', padding: 40, fontFamily: FONT }}>
-      Couldn't load the game log — check your connection and reopen this tab.
-    </p>
-  );
   if (!gamesWithData.length) return <p style={{ color: C.muted, textAlign: 'center', padding: 40, fontFamily: FONT }}>No game log available.</p>;
 
   return (
@@ -735,7 +711,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
               </PasswordGate>
             )}
             {tab === 'gamelog' && (
-              <GameLog playerName={player.name} isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} />
+              <GameLog isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} pitches={pitches} pitcherObs={pitcherObs} catcherObs={catcherObs} runnerObs={runnerObs} />
             )}
             {tab === 'compare' && (
               <ProfileCompareTab
