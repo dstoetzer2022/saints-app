@@ -438,6 +438,7 @@ function HitterKdeZones({ pitches }) {
     const hardHit = pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed != null && p.exit_speed >= 95);
 
     return [
+      { label: 'All Pitches', pitches: pitches },
       { label: 'Swings', pitches: swings },
       { label: 'Whiffs', pitches: whiffs },
       { label: 'Balls In Play', pitches: inPlayAll },
@@ -451,7 +452,7 @@ function HitterKdeZones({ pitches }) {
   if (!groups.length) return null;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <LocationContourPlot groups={groups} cellWidth={162} cellHeight={206} gap={12} wrap="nowrap" minPoints={10} />
+      <LocationContourPlot groups={groups} cellWidth={140} cellHeight={178} gap={12} wrap="nowrap" minPoints={10} />
     </div>
   );
 }
@@ -503,12 +504,32 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
         </>
       )}
 
-      {/* Plate discipline */}
+      {/* Plate discipline (combines Plate Discipline, Trends, and Season Trend) */}
       {hasTrackman && (
         <>
-          {sHead('Plate Discipline', `${pitches.length} pitches seen`)}
+          {sHead('Plate Discipline & Trends', `${pitches.length} pitches seen`)}
           <Card style={{ marginBottom: 18 }}>
             <PlateDiscipline pitches={pitches} />
+
+            {pitches.length >= 8 && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Contact vs Velo &amp; Two-Strike Approach</span>
+                </div>
+                <HitterTrends pitches={pitches} />
+              </div>
+            )}
+
+            {pitches.length >= 30 && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Season Trend (by game)</span>
+                </div>
+                <HitterRollingTrendSection pitches={pitches} />
+              </div>
+            )}
           </Card>
         </>
       )}
@@ -533,32 +554,12 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
         </>
       )}
 
-      {/* Savant-parity: Rolling trend */}
-      {pitches.length >= 30 && (
-        <>
-          {sHead('Season Trend', 'by game')}
-          <Card style={{ marginBottom: 18 }}>
-            <HitterRollingTrendSection pitches={pitches} />
-          </Card>
-        </>
-      )}
-
       {/* vs Pitch Type */}
       {hasTrackman && (
         <>
           {sHead('vs Pitch Type')}
           <Card style={{ marginBottom: 18, padding: '14px 0' }}>
             <VsPitchType pitches={pitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Trends */}
-      {pitches.length >= 8 && (
-        <>
-          {sHead('Trends')}
-          <Card style={{ marginBottom: 18 }}>
-            <HitterTrends pitches={pitches} />
           </Card>
         </>
       )}
