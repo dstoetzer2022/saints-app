@@ -93,9 +93,9 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
     { label: 'Chase%', value: pct(prof.chasePct), raw: prof.chasePct, pool: P.chasePct, invert: false },
     // Contact Quality
     { label: 'Avg EV against', value: n1(prof.avgEVAgainst), raw: prof.avgEVAgainst, pool: P.avgEVAgainst, invert: true },
-    { label: 'Avg LA against', value: prof.avgLaunchAgainst != null ? n1(prof.avgLaunchAgainst) + '°' : null, raw: prof.avgLaunchAgainst, pool: P.avgLaunchAgainst, invert: false },
+    { label: 'Avg LA against', value: prof.avgLaunchAgainst != null ? n1(prof.avgLaunchAgainst) + '°' : null, raw: prof.avgLaunchAgainst, pool: P.avgLaunchAgainst, invert: true },
     { label: 'GB%', value: pct(prof.gbPct), raw: prof.gbPct, pool: P.gbPct, invert: false },
-    { label: 'FB%', value: pct(prof.fbPct), raw: prof.fbPct, pool: P.fbPct, invert: false },
+    { label: 'FB%', value: pct(prof.fbPct), raw: prof.fbPct, pool: P.fbPct, invert: true },
     { label: 'Soft%', value: pct(prof.softPct), raw: prof.softPct, pool: P.softPct, invert: false },
     { label: 'Hard%', value: pct(prof.hardPct), raw: prof.hardPct, pool: P.hardPct, invert: true },
   ];
