@@ -1,14 +1,13 @@
 import React, { useMemo } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
-import { hitterTrackmanProfile, percentileRank, fmtStat, zoneGrid, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
+import { hitterTrackmanProfile, percentileRank, fmtStat, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend
 } from 'recharts';
 import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
-import ZoneHeatmap from '@/components/shared/ZoneHeatmap';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
@@ -117,97 +116,6 @@ function HitterPercentiles({ pitches, hitterPool }) {
         ))}
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL hitters (Trackman)</div>
-    </div>
-  );
-}
-
-// ── Contact profile ───────────────────────────────────────────
-function ContactProfile({ pitches }) {
-  const data = useMemo(() => {
-    const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0);
-    if (bip.length < 3) return null;
-    const evs = bip.map(p => p.exit_speed).filter(v => v != null);
-    const hard = evs.filter(v => v >= 95).length;
-    let gb = 0, ld = 0, fb = 0, pu = 0;
-    bip.forEach(p => {
-      const la = p.launch_angle;
-      if (la == null || la < 10) gb++; else if (la < 25) ld++; else if (la < 50) fb++; else pu++;
-    });
-    const bipN = bip.length;
-    const sorted = [...evs].sort((a, b) => a - b);
-    const q = p => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-    return {
-      bip, evs, bipN,
-      gbPct: bipN ? gb / bipN : null, ldPct: bipN ? ld / bipN : null,
-      fbPct: bipN ? fb / bipN : null, puPct: bipN ? pu / bipN : null,
-      hardPct: evs.length ? hard / evs.length : null,
-      avgEV: mean(evs), maxEV: evs.length ? Math.max(...evs) : null,
-      evStats: { min: sorted[0], q1: q(0.25), med: q(0.5), q3: q(0.75), max: sorted[sorted.length - 1], avg: mean(evs) },
-    };
-  }, [pitches]);
-
-  if (!data) return null;
-  const { gbPct, ldPct, fbPct, puPct, hardPct, avgEV, maxEV, evStats, bipN, evs } = data;
-  const span = (evStats.max - evStats.min) || 1;
-  const pos = v => ((v - evStats.min) / span) * 100;
-
-  // Pull/center/oppo from bearings
-  const bip2 = pitches.filter(p => p.pitch_call === 'InPlay');
-  const side = pitches.find(p => p.batter_hand)?.batter_hand;
-  let pull = 0, center = 0, oppo = 0;
-  bip2.forEach(p => {
-    if (p.bearing == null) return;
-    const isPull = side === 'Left' ? p.bearing > 15 : p.bearing < -15;
-    const isOppo = side === 'Left' ? p.bearing < -15 : p.bearing > 15;
-    if (isPull) pull++; else if (isOppo) oppo++; else center++;
-  });
-  const bipN2 = bip2.length || 1;
-
-  return (
-    <div>
-      {/* Batted ball type bar */}
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 5, ...FONT_STYLE }}>Batted-ball type</div>
-      <div style={{ display: 'flex', height: 20, borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.edge}`, marginBottom: 4 }}>
-        {[['GB', gbPct, '#8c6d3f'], ['LD', ldPct, '#2c7a4b'], ['FB', fbPct, '#2c6080'], ['PU', puPct, '#9a9a9a']]
-          .filter(([, p]) => p != null && p > 0)
-          .map(([lbl, p, col]) => (
-            <div key={lbl} style={{ width: (p * 100) + '%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff' }}>
-              {p >= 0.1 ? lbl : ''}
-            </div>
-          ))}
-      </div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[['GB', gbPct, '#c49a5a'], ['LD', ldPct, '#4ab87a'], ['FB', fbPct, '#4a95c0'], ['PU', puPct, '#aaaaaa']]
-          .filter(([, p]) => p != null)
-          .map(([lbl, p, col]) => (
-            <span key={lbl} style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}>
-              <b style={{ color: col }}>{lbl}</b> {(p * 100).toFixed(0)}%
-            </span>
-          ))}
-      </div>
-
-      {/* EV box plot */}
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, ...FONT_STYLE }}>Exit velo distribution</div>
-      <div style={{ position: 'relative', height: 34, marginBottom: 4 }}>
-        <div style={{ position: 'absolute', top: 16, left: 0, right: 0, height: 2, background: C.edge }} />
-        <div style={{ position: 'absolute', top: 10, left: pos(evStats.q1) + '%', width: Math.max(0, pos(evStats.q3) - pos(evStats.q1)) + '%', height: 14, background: 'rgba(44,123,182,.35)', border: '1.5px solid #2c7bb6', borderRadius: 3 }} />
-        <div style={{ position: 'absolute', top: 8, left: pos(evStats.med) + '%', width: 2.5, height: 18, background: C.white }} />
-        <div style={{ position: 'absolute', top: 12, left: `calc(${pos(evStats.avg)}% - 4px)`, width: 8, height: 8, borderRadius: '50%', background: C.gold, border: `1.5px solid ${C.base}` }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted, marginBottom: 10, ...FONT_STYLE }}>
-        <span>{evStats.min.toFixed(0)}</span>
-        <span style={{ color: C.white, fontWeight: 700 }}>med {evStats.med.toFixed(0)}</span>
-        <span>{evStats.max.toFixed(0)} mph</span>
-      </div>
-
-      {/* Summary line */}
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, marginBottom: 10, color: C.cream, ...FONT_STYLE }}>
-        <span><b style={{ color: C.gold }}>Avg EV</b> {n1(avgEV)}</span>
-        <span><b style={{ color: C.gold }}>Max EV</b> {n1(maxEV)}</span>
-        <span><b style={{ color: C.gold }}>Hard%</b> {pct(hardPct)}</span>
-        {bip2.length > 0 && <span><b style={{ color: C.gold }}>Pull/Cen/Oppo</b> {(pull/bipN2*100).toFixed(0)}% / {(center/bipN2*100).toFixed(0)}% / {(oppo/bipN2*100).toFixed(0)}%</span>}
-        <span><b style={{ color: C.muted }}>n={bipN}</b></span>
-      </div>
     </div>
   );
 }
@@ -487,13 +395,6 @@ function ScoutNotes({ catcherObs, runnerObs }) {
   );
 }
 
-// ── Offline stats line from Trackman ─────────────────────────
-// ── Savant-parity: Zone-based swing/whiff heatmap ────────────────
-function ZoneSwingSection({ pitches }) {
-  const cells = zoneGrid(pitches, { swingOnly: true });
-  return <ZoneHeatmap cells={cells} mode="whiff" label={`Whiff% by zone (n=${pitches.length})`} />;
-}
-
 // ── Savant-parity: Rolling trend (exit velo, whiff%, chase%) ─────
 function HitterRollingTrendSection({ pitches }) {
   const trend = rollingGameTrend(pitches);
@@ -550,7 +451,7 @@ function HitterKdeZones({ pitches }) {
   if (!groups.length) return null;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <LocationContourPlot groups={groups} cellWidth={132} cellHeight={168} gap={10} wrap="nowrap" />
+      <LocationContourPlot groups={groups} cellWidth={162} cellHeight={206} gap={12} wrap="nowrap" />
     </div>
   );
 }
@@ -586,13 +487,13 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
         </>
       )}
 
-      {/* Contact profile + Spray chart */}
+      {/* Contact profile: batted-ball mix, contact quality, EV histogram + spray chart */}
       {hasTrackman && (
         <>
           {sHead('Contact Profile', `${pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0).length} balls in play`)}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
             <Card style={{ flex: '2 1 280px' }}>
-              <ContactProfile pitches={pitches} />
+              <BattedBallContactPanel rows={pitches} />
             </Card>
             <Card style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, ...FONT_STYLE }}>Spray chart</div>
@@ -612,37 +513,7 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
         </>
       )}
 
-      {/* Savant-parity: Zone-based whiff heatmap */}
-      {hasTrackman && (
-        <>
-          {sHead('Swing & Whiff by Zone')}
-          <Card style={{ marginBottom: 18 }}>
-            <ZoneSwingSection pitches={pitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Location density contour, pitches seen */}
-      {hasTrackman && (
-        <>
-          {sHead('Pitch Location', 'KDE density contour, all pitches seen')}
-          <Card style={{ marginBottom: 18 }}>
-            <LocationContourPlot groups={[{ label: 'Pitches seen', pitches }]} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Batted ball profile, contact quality, EV histogram */}
-      {hasTrackman && (
-        <>
-          {sHead('Batted Ball & Contact Quality')}
-          <Card style={{ marginBottom: 18 }}>
-            <BattedBallContactPanel rows={pitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Platoon splits, vs RHP/LHP */}
+      {/* Platoon splits, vs RHP/LHP */}
       {hasTrackman && (
         <>
           {sHead('Platoon Splits', 'vs pitcher handedness')}
