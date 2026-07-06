@@ -657,7 +657,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         {/* Edit bar — jersey + school only */}
         <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
           <ExportProfileButton />
-          <PlayerInfoBar playerName={trackmanName} onSchoolChange={setSchool} />
+          <PlayerInfoBar playerName={trackmanName} team={team.name} onSchoolChange={setSchool} />
         </div>
       </div>
 

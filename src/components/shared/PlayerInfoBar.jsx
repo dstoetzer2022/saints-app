@@ -57,7 +57,7 @@ function InlineField({ label, value, onChange }) {
   );
 }
 
-export default function PlayerInfoBar({ playerName, onSchoolChange }) {
+export default function PlayerInfoBar({ playerName, team, onSchoolChange }) {
   const [record, setRecord] = useState(null);
   const [recordId, setRecordId] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -87,7 +87,7 @@ export default function PlayerInfoBar({ playerName, onSchoolChange }) {
       if (recordId) {
         await base44.entities.Player.update(recordId, { [field]: value });
       } else {
-        const created = await base44.entities.Player.create({ name: playerName, ...newData });
+        const created = await base44.entities.Player.create({ name: playerName, team: team || undefined, ...newData });
         setRecordId(created.id);
       }
     } catch (e) { /* silent */ }

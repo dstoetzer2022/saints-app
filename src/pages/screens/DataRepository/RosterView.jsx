@@ -129,19 +129,32 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
 
   const sections = ['Pitchers', 'Hitters'];
   const headers = isPitcherView
-    ? ['#', 'Name', 'Role', 'Pos / Hand', 'School', 'Time to Plate']
+    ? ['#', 'Name', 'Hand', 'School', 'Time to Plate']
     : ['#', 'Name', 'Role', 'Pos / Hand', 'Key Stat', 'Speed'];
+  const colCount = headers.length;
 
   return (
     <div style={{ overflowX: 'auto', overflowY: 'auto', height: '100%' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT, tableLayout: 'fixed', minWidth: 700 }}>
         <colgroup>
-          <col style={{ width: '6%' }} />
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '10%' }} />
-          <col style={{ width: '14%' }} />
-          <col style={{ width: '24%' }} />
-          <col style={{ width: '24%' }} />
+          {isPitcherView ? (
+            <>
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '29%' }} />
+              <col style={{ width: '29%' }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '24%' }} />
+            </>
+          )}
         </colgroup>
         <thead>
           <tr>
@@ -157,7 +170,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
             return (
               <React.Fragment key={section}>
                 <tr>
-                  <td colSpan={6} style={{ padding: '8px 14px 4px', fontSize: 9, fontWeight: 900, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, background: C.base, borderBottom: `1px solid ${C.edge}` }}>
+                  <td colSpan={colCount} style={{ padding: '8px 14px 4px', fontSize: 9, fontWeight: 900, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, background: C.base, borderBottom: `1px solid ${C.edge}` }}>
                     {section} &nbsp;<span style={{ color: C.faint }}>{rows.length}</span>
                   </td>
                 </tr>
@@ -195,7 +208,9 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                           {p.name}
                         </div>
                       </td>
-                      <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{p.role}</td>
+                      {!isPitcherView && (
+                        <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{p.role}</td>
+                      )}
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{posHand}</td>
                       {isPitcherView ? (
                         <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.school || '—'}</td>
