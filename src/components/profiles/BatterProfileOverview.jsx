@@ -525,6 +525,32 @@ function HitterRollingTrendSection({ pitches }) {
   );
 }
 
+// ── KDE zones by outcome ─────────────────────────────────────
+function HitterKdeZones({ pitches }) {
+  const groups = useMemo(() => {
+    const swings = pitches.filter(p => isSwing(p));
+    const whiffs = pitches.filter(p => p.pitch_call === 'StrikeSwinging');
+    const inPlayAll = pitches.filter(p => p.pitch_call === 'InPlay');
+    const inPlayOuts = pitches.filter(p => p.pitch_call === 'InPlay' && p.play_result === 'Out');
+    const hits = pitches.filter(p => ['Single', 'Double', 'Triple', 'HomeRun'].includes(p.play_result));
+    const xbh = pitches.filter(p => ['Double', 'Triple', 'HomeRun'].includes(p.play_result));
+    const hardHit = pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed != null && p.exit_speed >= 95);
+
+    return [
+      { label: 'Swings', pitches: swings },
+      { label: 'Whiffs', pitches: whiffs },
+      { label: 'Balls In Play', pitches: inPlayAll },
+      { label: 'In-Play Outs', pitches: inPlayOuts },
+      { label: 'Hits', pitches: hits },
+      { label: 'Extra Base Hits', pitches: xbh },
+      { label: 'Hard-Hit Zone (EV≥95)', pitches: hardHit },
+    ].filter(g => g.pitches.length > 0);
+  }, [pitches]);
+
+  if (!groups.length) return null;
+  return <LocationContourPlot groups={groups} />;
+}
+
 // ── Main export ───────────────────────────────────────────────
 export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, hitterPool }) {
   if (!pitches.length && !runnerObs.length && !catcherObs.length) {
@@ -543,6 +569,16 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
           <div style={{ marginBottom: 14 }}>
             <HitterPercentiles pitches={pitches} hitterPool={hitterPool} />
           </div>
+        </>
+      )}
+
+      {/* KDE location zones by outcome */}
+      {hasTrackman && (
+        <>
+          {sHead('Location Zones', 'KDE density by outcome')}
+          <Card style={{ marginBottom: 18 }}>
+            <HitterKdeZones pitches={pitches} />
+          </Card>
         </>
       )}
 
