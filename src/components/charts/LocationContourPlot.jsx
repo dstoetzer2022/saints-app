@@ -53,10 +53,10 @@ function MiniSpinClock({ axisDeg, color }) {
   );
 }
 
-function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch }) {
+function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, minPoints }) {
   const toPx = useMemo(() => makeToPx(cw, ch), [cw, ch]);
   const contours = useMemo(() => {
-    if (pts.length < 15) return null;
+    if (pts.length < minPoints) return null;
     return contourDensity().x(d => d[0]).y(d => d[1]).size([cw, ch]).bandwidth(18).thresholds(14)(pts);
   }, [pts, cw, ch]);
 
@@ -77,7 +77,7 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch }) {
             )));
           });
         })() : (
-          <text x={cw / 2} y={ch / 2} textAnchor="middle" fontSize={10} fill={C.muted}>Need 15+ located pitches</text>
+          <text x={cw / 2} y={ch / 2} textAnchor="middle" fontSize={10} fill={C.muted}>Need {minPoints}+ located pitches</text>
         )}
         <line x1={zTL.x - 14} y1={zTL.y} x2={zTL.x - 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
         <line x1={zBR.x + 14} y1={zTL.y} x2={zBR.x + 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
@@ -98,7 +98,7 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch }) {
 // groups: [{ label, color, pitches, axisDeg, spinGated }] — pitches need plate_loc_side/height.
 // cellWidth/cellHeight: optional per-cell SVG size (defaults preserve existing pitcher-profile sizing);
 // pass smaller values when a caller needs more columns to fit on one line without wrapping.
-export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, cellHeight = DEFAULT_CH, gap = 18, wrap = 'wrap' }) {
+export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, cellHeight = DEFAULT_CH, gap = 18, wrap = 'wrap', minPoints = 15 }) {
   const toPx = useMemo(() => makeToPx(cellWidth, cellHeight), [cellWidth, cellHeight]);
   const cells = useMemo(() => groups.map(g => {
     const pts = g.pitches
@@ -115,7 +115,7 @@ export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, ce
   return (
     <div style={{ display: 'flex', gap, flexWrap: wrap }}>
       {cells.map(c => (
-        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} cw={cellWidth} ch={cellHeight} />
+        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} cw={cellWidth} ch={cellHeight} minPoints={minPoints} />
       ))}
     </div>
   );

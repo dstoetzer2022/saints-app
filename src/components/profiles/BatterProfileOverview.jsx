@@ -451,7 +451,7 @@ function HitterKdeZones({ pitches }) {
   if (!groups.length) return null;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <LocationContourPlot groups={groups} cellWidth={162} cellHeight={206} gap={12} wrap="nowrap" />
+      <LocationContourPlot groups={groups} cellWidth={162} cellHeight={206} gap={12} wrap="nowrap" minPoints={10} />
     </div>
   );
 }
