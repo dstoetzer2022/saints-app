@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
-import { hitterTrackmanProfile, percentileRank, fmtStat, approxBarrelRate, zoneGrid, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
+import { hitterTrackmanProfile, percentileRank, fmtStat, zoneGrid, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend
@@ -41,26 +41,7 @@ function Card({ children, style }) {
   );
 }
 
-// ── Stat Pills ────────────────────────────────────────────────
-function StatPills({ items }) {
-  const valid = items.filter(Boolean);
-  if (!valid.length) return null;
-  return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-      {valid.map(it => (
-        <div key={it.label} style={{
-          background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 7,
-          padding: '8px 12px', minWidth: 60, textAlign: 'center',
-        }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{it.label}</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: it.gold ? C.gold : C.white, marginTop: 2, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{it.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
-// ── Hitter percentiles ────────────────────────────────────────
 function HitterPercentiles({ pitches, hitterPool }) {
   const tm = useMemo(() => hitterTrackmanProfile(pitches), [pitches]);
   if (!tm || !hitterPool) return null;
@@ -70,37 +51,70 @@ function HitterPercentiles({ pitches, hitterPool }) {
   const rv = P.xGrid ? runValue(pitches, P.leagueWoba, { invert: false }) : null;
   const xs = P.xGrid ? xStatsForRows(pitches, P.xGrid) : null;
 
-  const rows = [
-    { label: 'Avg EV', value: n1(tm.avgEV), raw: tm.avgEV, pool: P.avgEV, invert: false },
-    { label: 'Max EV', value: n1(tm.maxEV), raw: tm.maxEV, pool: P.maxEV, invert: false },
-    { label: 'SLG', value: n3(tm.slg), raw: tm.slg, pool: P.slg, invert: false },
-    { label: 'ISO', value: n3(tm.iso), raw: tm.iso, pool: P.iso, invert: false },
-    { label: 'OBP', value: n3(tm.obp), raw: tm.obp, pool: P.obp, invert: false },
-    { label: 'BABIP', value: n3(tm.babip), raw: tm.babip, pool: P.babip, invert: false },
-    { label: 'Hard%', value: pct(tm.hardPct), raw: tm.hardPct, pool: P.hardPct, invert: false },
-    { label: 'GB% (↓ good)', value: pct(tm.gbPct), raw: tm.gbPct, pool: P.gbPct, invert: true },
-    { label: 'AirPull%', value: pct(tm.airPullPct), raw: tm.airPullPct, pool: P.airPullPct, invert: false },
-    { label: 'Whiff% (↓ good)', value: pct(tm.whiffPct), raw: tm.whiffPct, pool: P.whiffPct, invert: true },
-    { label: 'Chase% (↓ good)', value: pct(tm.chasePct), raw: tm.chasePct, pool: P.chasePct, invert: true },
-    { label: 'BB%', value: pct(tm.bbPct), raw: tm.bbPct, pool: P.bbPct, invert: false },
-    { label: 'Launch Angle', value: tm.avgLaunchAngle != null ? n1(tm.avgLaunchAngle) + '°' : null, raw: tm.avgLaunchAngle, pool: P.launchAngle, invert: false },
-    { label: 'EV90', value: n1(tm.ev90), raw: tm.ev90, pool: P.ev90, invert: false },
-    { label: 'LA @ EV90', value: tm.laAtEv90 != null ? n1(tm.laAtEv90) + '°' : null, raw: tm.laAtEv90, pool: P.laAtEv90, invert: false },
+  const rowDefs = [
+    // Expected outcomes
     { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
-    { label: 'xBA (approx)', value: xs?.xBA != null ? n3(xs.xBA) : null, raw: xs?.xBA, pool: P.xBA, invert: false },
-    { label: 'xwOBA (approx)', value: xs?.xwOBA != null ? n3(xs.xwOBA) : null, raw: xs?.xwOBA, pool: P.xwOBA, invert: false },
-    { label: 'xSLG (approx)', value: xs?.xSLG != null ? n3(xs.xSLG) : null, raw: xs?.xSLG, pool: P.xSLG, invert: false },
-  ].filter(r => r.value != null && r.value !== '—');
+    { label: 'xBA', value: xs?.xBA != null ? n3(xs.xBA) : null, raw: xs?.xBA, pool: P.xBA, invert: false },
+    { label: 'xwOBA', value: xs?.xwOBA != null ? n3(xs.xwOBA) : null, raw: xs?.xwOBA, pool: P.xwOBA, invert: false },
+    { label: 'xSLG', value: xs?.xSLG != null ? n3(xs.xSLG) : null, raw: xs?.xSLG, pool: P.xSLG, invert: false },
+    { label: 'ISO', value: n3(tm.iso), raw: tm.iso, pool: P.iso, invert: false },
+    { label: 'BABIP', value: n3(tm.babip), raw: tm.babip, pool: P.babip, invert: false },
+    // Contact quality
+    { label: 'Avg EV', value: n1(tm.avgEV), raw: tm.avgEV, pool: P.avgEV, invert: false },
+    { label: 'EV90', value: n1(tm.ev90), raw: tm.ev90, pool: P.ev90, invert: false },
+    { label: 'Max EV', value: n1(tm.maxEV), raw: tm.maxEV, pool: P.maxEV, invert: false },
+    { label: 'Barrel%', value: pct(tm.barrelPct), raw: tm.barrelPct, pool: P.barrelPct, invert: false },
+    { label: 'Hard%', value: pct(tm.hardPct), raw: tm.hardPct, pool: P.hardPct, invert: false },
+    { label: 'Soft%', value: pct(tm.softPct), raw: tm.softPct, pool: P.softPct, invert: true },
+    // Batted ball profile
+    { label: 'Avg LA', value: tm.avgLaunchAngle != null ? n1(tm.avgLaunchAngle) + '°' : null, raw: tm.avgLaunchAngle, pool: P.launchAngle, invert: false },
+    { label: 'LA @ EV90', value: tm.laAtEv90 != null ? n1(tm.laAtEv90) + '°' : null, raw: tm.laAtEv90, pool: P.laAtEv90, invert: false },
+    { label: 'AirPull%', value: pct(tm.airPullPct), raw: tm.airPullPct, pool: P.airPullPct, invert: false },
+    { label: 'FlyBall%', value: pct(tm.fbPct), raw: tm.fbPct, pool: P.fbPct, invert: false },
+    { label: 'Line Drive%', value: pct(tm.ldPct), raw: tm.ldPct, pool: P.ldPct, invert: false },
+    { label: 'GroundBall%', value: pct(tm.gbPct), raw: tm.gbPct, pool: P.gbPct, invert: true },
+    // Plate discipline
+    { label: 'Contact%', value: pct(tm.contactPct), raw: tm.contactPct, pool: P.contactPct, invert: false },
+    { label: '2KContact%', value: pct(tm.twoKContactPct), raw: tm.twoKContactPct, pool: P.twoKContactPct, invert: false },
+    { label: 'Swing%', value: pct(tm.swingPct), raw: tm.swingPct, pool: P.swingPct, invert: false },
+    { label: 'FPSw%', value: pct(tm.fpSwPct), raw: tm.fpSwPct, pool: P.fpSwPct, invert: false },
+    { label: 'K%', value: pct(tm.kPct), raw: tm.kPct, pool: P.kPct, invert: true },
+    { label: 'BB%', value: pct(tm.bbPct), raw: tm.bbPct, pool: P.bbPct, invert: false },
+  ];
 
-  if (!rows.length) return null;
+  const byLabel = Object.fromEntries(rowDefs.map(r => [r.label, r]));
+  const CATEGORIES = [
+    { title: 'Expected Outcomes', labels: ['Run Value', 'xBA', 'xwOBA', 'xSLG', 'ISO', 'BABIP'] },
+    { title: 'Contact Quality', labels: ['Avg EV', 'EV90', 'Max EV', 'Barrel%', 'Hard%', 'Soft%'] },
+    { title: 'Batted Ball Profile', labels: ['Avg LA', 'LA @ EV90', 'AirPull%', 'FlyBall%', 'Line Drive%', 'GroundBall%'] },
+    { title: 'Plate Discipline', labels: ['Contact%', '2KContact%', 'Swing%', 'FPSw%', 'K%', 'BB%'] },
+  ];
+
+  const sections = CATEGORIES
+    .map(cat => ({ ...cat, rows: cat.labels.map(l => byLabel[l]).filter(r => r && r.value != null && r.value !== '—') }))
+    .filter(cat => cat.rows.length);
+
+  if (!sections.length) return null;
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
-        {rows.map(row => {
-          const rank = percentileRank(row.pool, row.raw);
-          const display = row.invert && rank != null ? 100 - rank : rank;
-          return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} />;
-        })}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {sections.map(cat => (
+          <Card key={cat.title} style={{ flex: '1 1 230px', padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>
+                {cat.title}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {cat.rows.map(row => {
+                const rank = percentileRank(row.pool, row.raw);
+                const display = row.invert && rank != null ? 100 - rank : rank;
+                return <PercentileBar key={row.label} label={row.label} value={row.value} percentile={display} labelWidth={118} />;
+              })}
+            </div>
+          </Card>
+        ))}
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 8, ...FONT_STYLE }}>vs {n} qualified CCL hitters (Trackman)</div>
     </div>
@@ -474,50 +488,6 @@ function ScoutNotes({ catcherObs, runnerObs }) {
 }
 
 // ── Offline stats line from Trackman ─────────────────────────
-function OffenseLine({ pitches }) {
-  const stats = useMemo(() => {
-    let ab = 0, h = 0, tb = 0, hr = 0, xbh = 0, bb = 0, k = 0;
-    const isTerminal = p => ['Out','Single','Double','Triple','HomeRun','Error','FieldersChoice','Sacrifice'].includes(p.play_result);
-    pitches.forEach(p => {
-      if (p.kor_bb === 'Walk') { bb++; return; }
-      if (p.kor_bb === 'Strikeout') { k++; ab++; return; }
-      if (isTerminal(p)) {
-        if (p.play_result === 'Sacrifice') return;
-        ab++;
-        if (p.play_result === 'Single') { h++; tb++; }
-        else if (p.play_result === 'Double') { h++; tb += 2; xbh++; }
-        else if (p.play_result === 'Triple') { h++; tb += 3; xbh++; }
-        else if (p.play_result === 'HomeRun') { h++; tb += 4; hr++; xbh++; }
-      }
-    });
-    const avg = ab ? h / ab : null;
-    const slg = ab ? tb / ab : null;
-    const obp = (ab + bb) ? (h + bb) / (ab + bb) : null;
-    const iso = (slg != null && avg != null) ? slg - avg : null;
-    const ops = (obp != null && slg != null) ? obp + slg : null;
-    return { ab, h, tb, hr, xbh, bb, k, avg, slg, obp, iso, ops };
-  }, [pitches]);
-
-  if (!stats.ab) return null;
-  const { barrelPct } = approxBarrelRate(pitches);
-  return (
-    <StatPills items={[
-      { label: 'AVG', value: n3(stats.avg) },
-      { label: 'OBP', value: n3(stats.obp) },
-      stats.slg != null ? { label: 'SLG', value: n3(stats.slg) } : null,
-      stats.ops != null ? { label: 'OPS', value: n3(stats.ops) } : null,
-      stats.iso != null ? { label: 'ISO', value: n3(stats.iso) } : null,
-      barrelPct != null ? { label: 'Barrel% (approx)', value: `${barrelPct}%` } : null,
-      { label: 'AB', value: String(stats.ab) },
-      { label: 'H', value: String(stats.h) },
-      stats.xbh ? { label: 'XBH', value: String(stats.xbh) } : null,
-      stats.hr ? { label: 'HR', value: String(stats.hr) } : null,
-      { label: 'BB', value: String(stats.bb) },
-      { label: 'K', value: String(stats.k) },
-    ]} />
-  );
-}
-
 // ── Savant-parity: Zone-based swing/whiff heatmap ────────────────
 function ZoneSwingSection({ pitches }) {
   const cells = zoneGrid(pitches, { swingOnly: true });
@@ -566,16 +536,13 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
 
   return (
     <div style={FONT_STYLE}>
-      {/* Slash line from Trackman */}
-      {hasTrackman && <OffenseLine pitches={pitches} />}
-
       {/* Percentiles */}
       {hasPercentiles && (
         <>
-          {sHead('Trackman Percentiles', 'vs CCL')}
-          <Card style={{ marginBottom: 18 }}>
+          {sHead('Percentiles', 'vs CCL')}
+          <div style={{ marginBottom: 14 }}>
             <HitterPercentiles pitches={pitches} hitterPool={hitterPool} />
-          </Card>
+          </div>
         </>
       )}
 

@@ -427,13 +427,40 @@ export function hitterTrackmanProfile(rows) {
   // O-Contact: swings on OOZ pitches that made contact (not StrikeSwinging)
   const oWhiffs = ooz.filter(p => p.pitch_call === 'StrikeSwinging').length;
 
-  // BB% — new percentile-bar metric. PA-ending count mirrors the pitcher-side
-  // kPct/bbPct denominator (InPlay, K, BB, or HBP).
+  // BB% / K% — PA-ending count mirrors the pitcher-side kPct/bbPct
+  // denominator (InPlay, K, BB, or HBP).
   const bbCount = rows.filter(r => r.kor_bb === 'Walk').length;
   const paEndingCount = rows.filter(r =>
     r.pitch_call === 'InPlay' || r.kor_bb === 'Strikeout' || r.kor_bb === 'Walk' || r.pitch_call === 'HitByPitch'
   ).length;
   const bbPct = paEndingCount ? bbCount / paEndingCount : null;
+  const kPct = paEndingCount ? kAB / paEndingCount : null;
+
+  // Batted-ball mix (fly ball / line drive), soft-hit%, and approx barrel%.
+  // Soft/Hard thresholds match the FanGraphs-style EV buckets already used
+  // for hardPct (>=95 = hard); soft mirrors that at the low end (<60).
+  const fbPct = bipN ? hts.FlyBall / bipN : null;
+  const ldPct = bipN ? hts.LineDrive / bipN : null;
+  const softHit = evs.filter(v => v < 60);
+  const softPct = evs.length ? softHit.length / evs.length : null;
+  const barrels = bip.filter(p => {
+    const ev = p.exit_speed, la = p.launch_angle;
+    return ev != null && la != null && ev >= 95 && la >= 10 && la <= 35;
+  });
+  const barrelPct = bipN ? barrels.length / bipN : null;
+
+  // Contact%, 2K-Contact%, Swing%, FPSw% — all built off the shared swing
+  // and contact-call classifiers, consistent with PlateDiscipline/HitterTrends.
+  const isContactCall = c => ['FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(c);
+  const contactCount = rows.filter(p => isContactCall(p.pitch_call)).length;
+  const contactPct = swings ? contactCount / swings : null;
+  const twoK = rows.filter(p => p.strikes === 2);
+  const twoKSwings = twoK.filter(p => isSwing(p.pitch_call)).length;
+  const twoKContact = twoK.filter(p => isContactCall(p.pitch_call)).length;
+  const twoKContactPct = twoKSwings ? twoKContact / twoKSwings : null;
+  const swingPct = rows.length ? swings / rows.length : null;
+  const fpSwings = firstPitches.filter(p => isSwing(p.pitch_call)).length;
+  const fpSwPct = firstPitches.length ? fpSwings / firstPitches.length : null;
 
   // Launch angle, EV90 (90th percentile of this hitter's own EV distribution)
   // and the average launch angle of just the batted balls at/above that
@@ -467,9 +494,18 @@ export function hitterTrackmanProfile(rows) {
     battedBalls: bipN,
     avg: avg_,
     bbPct,
+    kPct,
     avgLaunchAngle,
     ev90,
     laAtEv90,
+    fbPct,
+    ldPct,
+    softPct,
+    barrelPct,
+    contactPct,
+    twoKContactPct,
+    swingPct,
+    fpSwPct,
   };
 }
 
@@ -806,7 +842,8 @@ export function buildHitterPool(allPitches) {
     airPullPct: [], whiffPct: [], chasePct: [],
     oSwingPct: [], fStrikePct: [], zContactPct: [], oContactPct: [],
     slg: [], obp: [], iso: [], babip: [],
-    runValue: [], xBA: [], xwOBA: [], xSLG: [], bbPct: [], launchAngle: [], ev90: [], laAtEv90: [],
+    runValue: [], xBA: [], xwOBA: [], xSLG: [], bbPct: [], kPct: [], launchAngle: [], ev90: [], laAtEv90: [],
+    fbPct: [], ldPct: [], softPct: [], barrelPct: [], contactPct: [], twoKContactPct: [], swingPct: [], fpSwPct: [],
     qualifiedN: 0,
   };
 
@@ -830,9 +867,18 @@ export function buildHitterPool(allPitches) {
     if (prof.iso != null) pool.iso.push(prof.iso);
     if (prof.babip != null) pool.babip.push(prof.babip);
     if (prof.bbPct != null) pool.bbPct.push(prof.bbPct);
+    if (prof.kPct != null) pool.kPct.push(prof.kPct);
     if (prof.avgLaunchAngle != null) pool.launchAngle.push(prof.avgLaunchAngle);
     if (prof.ev90 != null) pool.ev90.push(prof.ev90);
     if (prof.laAtEv90 != null) pool.laAtEv90.push(prof.laAtEv90);
+    if (prof.fbPct != null) pool.fbPct.push(prof.fbPct);
+    if (prof.ldPct != null) pool.ldPct.push(prof.ldPct);
+    if (prof.softPct != null) pool.softPct.push(prof.softPct);
+    if (prof.barrelPct != null) pool.barrelPct.push(prof.barrelPct);
+    if (prof.contactPct != null) pool.contactPct.push(prof.contactPct);
+    if (prof.twoKContactPct != null) pool.twoKContactPct.push(prof.twoKContactPct);
+    if (prof.swingPct != null) pool.swingPct.push(prof.swingPct);
+    if (prof.fpSwPct != null) pool.fpSwPct.push(prof.fpSwPct);
     const rv = runValue(rows, leagueWoba, { invert: false });
     if (rv != null) pool.runValue.push(rv);
     const xs = xStatsForRows(rows, grid);
