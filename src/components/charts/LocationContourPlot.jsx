@@ -8,16 +8,16 @@ import { C, FONT } from '@/lib/darkTheme';
 // app's usual gold/pitch-type coloring. Renders a strike-zone box + edge
 // ticks + plate silhouette to orient the reader, same as the discrete
 // ZoneHeatmap grid does for zone splits.
-const CW = 190, CH = 240;
+const DEFAULT_CW = 190, DEFAULT_CH = 240;
 const PLATE_HALF_WIDTH = 0.83;
 const ZONE_TOP = 3.5, ZONE_BOT = 1.5;
 const PAD_TOP = 26, PAD_BOT = 46;
-const PLOT_H = CH - PAD_TOP - PAD_BOT;
-const SCALE = PLOT_H / 5.2;
-const CX = CW / 2;
 
-function toPx(sideFt, heightFt) {
-  return { x: CX + sideFt * SCALE, y: PAD_TOP + (ZONE_TOP + 1.1 - heightFt) * SCALE };
+function makeToPx(cw, ch) {
+  const plotH = ch - PAD_TOP - PAD_BOT;
+  const scale = plotH / 5.2;
+  const cx = cw / 2;
+  return (sideFt, heightFt) => ({ x: cx + sideFt * scale, y: PAD_TOP + (ZONE_TOP + 1.1 - heightFt) * scale });
 }
 
 // Diverging blue -> white -> red, keyed 0 (lowest density) .. 1 (highest).
@@ -53,19 +53,21 @@ function MiniSpinClock({ axisDeg, color }) {
   );
 }
 
-function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated }) {
+function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch }) {
+  const toPx = useMemo(() => makeToPx(cw, ch), [cw, ch]);
   const contours = useMemo(() => {
     if (pts.length < 15) return null;
-    return contourDensity().x(d => d[0]).y(d => d[1]).size([CW, CH]).bandwidth(18).thresholds(14)(pts);
-  }, [pts]);
+    return contourDensity().x(d => d[0]).y(d => d[1]).size([cw, ch]).bandwidth(18).thresholds(14)(pts);
+  }, [pts, cw, ch]);
 
+  const cx = cw / 2;
   const zTL = toPx(-PLATE_HALF_WIDTH, ZONE_TOP);
   const zBR = toPx(PLATE_HALF_WIDTH, ZONE_BOT);
-  const plateY = CH - 22, plateW = 34, plateH = 16, px0 = CX - plateW / 2;
+  const plateY = ch - 22, plateW = 34, plateH = 16, px0 = cx - plateW / 2;
 
   return (
     <div style={{ textAlign: 'center' }}>
-      <svg width={CW} height={CH} viewBox={`0 0 ${CW} ${CH}`} style={{ background: C.base, borderRadius: 6 }}>
+      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{ background: C.base, borderRadius: 6 }}>
         {contours ? (() => {
           const maxV = Math.max(...contours.map(c => c.value));
           return contours.map((c, i) => {
@@ -75,12 +77,12 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated }) {
             )));
           });
         })() : (
-          <text x={CW / 2} y={CH / 2} textAnchor="middle" fontSize={10} fill={C.muted}>Need 15+ located pitches</text>
+          <text x={cw / 2} y={ch / 2} textAnchor="middle" fontSize={10} fill={C.muted}>Need 15+ located pitches</text>
         )}
         <line x1={zTL.x - 14} y1={zTL.y} x2={zTL.x - 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
         <line x1={zBR.x + 14} y1={zTL.y} x2={zBR.x + 14} y2={zBR.y} stroke={C.muted} strokeWidth={1.2} />
         <rect x={zTL.x.toFixed(1)} y={zTL.y.toFixed(1)} width={(zBR.x - zTL.x).toFixed(1)} height={(zBR.y - zTL.y).toFixed(1)} fill="none" stroke={C.cream} strokeWidth={1.4} />
-        <polygon points={`${CX},${plateY} ${px0 + plateW},${plateY + plateH * 0.5} ${px0 + plateW},${plateY + plateH} ${px0},${plateY + plateH} ${px0},${plateY + plateH * 0.5}`} fill="none" stroke={C.muted} strokeWidth={1.2} />
+        <polygon points={`${cx},${plateY} ${px0 + plateW},${plateY + plateH * 0.5} ${px0 + plateW},${plateY + plateH} ${px0},${plateY + plateH} ${px0},${plateY + plateH * 0.5}`} fill="none" stroke={C.muted} strokeWidth={1.2} />
       </svg>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: C.cream, fontFamily: FONT }}>{label}</span>
@@ -94,7 +96,10 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated }) {
 }
 
 // groups: [{ label, color, pitches, axisDeg, spinGated }] — pitches need plate_loc_side/height.
-export default function LocationContourPlot({ groups }) {
+// cellWidth/cellHeight: optional per-cell SVG size (defaults preserve existing pitcher-profile sizing);
+// pass smaller values when a caller needs more columns to fit on one line without wrapping.
+export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, cellHeight = DEFAULT_CH, gap = 18, wrap = 'wrap' }) {
+  const toPx = useMemo(() => makeToPx(cellWidth, cellHeight), [cellWidth, cellHeight]);
   const cells = useMemo(() => groups.map(g => {
     const pts = g.pitches
       .filter(p => Number.isFinite(parseFloat(p.plate_loc_side)) && Number.isFinite(parseFloat(p.plate_loc_height)))
@@ -103,14 +108,14 @@ export default function LocationContourPlot({ groups }) {
         return [x, y];
       });
     return { label: g.label, pts, n: pts.length, axisDeg: g.axisDeg, spinColor: g.color, spinGated: g.spinGated };
-  }).filter(c => c.n > 0), [groups]);
+  }).filter(c => c.n > 0), [groups, toPx]);
 
   if (!cells.length) return <div style={{ color: C.muted, fontSize: 12 }}>No location data.</div>;
 
   return (
-    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap, flexWrap: wrap }}>
       {cells.map(c => (
-        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} />
+        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} cw={cellWidth} ch={cellHeight} />
       ))}
     </div>
   );
