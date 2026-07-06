@@ -443,11 +443,12 @@ export function hitterTrackmanProfile(rows) {
   const ldPct = bipN ? hts.LineDrive / bipN : null;
   const softHit = evs.filter(v => v < 60);
   const softPct = evs.length ? softHit.length / evs.length : null;
-  const barrels = bip.filter(p => {
-    const ev = p.exit_speed, la = p.launch_angle;
-    return ev != null && la != null && ev >= 95 && la >= 10 && la <= 35;
-  });
-  const barrelEligibleN = bip.filter(p => p.exit_speed != null && p.launch_angle != null).length;
+  // Barrel% base set intentionally mirrors contactQualityBreakdown's filter
+  // (exit_speed/launch_angle/play_result present) rather than isBIP's
+  // hit_distance>0 gate, so this always agrees with the Contact Profile table.
+  const barrelEligibleRows = rows.filter(p => p.exit_speed != null && p.launch_angle != null && p.play_result);
+  const barrels = barrelEligibleRows.filter(p => p.exit_speed >= 95 && p.launch_angle >= 10 && p.launch_angle <= 35);
+  const barrelEligibleN = barrelEligibleRows.length;
   const barrelPct = barrelEligibleN ? barrels.length / barrelEligibleN : null;
 
   // Contact%, 2K-Contact%, Swing%, FPSw% — all built off the shared swing
