@@ -252,16 +252,40 @@ function pitchOutcomes(rows) {
   const avgEVAgainst = evs.length ? mean(evs) : null;
   const extensionMean = extensionBreakdown(rows).seasonMean;
 
+  // Strike% — any strike-type call (swinging, called, foul, in-play) / total pitches
+  const STRIKE_CALLS = ['StrikeSwinging', 'StrikeCalled', 'FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'];
+  const strikeCount = rows.filter(p => STRIKE_CALLS.includes(p.pitch_call)).length;
+  const strikePct = rows.length ? strikeCount / rows.length : null;
+
+  // First-pitch strike% — first pitch of each PA that is a strike
+  const firstPitches = rows.filter(p => p.balls === 0 && p.strikes === 0);
+  const fStrikes = firstPitches.filter(p => STRIKE_CALLS.includes(p.pitch_call)).length;
+  const fpsPct = firstPitches.length ? fStrikes / firstPitches.length : null;
+
+  // Flyball% and avg launch angle against (batted balls)
+  const fbPct = bip.length ? hts.FlyBall / bipN : null;
+  const lasAgainst = bip.map(p => p.launch_angle).filter(v => v != null && Number.isFinite(v));
+  const avgLaunchAgainst = lasAgainst.length ? mean(lasAgainst) : null;
+
+  // Putaway% — two-strike pitches that end in a strikeout / total two-strike pitches
+  const twoK = rows.filter(r => r.strikes === 2);
+  const putawayPct = twoK.length ? rows.filter(r => r.strikes === 2 && r.kor_bb === 'Strikeout').length / twoK.length : null;
+
   return {
     hardPct: evs.length ? hardHit.length / evs.length : null,
     softPct: evs.length ? softHit.length / evs.length : null,
     gbPct: bip.length ? hts.GroundBall / bipN : null,
+    fbPct,
     whiffPct: swings ? whiffs / swings : null,
     babip,
     bipCount: bip.length,
     chasePct,
     avgEVAgainst,
+    avgLaunchAgainst,
     extensionMean,
+    strikePct,
+    fpsPct,
+    putawayPct,
   };
 }
 
@@ -718,8 +742,10 @@ export function buildPitcherPool(allPitches) {
   const pool = {
     fbVelo: [], maxVelo: [], fbSpin: [], bbSpin: [],
     kPct: [], bbPct: [], hardPct: [], softPct: [],
-    gbPct: [], whiffPct: [], babip: [],
-    chasePct: [], avgEVAgainst: [], extension: [], runValue: [], xERA: [], xBAAgainst: [],
+    gbPct: [], fbPct: [], whiffPct: [], babip: [],
+    chasePct: [], avgEVAgainst: [], avgLaunchAgainst: [], extension: [],
+    runValue: [], xERA: [], xBAAgainst: [], xSLGAgainst: [], xwOBAAgainst: [],
+    strikePct: [], fpsPct: [], putawayPct: [],
     qualifiedN: 0,
   };
 
@@ -737,17 +763,24 @@ export function buildPitcherPool(allPitches) {
     if (prof.hardPct != null) pool.hardPct.push(prof.hardPct);
     if (prof.softPct != null) pool.softPct.push(prof.softPct);
     if (prof.gbPct != null) pool.gbPct.push(prof.gbPct);
+    if (prof.fbPct != null) pool.fbPct.push(prof.fbPct);
     if (prof.whiffPct != null) pool.whiffPct.push(prof.whiffPct);
     if (prof.babip != null) pool.babip.push(prof.babip);
     if (prof.chasePct != null) pool.chasePct.push(prof.chasePct);
     if (prof.avgEVAgainst != null) pool.avgEVAgainst.push(prof.avgEVAgainst);
+    if (prof.avgLaunchAgainst != null) pool.avgLaunchAgainst.push(prof.avgLaunchAgainst);
     if (prof.extensionMean != null) pool.extension.push(prof.extensionMean);
+    if (prof.strikePct != null) pool.strikePct.push(prof.strikePct);
+    if (prof.fpsPct != null) pool.fpsPct.push(prof.fpsPct);
+    if (prof.putawayPct != null) pool.putawayPct.push(prof.putawayPct);
     const rv = runValue(rows, leagueWoba, { invert: true });
     if (rv != null) pool.runValue.push(rv);
     const xe = xERA(rows, grid, leagueWoba);
     if (xe != null) pool.xERA.push(xe);
     const xs = xStatsForRows(rows, grid);
     if (xs?.xBA != null) pool.xBAAgainst.push(xs.xBA);
+    if (xs?.xSLG != null) pool.xSLGAgainst.push(xs.xSLG);
+    if (xs?.xwOBA != null) pool.xwOBAAgainst.push(xs.xwOBA);
   });
 
   pool.xGrid = grid;

@@ -45,36 +45,7 @@ function Card({ children, style }) {
   );
 }
 
-// ── Stat Pills row ─────────────────────────────────────────────
-function StatPill({ item }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: hovered ? C.raised : C.surface,
-        border: `1px solid ${hovered ? C.gold : C.edge}`, borderRadius: 7,
-        padding: '7px 13px', minWidth: 64, textAlign: 'center',
-        transition: 'all 0.15s ease',
-        transform: hovered ? 'translateY(-1px)' : 'none',
-      }}
-    >
-      <div style={{ fontSize: 8.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{item.label}</div>
-      <div style={{ fontSize: 15, fontWeight: 900, color: item.gold ? C.gold : C.white, marginTop: 2, fontVariantNumeric: 'tabular-nums', ...FONT_STYLE }}>{item.value}</div>
-    </div>
-  );
-}
 
-function StatPills({ items }) {
-  const valid = items.filter(Boolean);
-  if (!valid.length) return null;
-  return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, justifyContent: 'center' }}>
-      {valid.map(it => <StatPill key={it.label} item={it} />)}
-    </div>
-  );
-}
 
 // ── Percentile section ─────────────────────────────────────────
 function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
@@ -99,30 +70,42 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   const xs = P.xGrid ? xStatsForRows(pitches, P.xGrid) : null;
 
   const rowDefs = [
+    // Run Prevention
+    { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
+    { label: 'xERA', value: xe != null ? xe.toFixed(2) : null, raw: xe, pool: P.xERA, invert: true },
+    { label: 'xBA', value: xs?.xBA != null ? fmtStat(xs.xBA) : null, raw: xs?.xBA, pool: P.xBAAgainst, invert: true },
+    { label: 'xwOBA', value: xs?.xwOBA != null ? fmtStat(xs.xwOBA) : null, raw: xs?.xwOBA, pool: P.xwOBAAgainst, invert: true },
+    { label: 'xSLG', value: xs?.xSLG != null ? fmtStat(xs.xSLG) : null, raw: xs?.xSLG, pool: P.xSLGAgainst, invert: true },
+    { label: 'BABIP', value: prof.babip != null ? fmtStat(prof.babip) : null, raw: prof.babip, pool: P.babip, invert: true },
+    // Stuff
     { label: 'Avg FB', value: prof.fb?.avgVelo != null ? n1(prof.fb.avgVelo) : null, raw: prof.fb?.avgVelo, pool: P.fbVelo, invert: false },
     { label: 'Max FB', value: maxFbVelo != null ? n1(maxFbVelo) : null, raw: maxFbVelo, pool: P.maxVelo, invert: false },
+    { label: 'FB Spin', value: prof.fb?.avgSpin != null ? n0(prof.fb.avgSpin) : null, raw: prof.fb?.avgSpin, pool: P.fbSpin, invert: false },
     { label: 'BB Spin', value: prof.bb?.avgSpin != null ? n0(prof.bb.avgSpin) : null, raw: prof.bb?.avgSpin, pool: P.bbSpin, invert: false },
-    { label: 'K%', value: pct(prof.kPct), raw: prof.kPct, pool: P.kPct, invert: false },
-    { label: 'Free pass%', value: pct(prof.bbPct), raw: prof.bbPct, pool: P.bbPct, invert: true },
-    { label: 'Hard%', value: pct(prof.hardPct), raw: prof.hardPct, pool: P.hardPct, invert: true },
-    { label: 'Soft%', value: pct(prof.softPct), raw: prof.softPct, pool: P.softPct, invert: false },
-    { label: 'GB%', value: pct(prof.gbPct), raw: prof.gbPct, pool: P.gbPct, invert: false },
-    { label: 'Whiff%', value: pct(prof.whiffPct), raw: prof.whiffPct, pool: P.whiffPct, invert: false },
-    { label: 'BABIP', value: prof.babip != null ? fmtStat(prof.babip) : null, raw: prof.babip, pool: P.babip, invert: true },
-    { label: 'Chase%', value: pct(prof.chasePct), raw: prof.chasePct, pool: P.chasePct, invert: false },
-    { label: 'Avg EV against', value: n1(prof.avgEVAgainst), raw: prof.avgEVAgainst, pool: P.avgEVAgainst, invert: true },
+    { label: 'Putaway%', value: pct(prof.putawayPct), raw: prof.putawayPct, pool: P.putawayPct, invert: false },
     { label: 'Extension', value: prof.extensionMean != null ? prof.extensionMean.toFixed(1) + ' ft' : null, raw: prof.extensionMean, pool: P.extension, invert: false },
-    { label: 'Run Value', value: rv != null ? (rv >= 0 ? '+' : '') + rv.toFixed(1) : null, raw: rv, pool: P.runValue, invert: false },
-    { label: 'xERA (approx)', value: xe != null ? xe.toFixed(2) : null, raw: xe, pool: P.xERA, invert: true },
-    { label: 'xBA against (approx)', value: xs?.xBA != null ? fmtStat(xs.xBA) : null, raw: xs?.xBA, pool: P.xBAAgainst, invert: true },
+    // Plate Discipline
+    { label: 'Strike%', value: pct(prof.strikePct), raw: prof.strikePct, pool: P.strikePct, invert: false },
+    { label: 'FPS%', value: pct(prof.fpsPct), raw: prof.fpsPct, pool: P.fpsPct, invert: false },
+    { label: 'K%', value: pct(prof.kPct), raw: prof.kPct, pool: P.kPct, invert: false },
+    { label: 'Free Pass%', value: pct(prof.bbPct), raw: prof.bbPct, pool: P.bbPct, invert: true },
+    { label: 'Whiff%', value: pct(prof.whiffPct), raw: prof.whiffPct, pool: P.whiffPct, invert: false },
+    { label: 'Chase%', value: pct(prof.chasePct), raw: prof.chasePct, pool: P.chasePct, invert: false },
+    // Contact Quality
+    { label: 'Avg EV against', value: n1(prof.avgEVAgainst), raw: prof.avgEVAgainst, pool: P.avgEVAgainst, invert: true },
+    { label: 'Avg LA against', value: prof.avgLaunchAgainst != null ? n1(prof.avgLaunchAgainst) + '°' : null, raw: prof.avgLaunchAgainst, pool: P.avgLaunchAgainst, invert: false },
+    { label: 'GB%', value: pct(prof.gbPct), raw: prof.gbPct, pool: P.gbPct, invert: false },
+    { label: 'FB%', value: pct(prof.fbPct), raw: prof.fbPct, pool: P.fbPct, invert: false },
+    { label: 'Soft%', value: pct(prof.softPct), raw: prof.softPct, pool: P.softPct, invert: false },
+    { label: 'Hard%', value: pct(prof.hardPct), raw: prof.hardPct, pool: P.hardPct, invert: true },
   ];
 
   const byLabel = Object.fromEntries(rowDefs.map(r => [r.label, r]));
   const CATEGORIES = [
-    { title: 'Run Prevention', labels: ['Run Value', 'xERA (approx)', 'xBA against (approx)', 'BABIP'] },
-    { title: 'Stuff', labels: ['Avg FB', 'Max FB', 'BB Spin', 'Extension'] },
-    { title: 'Plate Discipline', labels: ['K%', 'Free pass%', 'Whiff%', 'Chase%'] },
-    { title: 'Contact Quality', labels: ['Avg EV against', 'Hard%', 'Soft%', 'GB%'] },
+    { title: 'Run Prevention', labels: ['Run Value', 'xERA', 'xBA', 'xwOBA', 'xSLG', 'BABIP'] },
+    { title: 'Stuff', labels: ['Avg FB', 'Max FB', 'FB Spin', 'BB Spin', 'Putaway%', 'Extension'] },
+    { title: 'Plate Discipline', labels: ['Strike%', 'FPS%', 'K%', 'Free Pass%', 'Whiff%', 'Chase%'] },
+    { title: 'Contact Quality', labels: ['Avg EV against', 'Avg LA against', 'GB%', 'FB%', 'Soft%', 'Hard%'] },
   ];
 
   const sections = CATEGORIES
@@ -685,38 +668,10 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
   const hasData = filteredPitches.length >= 5;
   const hasPercentiles = filteredPitches.length >= 20 && pitcherPool;
 
-  // Quick headline stats
-  // Use ALL pitches (pre-4% filter) for Max FB so rare pitch tags aren't excluded.
-  // FB velocity excludes the cutter (FB_VELO_TYPES) — its velo skews the fastball read.
-  const allFbPitches = pitches.filter(p => isFastballVeloType(normalizePitch(p.tagged_pitch_type || p.pitch_type)));
-  const fbPitches = filteredPitches.filter(p => isFastballVeloType(normalizePitch(p.tagged_pitch_type || p.pitch_type)));
-  // Guard rel_speed > 0 to exclude bad Trackman reads (0 mph values)
-  const fbVelos = fbPitches.map(p => p.rel_speed).filter(v => v != null && v > 0);
-  const allFbVelos = allFbPitches.map(p => p.rel_speed).filter(v => v != null && v > 0);
-  const strikesN = filteredPitches.filter(isStrike).length;
-  const whiffsN = filteredPitches.filter(isWhiff).length;
-  const swingsN = filteredPitches.filter(isSwing).length;
-  const fps = filteredPitches.filter(p => p.balls === 0 && p.strikes === 0);
-  const fpsStrikes = fps.filter(isStrike).length;
-  const { cswPct, kbbPct } = cswKbb(filteredPitches);
   const leagueAvg = leagueMovementProfile(leaguePitches);
 
   return (
     <div style={FONT_STYLE}>
-      {/* Stat pills */}
-      {hasData && (
-        <StatPills items={[
-          fbVelos.length ? { label: 'Avg FB', value: n1(mean(fbVelos)), gold: true } : null,
-          allFbVelos.length ? { label: 'Max FB', value: n1(Math.max(...allFbVelos)) } : null,
-          filteredPitches.length ? { label: 'Strike%', value: pct(strikesN / filteredPitches.length) } : null,
-          fps.length ? { label: 'FPS%', value: pct(fpsStrikes / fps.length) } : null,
-          swingsN ? { label: 'Whiff%', value: pct(whiffsN / swingsN) } : null,
-          cswPct != null ? { label: 'CSW%', value: `${cswPct}%` } : null,
-          kbbPct != null ? { label: 'K-BB%', value: `${kbbPct}%` } : null,
-          { label: 'Pitches', value: filteredPitches.length.toString() },
-        ]} />
-      )}
-
       {/* Percentiles */}
       {hasPercentiles && (
         <>
