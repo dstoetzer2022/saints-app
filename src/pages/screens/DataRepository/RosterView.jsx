@@ -21,7 +21,7 @@ function PlayerRow({ player, active, onClick }) {
   const [hovered, setHovered] = useState(false);
   const isPitcher = player.role === 'Pitcher';
   const handLabel = isPitcher
-    ? (player.hand ? player.hand + 'HP' : '')
+    ? (player.hand ? (player.hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '')
     : [player.positions?.[0], player.hand].filter(Boolean).join(' · ');
 
   return (
@@ -113,6 +113,7 @@ function JerseyCell({ value, onSave, color }) {
 // ── Wide roster table for desktop/TV ──────────────────────────
 function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSaveJersey }) {
   const accentColor = team?.primary_color || C.gold;
+  const isPitcherView = pitchers.length > 0;
   const allPlayers = [
     ...pitchers.map(p => ({ ...p, _section: 'Pitchers' })),
     ...hitters.map(p => ({ ...p, _section: 'Hitters' })),
@@ -127,23 +128,24 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
   };
 
   const sections = ['Pitchers', 'Hitters'];
+  const headers = isPitcherView
+    ? ['#', 'Name', 'Role', 'Pos / Hand', 'School', 'Time to Plate']
+    : ['#', 'Name', 'Role', 'Pos / Hand', 'Key Stat', 'Speed'];
 
   return (
     <div style={{ overflowX: 'auto', overflowY: 'auto', height: '100%' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT, tableLayout: 'fixed', minWidth: 700 }}>
         <colgroup>
-          <col style={{ width: '5%' }} />
+          <col style={{ width: '6%' }} />
           <col style={{ width: '22%' }} />
           <col style={{ width: '10%' }} />
-          <col style={{ width: '13%' }} />
+          <col style={{ width: '14%' }} />
           <col style={{ width: '24%' }} />
-          <col style={{ width: '10%' }} />
-          <col style={{ width: '8%' }} />
-          <col style={{ width: '8%' }} />
+          <col style={{ width: '24%' }} />
         </colgroup>
         <thead>
           <tr>
-            {['#', 'Name', 'Role', 'Pos / Hand', 'Key Stat', 'Speed', 'TM', 'Scout'].map(h => (
+            {headers.map(h => (
               <th key={h} style={thStyle}>{h}</th>
             ))}
           </tr>
@@ -155,7 +157,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
             return (
               <React.Fragment key={section}>
                 <tr>
-                  <td colSpan={8} style={{ padding: '8px 14px 4px', fontSize: 9, fontWeight: 900, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, background: C.base, borderBottom: `1px solid ${C.edge}` }}>
+                  <td colSpan={6} style={{ padding: '8px 14px 4px', fontSize: 9, fontWeight: 900, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, background: C.base, borderBottom: `1px solid ${C.edge}` }}>
                     {section} &nbsp;<span style={{ color: C.faint }}>{rows.length}</span>
                   </td>
                 </tr>
@@ -163,7 +165,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                   const isActive = activePlayer?.name === p.name;
                   const isPitcher = p.role === 'Pitcher';
                   const posHand = isPitcher
-                    ? (p.hand ? p.hand + 'HP' : '—')
+                    ? (p.hand ? (p.hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '—')
                     : [p.positions?.[0] || '', p.hand || ''].filter(Boolean).join(' · ') || '—';
                   const keyStat = p.quickStat || '—';
 
@@ -195,20 +197,22 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                       </td>
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{p.role}</td>
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{posHand}</td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream }}>{keyStat}</td>
-                      <td style={{ padding: '9px 14px' }}>
-                        {p.speedRating && (
-                          <span style={{ fontSize: 10, fontWeight: 800, color: p.speedRating === 'fast' ? C.green : p.speedRating === 'slow' ? C.red : C.amber, textTransform: 'capitalize' }}>
-                            {p.speedRating}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        {p.hasTrackman && <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.gold }} />}
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        {p.hasScout && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4a90c8' }} />}
-                      </td>
+                      {isPitcherView ? (
+                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.school || '—'}</td>
+                      ) : (
+                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream }}>{keyStat}</td>
+                      )}
+                      {isPitcherView ? (
+                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream }}>{keyStat}</td>
+                      ) : (
+                        <td style={{ padding: '9px 14px' }}>
+                          {p.speedRating && (
+                            <span style={{ fontSize: 10, fontWeight: 800, color: p.speedRating === 'fast' ? C.green : p.speedRating === 'slow' ? C.red : C.amber, textTransform: 'capitalize' }}>
+                              {p.speedRating}
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -416,10 +420,16 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
     // Player entity is the canonical, editable source for jersey numbers (via the
     // roster editor below) — it overrides whatever scouting rows happened to record.
     playerRoster.forEach(pl => {
-      if (!pl.name || !pl.jersey_number) return;
+      if (!pl.name) return;
       const key = canonicalNameKey(pl.name);
-      if (pitcherMap[key]) pitcherMap[key].jerseyNumber = pl.jersey_number;
-      if (hitterMap[key]) hitterMap[key].jerseyNumber = pl.jersey_number;
+      if (pl.jersey_number) {
+        if (pitcherMap[key]) pitcherMap[key].jerseyNumber = pl.jersey_number;
+        if (hitterMap[key]) hitterMap[key].jerseyNumber = pl.jersey_number;
+      }
+      if (pl.school) {
+        if (pitcherMap[key]) pitcherMap[key].school = pl.school;
+        if (hitterMap[key]) hitterMap[key].school = pl.school;
+      }
     });
 
     const sortByJersey = arr => arr.sort((a, b) => {

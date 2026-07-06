@@ -56,7 +56,7 @@ function buildPitcherTable(pitchers) {
     return `<tr>
       <td class="num">${p.jersey_number || '—'}</td>
       <td class="name">${p.pitcher_name || '—'}</td>
-      <td>${p.pitcher_hand ? p.pitcher_hand + 'HP' : '—'}</td>
+      <td>${p.pitcher_hand ? (p.pitcher_hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '—'}</td>
       <td class="num">${ttpCell(allTtp1b, avg1b)}</td>
       <td class="num">${ttpCell(allTtp2b, avg2b)}</td>
       <td class="num">${ttpCell(allSlide, avgSlide)}</td>

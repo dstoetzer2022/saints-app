@@ -60,7 +60,7 @@ function HandChip({ isPitcher, hand }) {
   };
   const styles = isPitcher ? PITCHER_STYLES : BATTER_STYLES;
   const s = styles[hand] || { bg: 'rgba(255,255,255,.08)', text: C.muted, border: 'rgba(255,255,255,.15)' };
-  const label = isPitcher ? hand + 'HP' : hand === 'S' ? 'Switch' : hand === 'L' ? 'LHB' : 'RHB';
+  const label = isPitcher ? (hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : hand === 'S' ? 'Switch' : hand === 'L' ? 'LHB' : 'RHB';
   return (
     <span style={{
       fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase',
