@@ -447,7 +447,8 @@ export function hitterTrackmanProfile(rows) {
     const ev = p.exit_speed, la = p.launch_angle;
     return ev != null && la != null && ev >= 95 && la >= 10 && la <= 35;
   });
-  const barrelPct = bipN ? barrels.length / bipN : null;
+  const barrelEligibleN = bip.filter(p => p.exit_speed != null && p.launch_angle != null).length;
+  const barrelPct = barrelEligibleN ? barrels.length / barrelEligibleN : null;
 
   // Contact%, 2K-Contact%, Swing%, FPSw% — all built off the shared swing
   // and contact-call classifiers, consistent with PlateDiscipline/HitterTrends.
