@@ -300,7 +300,7 @@ function VsPitchType({ pitches }) {
 
 // ── Hitter Trends ─────────────────────────────────────────────
 function HitterTrends({ pitches }) {
-  const { veloBuckets, twoKSeg, twoKCount } = useMemo(() => {
+  const { veloBuckets, twoKSeg, twoKCount, twoKContactPct } = useMemo(() => {
     const isSwing = c => sharedIsSwing({ pitch_call: c }); // AUDIT: shared classifier
     const isContact = c => ['FoulBall','FoulTip','FoulBallNotFieldable','FoulBallFieldable','InPlay'].includes(c);
     // FB contact% by velo bucket (cutter excluded from the FB-velocity definition)
