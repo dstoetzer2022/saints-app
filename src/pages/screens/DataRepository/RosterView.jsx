@@ -130,7 +130,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
   const sections = ['Pitchers', 'Hitters'];
   const headers = isPitcherView
     ? ['#', 'Name', 'Hand', 'School', 'Time to Plate']
-    : ['#', 'Name', 'Role', 'Pos / Hand', 'Key Stat', 'Speed'];
+    : ['#', 'Name', 'Hand', 'School', 'Speed', 'Aggressiveness'];
   const colCount = headers.length;
 
   return (
@@ -148,11 +148,11 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
           ) : (
             <>
               <col style={{ width: '6%' }} />
-              <col style={{ width: '22%' }} />
+              <col style={{ width: '24%' }} />
               <col style={{ width: '10%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '24%' }} />
-              <col style={{ width: '24%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '19%' }} />
             </>
           )}
         </colgroup>
@@ -179,7 +179,7 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                   const isPitcher = p.role === 'Pitcher';
                   const posHand = isPitcher
                     ? (p.hand ? (p.hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '—')
-                    : [p.positions?.[0] || '', p.hand || ''].filter(Boolean).join(' · ') || '—';
+                    : (p.hand || '—');
                   const keyStat = p.quickStat || '—';
 
                   return (
@@ -208,25 +208,27 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                           {p.name}
                         </div>
                       </td>
-                      {!isPitcherView && (
-                        <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{p.role}</td>
-                      )}
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: C.muted }}>{posHand}</td>
-                      {isPitcherView ? (
-                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.school || '—'}</td>
-                      ) : (
-                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream }}>{keyStat}</td>
-                      )}
+                      <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.school || '—'}</td>
                       {isPitcherView ? (
                         <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, color: C.cream }}>{keyStat}</td>
                       ) : (
-                        <td style={{ padding: '9px 14px' }}>
-                          {p.speedRating && (
-                            <span style={{ fontSize: 10, fontWeight: 800, color: p.speedRating === 'fast' ? C.green : p.speedRating === 'slow' ? C.red : C.amber, textTransform: 'capitalize' }}>
-                              {p.speedRating}
-                            </span>
-                          )}
-                        </td>
+                        <>
+                          <td style={{ padding: '9px 14px' }}>
+                            {p.speedRating && (
+                              <span style={{ fontSize: 10, fontWeight: 800, color: p.speedRating === 'fast' ? C.green : p.speedRating === 'slow' ? C.red : C.amber, textTransform: 'capitalize' }}>
+                                {p.speedRating}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '9px 14px' }}>
+                            {p.aggressionRating && (
+                              <span style={{ fontSize: 10, fontWeight: 800, color: p.aggressionRating === 'aggressive' ? C.green : p.aggressionRating === 'passive' ? C.red : C.amber, textTransform: 'capitalize' }}>
+                                {p.aggressionRating}
+                              </span>
+                            )}
+                          </td>
+                        </>
                       )}
                     </tr>
                   );
@@ -472,11 +474,13 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
         const pops = cObs.map(o => o.warmup_pop_time).filter(v => v != null);
         if (pops.length) h.quickStat = `Pop: ${Math.min(...pops).toFixed(2)}s best`;
       }
-      // Speed rating from runner obs
+      // Speed / aggressiveness rating from runner obs
       const rObs = runnerObs.filter(o => canonicalNameKey(o.runner_name) === canonicalNameKey(h.name));
       if (rObs.length) {
         const speed = rObs.map(o => o.speed_rating).filter(Boolean)[0];
         if (speed) h.speedRating = speed;
+        const aggression = rObs.map(o => o.aggression_rating).filter(Boolean)[0];
+        if (aggression) h.aggressionRating = aggression;
         const steals = rObs.reduce((a, o) => a + (o.steal_attempts || 0), 0);
         const succ   = rObs.reduce((a, o) => a + (o.steals_successful || 0), 0);
         if (steals > 0 && !h.quickStat) h.quickStat = `SB: ${succ}/${steals}`;
