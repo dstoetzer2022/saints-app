@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { fetchAllFiltered } from '@/lib/fetchAll';
-import { normalizeName, canonicalNameKey } from '@/lib/statsUtils';
+import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
 import PlayerProfile from './PlayerProfile';
 import BaserunnerReport from '@/components/reports/BaserunnerReport';
 import PitcherCatcherReport from '@/components/reports/PitcherCatcherReport';
@@ -375,13 +375,14 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           lastName: parts[parts.length - 1],
           role: 'Hitter',
           jerseyNumber: o.jersey_number || '',
-          hand: o.bats || '',
+          hand: normalizeHandLabel(o.bats),
           hasScout: true,
           hasTrackman: false,
         };
       } else {
         hitterMap[key].hasScout = true;
         if (!hitterMap[key].jerseyNumber && o.jersey_number) hitterMap[key].jerseyNumber = o.jersey_number;
+        if (!hitterMap[key].hand && o.bats) hitterMap[key].hand = normalizeHandLabel(o.bats);
       }
     });
 
@@ -398,13 +399,14 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           lastName: parts[parts.length - 1],
           role: 'Hitter',
           jerseyNumber: o.jersey_number || '',
-          hand: o.bats || '',
+          hand: normalizeHandLabel(o.bats),
           hasScout: true,
           hasTrackman: false,
         };
       } else {
         hitterMap[key].hasScout = true;
         if (!hitterMap[key].jerseyNumber && o.jersey_number) hitterMap[key].jerseyNumber = o.jersey_number;
+        if (!hitterMap[key].hand && o.bats) hitterMap[key].hand = normalizeHandLabel(o.bats);
       }
     });
 
@@ -421,12 +423,13 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           lastName: parts[parts.length - 1],
           role: 'Hitter',
           jerseyNumber: '',
-          hand: p.batter_hand || '',
+          hand: normalizeHandLabel(p.batter_hand),
           hasScout: false,
           hasTrackman: true,
         };
       } else {
         hitterMap[key].hasTrackman = true;
+        if (!hitterMap[key].hand && p.batter_hand) hitterMap[key].hand = normalizeHandLabel(p.batter_hand);
       }
     });
 

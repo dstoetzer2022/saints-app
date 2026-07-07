@@ -121,6 +121,20 @@ export function namesMatch(a, b) {
   return canonicalNameKey(a) === canonicalNameKey(b);
 }
 
+// Normalize any handedness representation ('R', 'L', 'S', 'Right', 'Left',
+// 'Switch', 'RHB', 'LHB', mixed case, etc.) to exactly 'Right' | 'Left' |
+// 'Switch' | ''. Different entities store this differently — Baserunner/
+// Catcher observations use single-letter codes, TrackmanPitch stores full
+// words — so always run values through this before display or comparison.
+export function normalizeHandLabel(hand) {
+  if (!hand) return '';
+  const h = hand.trim().toLowerCase();
+  if (h.startsWith('s')) return 'Switch';
+  if (h.startsWith('l')) return 'Left';
+  if (h.startsWith('r')) return 'Right';
+  return '';
+}
+
 // ── Pitch-call classification (single source of truth) ────────────────────────
 // Trackman V3 emits FoulBallNotFieldable / FoulBallFieldable instead of the V2
 // "FoulBall"/"FoulTip". We accept every known spelling so the same code works on

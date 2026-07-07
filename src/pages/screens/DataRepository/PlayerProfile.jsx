@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
-import { normalizeName, canonicalNameKey } from '@/lib/statsUtils';
+import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool } from '@/lib/profileStats';
 import { fetchAllFiltered, fetchAllList } from '@/lib/fetchAll';
 import { getLeaguePitches } from '@/lib/leagueCache';
@@ -40,13 +40,23 @@ function HandChip({ isPitcher, hand }) {
     L: { bg: 'rgba(44,123,182,.18)', text: '#70b8f0', border: 'rgba(44,123,182,.32)' },
   };
   const BATTER_STYLES = {
-    R: { bg: 'rgba(215,25,28,.18)', text: '#ff7070', border: 'rgba(215,25,28,.32)' },
-    L: { bg: 'rgba(44,123,182,.18)', text: '#70b8f0', border: 'rgba(44,123,182,.32)' },
-    S: { bg: 'rgba(74,222,128,.12)', text: '#4ade80', border: 'rgba(74,222,128,.28)' },
+    Right: { bg: 'rgba(215,25,28,.18)', text: '#ff7070', border: 'rgba(215,25,28,.32)' },
+    Left: { bg: 'rgba(44,123,182,.18)', text: '#70b8f0', border: 'rgba(44,123,182,.32)' },
+    Switch: { bg: 'rgba(74,222,128,.12)', text: '#4ade80', border: 'rgba(74,222,128,.28)' },
   };
-  const styles = isPitcher ? PITCHER_STYLES : BATTER_STYLES;
-  const s = styles[hand] || { bg: 'rgba(255,255,255,.08)', text: C.muted, border: 'rgba(255,255,255,.15)' };
-  const label = isPitcher ? (hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : hand === 'S' ? 'Switch' : hand === 'L' ? 'LHB' : 'RHB';
+  let s, label;
+  if (isPitcher) {
+    const code = hand[0]?.toUpperCase() === 'L' ? 'L' : 'R';
+    s = PITCHER_STYLES[code];
+    label = code === 'L' ? 'LHP' : 'RHP';
+  } else {
+    // Different entities store handedness differently (single-letter codes vs
+    // full words) — always normalize before deriving the label/style so every
+    // hitter's actual handedness shows, not just a default.
+    label = normalizeHandLabel(hand);
+    if (!label) return null;
+    s = BATTER_STYLES[label];
+  }
   return (
     <span style={{
       fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase',
