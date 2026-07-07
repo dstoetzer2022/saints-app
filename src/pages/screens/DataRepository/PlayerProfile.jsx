@@ -531,6 +531,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const [hitterPool, setHitterPool] = useState(null);
   const [leaguePitches, setLeaguePitches] = useState([]);
   const [school, setSchool] = useState(player.school || '');
+  const [hand, setHand] = useState(player.hand || '');
 
   const isPitcher = player.role === 'Pitcher';
   const trackmanName = toTrackmanName(player.name);
@@ -597,6 +598,10 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       setGames(g.filter(gm => relevantGameIds.has(gm.id)));
       setAllTeams(teams);
       if (playerRecords && playerRecords[0]?.school) setSchool(playerRecords[0].school);
+      // Manual "bats" override takes precedence over the auto-detected hand
+      // (Trackman can mislabel a hand on a mis-configured session, which
+      // would otherwise falsely show as a switch hitter).
+      if (playerRecords && playerRecords[0]?.bats) setHand(normalizeHandLabel(playerRecords[0].bats));
       setLoading(false);
     });
   }, [normalizedName, trackmanName, isPitcher]);
@@ -642,8 +647,8 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
                 T: {player.throws}
               </span>
             )}
-            {player.hand && !player.bats && !player.throws && (
-              <HandChip isPitcher={isPitcher} hand={player.hand} />
+            {hand && !player.bats && !player.throws && (
+              <HandChip isPitcher={isPitcher} hand={hand} />
             )}
           </div>
           <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.55)', fontFamily: FONT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -653,7 +658,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         {/* Edit bar — jersey + school only */}
         <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
           <ExportProfileButton />
-          <PlayerInfoBar playerName={trackmanName} team={team.name} onSchoolChange={setSchool} />
+          <PlayerInfoBar playerName={trackmanName} team={team.name} isPitcher={isPitcher} onSchoolChange={setSchool} onBatsChange={setHand} />
         </div>
       </div>
 

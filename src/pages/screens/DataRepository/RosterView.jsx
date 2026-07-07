@@ -353,6 +353,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
 
     const hitterMap = {};
     const positionsMap = {};
+    const trackmanHandsSeen = {}; // key -> Set of normalized hands ('Right'/'Left') seen in Trackman rows
     runnerObs.forEach(o => {
       if (!o.runner_name || !o.position) return;
       const key = canonicalNameKey(o.runner_name);
@@ -416,6 +417,11 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       const key = canonicalNameKey(p.batter_name);
       if (pitcherMap[key]) return;
       const parts = normalized.split(' ');
+      const normalizedHand = normalizeHandLabel(p.batter_hand);
+      if (normalizedHand === 'Right' || normalizedHand === 'Left') {
+        if (!trackmanHandsSeen[key]) trackmanHandsSeen[key] = new Set();
+        trackmanHandsSeen[key].add(normalizedHand);
+      }
       if (!hitterMap[key]) {
         hitterMap[key] = {
           name: normalized,
@@ -423,13 +429,21 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
           lastName: parts[parts.length - 1],
           role: 'Hitter',
           jerseyNumber: '',
-          hand: normalizeHandLabel(p.batter_hand),
+          hand: normalizedHand,
           hasScout: false,
           hasTrackman: true,
         };
       } else {
         hitterMap[key].hasTrackman = true;
-        if (!hitterMap[key].hand && p.batter_hand) hitterMap[key].hand = normalizeHandLabel(p.batter_hand);
+        if (!hitterMap[key].hand && p.batter_hand) hitterMap[key].hand = normalizedHand;
+      }
+    });
+
+    // A hitter with BOTH Right and Left recorded across their Trackman rows is a
+    // switch hitter — override whichever single side happened to be set above.
+    Object.entries(trackmanHandsSeen).forEach(([key, hands]) => {
+      if (hands.has('Right') && hands.has('Left') && hitterMap[key]) {
+        hitterMap[key].hand = 'Switch';
       }
     });
 
@@ -449,6 +463,13 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (pl.school) {
         if (pitcherMap[key]) pitcherMap[key].school = pl.school;
         if (hitterMap[key]) hitterMap[key].school = pl.school;
+      }
+      // Manual "bats" override on the Player record takes final precedence over
+      // whatever the observation/Trackman-derived hand (including switch-hitter
+      // auto-detection) resolved to — needed when Trackman mislabels a hand on
+      // a mis-configured session, which would otherwise look like a switch hitter.
+      if (pl.bats && hitterMap[key]) {
+        hitterMap[key].hand = normalizeHandLabel(pl.bats);
       }
     });
 
