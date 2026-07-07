@@ -4,7 +4,7 @@ import PercentileBar from '@/components/shared/PercentileBar';
 import { hitterTrackmanProfile, percentileRank, fmtStat, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  LineChart, Line, Legend
+  LineChart, Line, Legend, LabelList
 } from 'recharts';
 import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
@@ -121,19 +121,39 @@ function HitterPercentiles({ pitches, hitterPool }) {
 }
 
 // ── Plate discipline ──────────────────────────────────────────
-function PropBar({ segments }) {
+function PropBar({ segments, height = 20 }) {
   const total = segments.reduce((s, x) => s + (x.value || 0), 0) || 1;
   return (
     <div>
-      <div style={{ display: 'flex', height: 18, borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.edge}` }}>
+      <div style={{ display: 'flex', height, borderRadius: height / 2, overflow: 'hidden', background: C.faint }}>
         {segments.filter(s => s.value > 0).map((s, i) => (
-          <div key={i} style={{ width: (s.value / total * 100) + '%', background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff' }}>
-            {s.value / total >= 0.1 ? Math.round(s.value / total * 100) + '%' : ''}
+          <div key={i} style={{ width: (s.value / total * 100) + '%', background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff' }}>
+            {s.value / total >= 0.09 ? Math.round(s.value / total * 100) + '%' : ''}
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
-        {segments.map((s, i) => <span key={i} style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}><b style={{ color: s.color }}>{s.label}</b> {s.value}</span>)}
+      <div style={{ display: 'flex', gap: 12, marginTop: 5, flexWrap: 'wrap' }}>
+        {segments.map((s, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: C.muted, ...FONT_STYLE }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: s.color, display: 'inline-block', flexShrink: 0 }} />
+            {s.label} <b style={{ color: C.cream }}>{s.value}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A single value + thin calibration gauge (0-100 scale), grouped by zone context.
+function StatGauge({ label, value, tone = 'neutral' }) {
+  const v = value != null ? Math.round(value * 100) : null;
+  const barColor = tone === 'bad' ? C.red : tone === 'good' ? C.green : C.gold;
+  return (
+    <div style={{ minWidth: 76 }}>
+      <div style={{ fontSize: 9, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, ...FONT_STYLE }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: C.white, fontVariantNumeric: 'tabular-nums', margin: '2px 0 5px', ...FONT_STYLE }}>{v != null ? v + '%' : '—'}</div>
+      <div style={{ height: 4, borderRadius: 2, background: C.faint, overflow: 'hidden' }}>
+        <div style={{ width: (v || 0) + '%', height: '100%', background: barColor, borderRadius: 2 }} />
       </div>
     </div>
   );
@@ -162,23 +182,44 @@ function PlateDiscipline({ pitches }) {
     };
   }, [pitches]);
 
+  const swingPct = pitches.length ? swings / pitches.length : 0;
+
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 220px' }}>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, ...FONT_STYLE }}>Swing vs take</div>
-          <PropBar segments={[{ label: 'Swing', value: swings, color: '#e06040' }, { label: 'Take', value: takes, color: '#7aaaca' }]} />
-          <div style={{ fontSize: 10, color: C.muted, margin: '10px 0 4px', ...FONT_STYLE }}>On swings</div>
+    <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+      {/* Decision funnel: all pitches -> swing/take -> (of swings) contact/whiff */}
+      <div style={{ flex: '1 1 260px' }}>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 5, ...FONT_STYLE }}>All pitches ({pitches.length})</div>
+        <PropBar segments={[{ label: 'Swing', value: swings, color: '#e06040' }, { label: 'Take', value: takes, color: '#7aaaca' }]} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
+          <span style={{ width: 14, height: 10, borderLeft: `2px solid ${C.edge}`, borderBottom: `2px solid ${C.edge}`, borderBottomLeftRadius: 6, flexShrink: 0 }} />
+          <span style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}>Of {swings} swings</span>
+        </div>
+        <div style={{ width: Math.max(35, swingPct * 100) + '%', paddingLeft: 22 }}>
           <PropBar segments={[{ label: 'Contact', value: contact, color: '#3aaa6a' }, { label: 'Whiff', value: whiffs, color: '#e06040' }]} />
         </div>
-        <div style={{ flex: '1 1 200px' }}>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, ...FONT_STYLE }}>
-            {[['Z-Swing', zSwingPct], ['Z-Whiff', zWhiffPct], ['Chase', chasePct], ['O-Whiff', ozWhiffPct]].map(([lbl, v]) => (
-              <div key={lbl} style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{lbl}</div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: C.white, fontVariantNumeric: 'tabular-nums' }}>{pct(v)}</div>
-              </div>
-            ))}
+      </div>
+
+      {/* Zone command: in-zone discipline vs chase discipline */}
+      <div style={{ flex: '1 1 260px', display: 'flex', gap: 22 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ width: 3, height: 9, borderRadius: 2, background: C.gold, display: 'inline-block' }} />
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>In Zone</span>
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <StatGauge label="Z-Swing" value={zSwingPct} tone="neutral" />
+            <StatGauge label="Z-Whiff" value={zWhiffPct} tone="bad" />
+          </div>
+        </div>
+        <div style={{ width: 1, background: C.edge, alignSelf: 'stretch' }} />
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ width: 3, height: 9, borderRadius: 2, background: C.muted, display: 'inline-block' }} />
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: C.muted, ...FONT_STYLE }}>Chase</span>
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <StatGauge label="Chase%" value={chasePct} tone="bad" />
+            <StatGauge label="O-Whiff" value={ozWhiffPct} tone="bad" />
           </div>
         </div>
       </div>
@@ -284,7 +325,7 @@ function HitterTrends({ pitches }) {
     }
     // Two-strike outcomes
     const twoK = pitches.filter(r => r.strikes === 2);
-    let twoKSeg = null;
+    let twoKSeg = null, twoKContactPct = null;
     if (twoK.length >= 3) {
       const take = twoK.filter(r => !isSwing(r.pitch_call)).length;
       const whiff = twoK.filter(r => r.pitch_call === 'StrikeSwinging').length;
@@ -296,8 +337,9 @@ function HitterTrends({ pitches }) {
         { label: 'Foul', value: foul, color: '#d4a030' },
         { label: 'In play', value: inPlay, color: '#3aaa6a' },
       ];
+      twoKContactPct = (foul + inPlay) / twoK.length;
     }
-    return { veloBuckets, twoKSeg, twoKCount: twoK.length };
+    return { veloBuckets, twoKSeg, twoKCount: twoK.length, twoKContactPct };
   }, [pitches]);
 
   if (!veloBuckets && !twoKSeg) return null;
@@ -309,20 +351,25 @@ function HitterTrends({ pitches }) {
         <div style={{ flex: '1 1 240px' }}>
           <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, ...FONT_STYLE }}>Contact% vs FB by velocity</div>
           <ResponsiveContainer width="100%" height={110}>
-            <BarChart data={veloBuckets} margin={{ top: 4, right: 8, bottom: 2, left: -8 }}>
+            <BarChart data={veloBuckets} margin={{ top: 16, right: 8, bottom: 2, left: -8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.edge} />
               <XAxis dataKey="label" tick={tickStyle} />
               <YAxis tick={tickStyle} width={28} domain={[0, 1]} tickFormatter={v => Math.round(v * 100)} />
               <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.edge}`, color: C.cream, fontSize: 11 }}
                 formatter={(v, n, p) => [(v * 100).toFixed(0) + `% (n=${p.payload.n})`, 'Contact']} />
-              <Bar dataKey="contactPct" fill={C.gold} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="contactPct" fill={C.gold} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="contactPct" position="top" formatter={v => Math.round(v * 100) + '%'} style={{ fill: C.cream, fontSize: 10, fontWeight: 700 }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
       {twoKSeg && (
         <div style={{ flex: '1 1 220px' }}>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, ...FONT_STYLE }}>Two-strike outcomes ({twoKCount})</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 5 }}>
+            <span style={{ fontSize: 10, color: C.muted, ...FONT_STYLE }}>Two-strike approach ({twoKCount})</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.gold, ...FONT_STYLE }}>{pct(twoKContactPct)} contact</span>
+          </div>
           <PropBar segments={twoKSeg} />
         </div>
       )}
