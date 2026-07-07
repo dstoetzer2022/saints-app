@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
+import { fetchAllFiltered } from '@/lib/fetchAll';
+import { canonicalNameKey } from '@/lib/statsUtils';
 
 const FONT = "'Archivo', system-ui, sans-serif";
 
@@ -67,17 +69,26 @@ export default function PlayerInfoBar({ playerName, team, onSchoolChange }) {
     if (!playerName) return;
     setLoaded(false); setRecord(null); setRecordId(null);
     setData({ school: '' });
-    base44.entities.Player.filter({ name: playerName }, undefined, 1)
+    const wantKey = canonicalNameKey(playerName);
+    // Scope to team + match by canonical key (not exact string) so this finds the
+    // SAME Player row RosterView reads, regardless of "Last, First" vs "First Last"
+    // formatting. Falls back to an unscoped exact-name lookup if no team is known.
+    (team
+      ? fetchAllFiltered(base44.entities.Player, { team }, 'name')
+      : base44.entities.Player.filter({ name: playerName }, undefined, 1)
+    )
       .then(rows => {
-        if (rows && rows[0]) {
-          const r = rows[0];
-          setRecordId(r.id);
-          setData({ school: r.school || '' });
+        const match = team
+          ? (rows || []).find(r => canonicalNameKey(r.name) === wantKey)
+          : (rows || [])[0];
+        if (match) {
+          setRecordId(match.id);
+          setData({ school: match.school || '' });
         }
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, [playerName]);
+  }, [playerName, team]);
 
   const handleChange = async (field, value) => {
     const newData = { ...data, [field]: value };
