@@ -2,198 +2,59 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
+import {
+  generateReportPdf, openPrintWindow, PC,
+  ttpColor, popColor, mean, cleanPops,
+} from '@/lib/reportPdf';
 
-function avg(arr) {
-  if (!arr || !arr.length) return null;
-  const nums = arr.filter(v => v != null && !isNaN(v));
-  if (!nums.length) return null;
-  return nums.reduce((a, b) => a + b, 0) / nums.length;
+const dash = '\u2014';
+
+const P_COLUMNS = [
+  { header: '#',             width: 26,  align: 'center' },
+  { header: 'PITCHER',       width: 120, align: 'left'   },
+  { header: 'H',             width: 28,  align: 'center' },
+  { header: 'TTP 1B',        width: 74,  align: 'center' },
+  { header: 'TTP 2B',        width: 74,  align: 'center' },
+  { header: 'SLIDE',         width: 74,  align: 'center' },
+  { header: 'UCLA HOLD',     width: 96,  align: 'left'   },
+  { header: 'PICKOFF MOVES', width: 118, align: 'left'   },
+  { header: 'NOTES',         align: 'left' },
+];
+
+const C_COLUMNS = [
+  { header: '#',           width: 26,  align: 'center' },
+  { header: 'CATCHER',     width: 132, align: 'left'   },
+  { header: 'B',           width: 24,  align: 'center' },
+  { header: 'BEST POP',    width: 74,  align: 'center' },
+  { header: 'AVG POP',     width: 74,  align: 'center' },
+  { header: 'TM READINGS', width: 84,  align: 'center' },
+  { header: 'CS / ATT',    width: 66,  align: 'center' },
+  { header: 'WARMUP',      width: 66,  align: 'center' },
+  { header: 'NOTES',       align: 'left' },
+];
+
+function ttpText(arr) {
+  const vals = (arr || []).filter(v => v != null && !isNaN(v));
+  if (!vals.length) return { text: dash };
+  const a = mean(vals);
+  return { avg: a, n: vals.length, color: ttpColor(a) };
 }
 
-function ttpColor(val) {
-  if (val == null) return '#111';
-  if (val <= 1.20) return '#1a7a3a';
-  if (val >= 1.35) return '#b53030';
-  return '#111';
+function csCount(steal_attempts) {
+  const sa = steal_attempts || [];
+  const cs = sa.filter(s => {
+    const r = (s.result || '').toLowerCase();
+    return r.includes('out') || r.includes('caught');
+  }).length;
+  return { cs, att: sa.length };
 }
-
-function popColor(val) {
-  if (val == null) return '#111';
-  if (val <= 1.90) return '#1a7a3a';
-  if (val >= 2.10) return '#b53030';
-  return '#111';
-}
-
-// ── Build HTML — dense one-row-per-player tables instead of stacked cards ────
-// Individual readings (every pop time, every steal attempt, every throw) are
-// still fully captured in the database via the live scouting tools — this
-// printed report shows averages + counts so a roster fits on a couple pages
-// instead of one page (or more) per player.
-
-function buildPitcherTable(pitchers) {
-  if (!pitchers.length) return '<p class="empty">No pitcher observations for this team/game.</p>';
-
-  const rows = pitchers.map(p => {
-    const allTtp1b = (p.time_to_plate_1b || []).filter(v => v != null);
-    const allTtp2b = (p.time_to_plate_2b || []).filter(v => v != null);
-    const allSlide = (p.time_to_plate_slide || []).filter(v => v != null);
-    const avg1b = avg(allTtp1b);
-    const avg2b = avg(allTtp2b);
-    const avgSlide = avg(allSlide);
-    const pickoffs = (p.pickoff_moves || []).filter(Boolean);
-
-    const ttpCell = (readings, avgVal) => {
-      if (!readings.length && avgVal == null) return '—';
-      const avgStr = avgVal != null ? `<span style="font-weight:900;color:${ttpColor(avgVal)}">${avgVal.toFixed(2)}s</span>` : '—';
-      return readings.length > 1 ? `${avgStr} <span class="n">(n=${readings.length})</span>` : avgStr;
-    };
-
-    const uclaHold = [
-      p.ucla_hold_start ? `1B:${p.ucla_hold_start}` : null,
-      p.ucla_hold_2b    ? `2B:${p.ucla_hold_2b}` : null,
-    ].filter(Boolean).join(' ') || '—';
-
-    return `<tr>
-      <td class="num">${p.jersey_number || '—'}</td>
-      <td class="name">${p.pitcher_name || '—'}</td>
-      <td>${p.pitcher_hand ? (p.pitcher_hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '—'}</td>
-      <td class="num">${ttpCell(allTtp1b, avg1b)}</td>
-      <td class="num">${ttpCell(allTtp2b, avg2b)}</td>
-      <td class="num">${ttpCell(allSlide, avgSlide)}</td>
-      <td>${uclaHold}</td>
-      <td>${pickoffs.length ? pickoffs.map(m => `<span class="tag">${m}</span>`).join(' ') : '—'}</td>
-      <td class="notes">${p.notes || (p.slide_step_notes ? `Slide: ${p.slide_step_notes}` : '')}</td>
-    </tr>`;
-  }).join('');
-
-  return `<table class="roster">
-    <thead><tr>
-      <th class="num">#</th><th>Name</th><th>Hand</th>
-      <th class="num">TTP 1B</th><th class="num">TTP 2B</th><th class="num">Slide</th>
-      <th>UCLA Hold</th><th>Pickoff Moves</th><th>Notes</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-
-function buildCatcherTable(catchers) {
-  if (!catchers.length) return '<p class="empty">No catcher observations for this team/game.</p>';
-
-  const rows = catchers.map(c => {
-    const tmPops = (c.trackman_pop_times || []).filter(p => p.pop_time != null);
-    const avgTmPop = avg(tmPops.map(p => p.pop_time));
-    const stealAttempts = c.steal_attempts || [];
-    const caughtCount = stealAttempts.filter(s => (s.result || '').toLowerCase().includes('out') || (s.result||'').toLowerCase().includes('caught')).length;
-    const avgStealPop = avg(stealAttempts.map(s => s.pop_time).filter(v => v != null));
-    const biThrows = c.between_innings_throws || [];
-    const avgBiTime = avg(biThrows.map(t => t.time).filter(v => v != null));
-
-    const tmPopCell = tmPops.length
-      ? `<span style="font-weight:900;color:${popColor(avgTmPop)}">${avgTmPop != null ? avgTmPop.toFixed(2)+'s' : '—'}</span> <span class="n">(n=${tmPops.length})</span>`
-      : '—';
-    const stealCell = stealAttempts.length
-      ? `${caughtCount}/${stealAttempts.length} caught${avgStealPop != null ? ` · <span style="font-weight:800;color:${popColor(avgStealPop)}">${avgStealPop.toFixed(2)}s</span>` : ''}`
-      : '—';
-    const biCell = biThrows.length
-      ? `${avgBiTime != null ? avgBiTime.toFixed(2)+'s avg' : '—'} <span class="n">(n=${biThrows.length})</span>`
-      : '—';
-
-    return `<tr>
-      <td class="num">${c.jersey_number || '—'}</td>
-      <td class="name">${c.catcher_name || '—'}</td>
-      <td>${c.bats ? c.bats + 'HB' : '—'}</td>
-      <td class="num">${c.warmup_pop_time != null ? `<span style="font-weight:900;color:${popColor(c.warmup_pop_time)}">${c.warmup_pop_time.toFixed(2)}s</span>` : '—'}</td>
-      <td class="num">${tmPopCell}</td>
-      <td>${stealCell}</td>
-      <td class="num">${biCell}</td>
-      <td class="notes">${[c.blocking_notes, c.notes].filter(Boolean).join(' · ') || ''}</td>
-    </tr>`;
-  }).join('');
-
-  return `<table class="roster">
-    <thead><tr>
-      <th class="num">#</th><th>Name</th><th>Bats</th>
-      <th class="num">Warmup Pop</th><th class="num">TM Pop Avg</th>
-      <th>Manual SB</th><th class="num">Btwn-Inn Throw</th><th>Notes</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-
-function buildFullHtml({ pitchers, catchers, game, teamName }) {
-  const gameLabel = game
-    ? `${game.date} &nbsp;·&nbsp; ${game.away_team_code} @ ${game.home_team_code}`
-    : 'All Games';
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Pitcher & Catcher Report — ${teamName}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&display=swap');
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 24px 28px; font-size: 11px; }
-    .doc-header { margin-bottom: 16px; }
-    .doc-title { font-size: 9px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
-    .doc-team { font-size: 20px; font-weight: 900; color: #000; letter-spacing: -0.5px; }
-    .doc-meta { font-size: 11px; color: #777; margin-top: 3px; }
-    hr.doc-rule { border: none; border-top: 2.5px solid #000; margin: 12px 0 16px; }
-    .section-header {
-      font-size: 9.5px; font-weight: 900; letter-spacing: 2.5px; text-transform: uppercase;
-      color: #fff; background: #0e253a; padding: 6px 12px; border-radius: 4px;
-      margin: 18px 0 8px;
-    }
-    table.roster { width: 100%; border-collapse: collapse; }
-    table.roster thead { display: table-header-group; } /* repeats on every printed page */
-    table.roster th {
-      font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
-      color: #fff; background: #1c3a56; text-align: left; padding: 5px 7px; white-space: nowrap;
-    }
-    table.roster th.num, table.roster td.num { text-align: center; }
-    table.roster td { padding: 5px 7px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 10.5px; }
-    table.roster tr:nth-child(even) td { background: #fafafa; }
-    table.roster tr { page-break-inside: avoid; break-inside: avoid; }
-    td.name { font-weight: 800; color: #000; white-space: nowrap; }
-    td.notes { font-style: italic; color: #555; }
-    .n { font-size: 9px; color: #999; }
-    .tag { display: inline-block; background: #eef2f6; border-radius: 3px; padding: 1px 6px; margin: 1px 2px 1px 0; font-size: 10px; font-weight: 600; color: #334; }
-    .empty { color: #888; font-style: italic; padding: 8px 0; font-size: 11px; }
-    @page { margin: 14mm 16mm; }
-    .page-footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; color: #bbb; letter-spacing: 1.5px; text-transform: uppercase; padding: 6px 0; border-top: 1px solid #eee; background: #fff; }
-  </style>
-</head>
-<body>
-  <div class="page-footer">Saints Data Matrix &nbsp;·&nbsp; Confidential Scouting Report</div>
-
-  <div class="doc-header">
-    <div class="doc-title">Pitcher &amp; Catcher Scouting Report</div>
-    <div class="doc-team">${teamName}</div>
-    <div class="doc-meta">${gameLabel} &nbsp;·&nbsp; Printed ${new Date().toLocaleDateString()}</div>
-  </div>
-  <hr class="doc-rule"/>
-
-  <div class="section-header">Pitcher Report</div>
-  ${buildPitcherTable(pitchers)}
-
-  <div class="section-header">Catcher Report</div>
-  ${buildCatcherTable(catchers)}
-
-  <script>window.onload = function(){ window.print(); }<\/script>
-</body>
-</html>`;
-}
-
-// ── Main component ────────────────────────────────────────────
 
 export default function PitcherCatcherReport({ team, onClose }) {
   const [games, setGames] = useState([]);
   const [selectedGameId, setSelectedGameId] = useState('all');
-  const [_selectedTeam, _setSelectedTeam] = useState(team.name);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-
-  // All pitcher/catcher obs for this team
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
   const [pitcherObs, setPitcherObs] = useState([]);
   const [catcherObs, setCatcherObs] = useState([]);
 
@@ -204,7 +65,6 @@ export default function PitcherCatcherReport({ team, onClose }) {
       base44.entities.PitcherObservation.filter({ pitcher_team: team.name }, 'pitcher_name', 500),
       base44.entities.CatcherObservation.filter({ catcher_team: team.name }, 'catcher_name', 200),
     ]).then(([g, po, co]) => {
-      // Only games that involve this team
       const relevant = g.filter(game =>
         game.home_team === team.name || game.away_team === team.name ||
         game.home_team_code === team.code || game.away_team_code === team.code
@@ -213,20 +73,14 @@ export default function PitcherCatcherReport({ team, onClose }) {
       setPitcherObs(po);
       setCatcherObs(co);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [team.name, team.code]);
 
   const selectedGame = games.find(g => g.id === selectedGameId) || null;
 
-  // Filter by game if selected
-  const filteredPitchers = selectedGameId === 'all'
-    ? pitcherObs
-    : pitcherObs.filter(o => o.game_id === selectedGameId);
-  const filteredCatchers = selectedGameId === 'all'
-    ? catcherObs
-    : catcherObs.filter(o => o.game_id === selectedGameId);
+  const filteredPitchers = selectedGameId === 'all' ? pitcherObs : pitcherObs.filter(o => o.game_id === selectedGameId);
+  const filteredCatchers = selectedGameId === 'all' ? catcherObs : catcherObs.filter(o => o.game_id === selectedGameId);
 
-  // Deduplicate pitchers (merge across games when "all")
   const mergedPitchers = (() => {
     const map = {};
     filteredPitchers.forEach(o => {
@@ -241,6 +95,7 @@ export default function PitcherCatcherReport({ team, onClose }) {
         if (!map[key].notes && o.notes) map[key].notes = o.notes;
         if (!map[key].ucla_hold_start && o.ucla_hold_start) map[key].ucla_hold_start = o.ucla_hold_start;
         if (!map[key].ucla_hold_2b && o.ucla_hold_2b) map[key].ucla_hold_2b = o.ucla_hold_2b;
+        if (!map[key].jersey_number && o.jersey_number) map[key].jersey_number = o.jersey_number;
       }
     });
     return Object.values(map).sort((a, b) => {
@@ -250,7 +105,6 @@ export default function PitcherCatcherReport({ team, onClose }) {
     });
   })();
 
-  // Deduplicate catchers
   const mergedCatchers = (() => {
     const map = {};
     filteredCatchers.forEach(o => {
@@ -264,6 +118,8 @@ export default function PitcherCatcherReport({ team, onClose }) {
         if (!map[key].notes && o.notes) map[key].notes = o.notes;
         if (!map[key].blocking_notes && o.blocking_notes) map[key].blocking_notes = o.blocking_notes;
         if (!map[key].warmup_pop_time && o.warmup_pop_time) map[key].warmup_pop_time = o.warmup_pop_time;
+        if (!map[key].bats && o.bats) map[key].bats = o.bats;
+        if (!map[key].jersey_number && o.jersey_number) map[key].jersey_number = o.jersey_number;
       }
     });
     return Object.values(map).sort((a, b) => {
@@ -273,55 +129,191 @@ export default function PitcherCatcherReport({ team, onClose }) {
     });
   })();
 
-  const handlePrint = () => {
-    setGenerating(true);
-    const html = buildFullHtml({
-      pitchers: mergedPitchers,
-      catchers: mergedCatchers,
-      game: selectedGame,
-      teamName: team.name,
-    });
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => setGenerating(false), 500);
+  const metaLine = () => {
+    const gl = selectedGame ? selectedGame.date + ' \u00b7 ' + selectedGame.away_team_code + ' @ ' + selectedGame.home_team_code : 'All games';
+    return mergedPitchers.length + ' pitchers \u00b7 ' + mergedCatchers.length + ' catchers \u00b7 ' + gl + ' \u00b7 Printed ' + new Date().toLocaleDateString();
   };
 
   const canPrint = !loading && (mergedPitchers.length > 0 || mergedCatchers.length > 0);
 
+  // ── PDF ──
+  const handleDownloadPdf = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const pRows = mergedPitchers.map(p => {
+        const hand = (p.pitcher_hand || '').slice(0, 1).toUpperCase() === 'L' ? 'LHP' : p.pitcher_hand ? 'RHP' : dash;
+        const hold = [p.ucla_hold_start ? '1B:' + p.ucla_hold_start : null, p.ucla_hold_2b ? '2B:' + p.ucla_hold_2b : null].filter(Boolean).join(' ') || dash;
+        const moves = (p.pickoff_moves || []).filter(Boolean);
+        const ttpCell = (arr) => {
+          const t = ttpText(arr);
+          if (t.text === dash) return { text: dash, align: 'center' };
+          return { text: t.avg.toFixed(2) + 's' + (t.n > 1 ? ' (n=' + t.n + ')' : ''), bold: true, color: t.color, align: 'center' };
+        };
+        return [
+          { text: p.jersey_number || dash, bold: true, color: PC.muted, align: 'center' },
+          { text: (p.pitcher_name || dash).trim(), bold: true },
+          { text: hand, align: 'center' },
+          ttpCell(p.time_to_plate_1b),
+          ttpCell(p.time_to_plate_2b),
+          ttpCell(p.time_to_plate_slide),
+          { text: hold },
+          { text: moves.length ? moves.join(', ') : dash },
+          { text: p.notes || p.slide_step_notes || '', italic: true, color: '#555555' },
+        ];
+      });
+
+      const cRows = mergedCatchers.map(c => {
+        const pops = (c.trackman_pop_times || []).map(tp => tp.pop_time);
+        const { best, avg, nValid, nRaw } = cleanPops(pops);
+        const { cs, att } = csCount(c.steal_attempts);
+        const bestCell = best != null ? { text: best.toFixed(2) + 's', bold: true, color: popColor(best), align: 'center' } : { text: dash, align: 'center' };
+        const avgCell  = avg != null ? { text: avg.toFixed(2) + 's', color: popColor(avg), align: 'center' } : { text: dash, align: 'center' };
+        const nText = nValid ? String(nValid) : (nRaw ? '0 of ' + nRaw : dash);
+        const wu = c.warmup_pop_time;
+        return [
+          { text: c.jersey_number || dash, bold: true, color: PC.muted, align: 'center' },
+          { text: (c.catcher_name || dash).trim(), bold: true },
+          { text: c.bats || dash, align: 'center' },
+          bestCell,
+          avgCell,
+          { text: nText, align: 'center' },
+          { text: att ? cs + '/' + att : dash, align: 'center' },
+          wu != null ? { text: wu.toFixed(2) + 's', color: popColor(wu), align: 'center' } : { text: dash, align: 'center' },
+          { text: [c.blocking_notes, c.notes].filter(Boolean).join(' \u00b7 '), italic: true, color: '#555555' },
+        ];
+      });
+
+      const sections = [];
+      sections.push({
+        headerColor: PC.navy2, label: 'Pitcher Times to Plate', columns: P_COLUMNS,
+        rows: pRows.length ? pRows : [[{ text: 'No pitcher observations for this selection.', italic: true, color: PC.muted }, '', '', '', '', '', '', '', '']],
+      });
+      sections.push({
+        headerColor: PC.navy2, label: 'Catcher Pop Times & Throwing', columns: C_COLUMNS,
+        rows: cRows.length ? cRows : [[{ text: 'No catcher observations for this selection.', italic: true, color: PC.muted }, '', '', '', '', '', '', '', '']],
+      });
+
+      await generateReportPdf({
+        filename: 'Pitcher_Catcher_Report_' + team.name.replace(/\s+/g, '_') + '.pdf',
+        title: 'Pitcher & Catcher Scouting Report',
+        team: team.name,
+        meta: metaLine(),
+        sections,
+        legend: 'Pop / TTP color key:  \u25CF plus  \u25CF average  \u25CF below average.   Best Pop = fastest clean TrackMan reading (1.50\u20132.60s); Avg Pop trims the single slowest clean reading to discount botched exchanges.   TM Readings = clean samples used.   Saints Data Matrix \u00b7 Confidential Scouting Report',
+      });
+    } catch (e) {
+      setErr('PDF generation failed \u2014 try Print instead.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ── Print fallback ──
+  const handlePrint = () => {
+    const pTts = P_COLUMNS.map(c => '<th class="' + (c.align === 'center' ? 'c' : '') + '">' + c.header + '</th>').join('');
+    const cTts = C_COLUMNS.map(c => '<th class="' + (c.align === 'center' ? 'c' : '') + '">' + c.header + '</th>').join('');
+
+    const ttpHtml = (arr) => {
+      const t = ttpText(arr);
+      if (t.text === dash) return dash;
+      return '<span style="font-weight:800;color:' + t.color + '">' + t.avg.toFixed(2) + 's</span>' + (t.n > 1 ? ' <span class="n">(n=' + t.n + ')</span>' : '');
+    };
+
+    const pBody = mergedPitchers.length ? mergedPitchers.map(p => {
+      const hand = (p.pitcher_hand || '').slice(0, 1).toUpperCase() === 'L' ? 'LHP' : p.pitcher_hand ? 'RHP' : dash;
+      const hold = [p.ucla_hold_start ? '1B:' + p.ucla_hold_start : null, p.ucla_hold_2b ? '2B:' + p.ucla_hold_2b : null].filter(Boolean).join(' ') || dash;
+      const moves = (p.pickoff_moves || []).filter(Boolean);
+      const mv = moves.length ? moves.map(m => '<span class="tag">' + m + '</span>').join(' ') : dash;
+      return '<tr>'
+        + '<td class="c" style="font-weight:800;color:' + PC.muted + '">' + (p.jersey_number || dash) + '</td>'
+        + '<td class="name">' + (p.pitcher_name || dash).trim() + '</td>'
+        + '<td class="c">' + hand + '</td>'
+        + '<td class="c">' + ttpHtml(p.time_to_plate_1b) + '</td>'
+        + '<td class="c">' + ttpHtml(p.time_to_plate_2b) + '</td>'
+        + '<td class="c">' + ttpHtml(p.time_to_plate_slide) + '</td>'
+        + '<td>' + hold + '</td>'
+        + '<td>' + mv + '</td>'
+        + '<td class="notes">' + (p.notes || p.slide_step_notes || '') + '</td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="9" style="font-style:italic;color:' + PC.muted + '">No pitcher observations for this selection.</td></tr>';
+
+    const cBody = mergedCatchers.length ? mergedCatchers.map(c => {
+      const pops = (c.trackman_pop_times || []).map(tp => tp.pop_time);
+      const { best, avg, nValid, nRaw } = cleanPops(pops);
+      const { cs, att } = csCount(c.steal_attempts);
+      const bestCell = best != null ? '<span style="font-weight:800;color:' + popColor(best) + '">' + best.toFixed(2) + 's</span>' : dash;
+      const avgCell  = avg != null ? '<span style="color:' + popColor(avg) + '">' + avg.toFixed(2) + 's</span>' : dash;
+      const nText = nValid ? String(nValid) : (nRaw ? '0 <span class="n">of ' + nRaw + '</span>' : dash);
+      const wu = c.warmup_pop_time;
+      const wuCell = wu != null ? '<span style="color:' + popColor(wu) + '">' + wu.toFixed(2) + 's</span>' : dash;
+      const notes = [c.blocking_notes, c.notes].filter(Boolean).join(' \u00b7 ');
+      return '<tr>'
+        + '<td class="c" style="font-weight:800;color:' + PC.muted + '">' + (c.jersey_number || dash) + '</td>'
+        + '<td class="name">' + (c.catcher_name || dash).trim() + '</td>'
+        + '<td class="c">' + (c.bats || dash) + '</td>'
+        + '<td class="c">' + bestCell + '</td>'
+        + '<td class="c">' + avgCell + '</td>'
+        + '<td class="c">' + nText + '</td>'
+        + '<td class="c">' + (att ? cs + '/' + att : dash) + '</td>'
+        + '<td class="c">' + wuCell + '</td>'
+        + '<td class="notes">' + notes + '</td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="9" style="font-style:italic;color:' + PC.muted + '">No catcher observations for this selection.</td></tr>';
+
+    const sectionsHtml =
+      '<div class="rt-bar" style="background:' + PC.navy2 + '">Pitcher Times to Plate</div>'
+      + '<table><thead><tr style="background:' + PC.navy2 + '">' + pTts + '</tr></thead><tbody>' + pBody + '</tbody></table>'
+      + '<div class="rt-bar" style="background:' + PC.navy2 + '">Catcher Pop Times &amp; Throwing</div>'
+      + '<table><thead><tr style="background:' + PC.navy2 + '">' + cTts + '</tr></thead><tbody>' + cBody + '</tbody></table>';
+
+    const ok = openPrintWindow({
+      title: 'Pitcher & Catcher Scouting Report',
+      team: team.name,
+      meta: metaLine(),
+      sectionsHtml,
+      legendHtml: 'Pop / TTP key: <span class="dot" style="background:' + PC.green + '"></span>plus &nbsp; <span class="dot" style="background:' + PC.amber + '"></span>average &nbsp; <span class="dot" style="background:' + PC.red + '"></span>below average &nbsp;\u00b7&nbsp; Best Pop = fastest clean TrackMan reading (1.50\u20132.60s); Avg Pop trims the slowest botched exchange &nbsp;\u00b7&nbsp; TM Readings = clean samples used &nbsp;\u00b7&nbsp; Saints Data Matrix \u00b7 Confidential',
+    });
+    if (!ok) setErr('Pop-up blocked \u2014 allow pop-ups for this site to print.');
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '32px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 640, background: C.base, borderRadius: 12, border: `1px solid ${C.edge}`, overflow: 'hidden' }}>
+      <div style={{ width: '100%', maxWidth: 680, background: C.base, borderRadius: 12, border: '1px solid ' + C.edge, overflow: 'hidden' }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 24px', borderBottom: `1px solid ${C.edge}`, background: C.surface }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 24px', borderBottom: '1px solid ' + C.edge, background: C.surface }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: C.gold, fontFamily: FONT, marginBottom: 2 }}>Pitcher & Catcher Report</div>
             <div style={{ fontSize: 18, fontWeight: 900, color: C.white, fontFamily: FONT, letterSpacing: -0.3 }}>{team.name}</div>
           </div>
           <button
-            onClick={handlePrint}
-            disabled={!canPrint || generating}
-            style={{ background: C.gold, color: '#000', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 12, fontWeight: 800, cursor: !canPrint ? 'not-allowed' : 'pointer', fontFamily: FONT, opacity: !canPrint ? 0.5 : 1 }}
+            onClick={handleDownloadPdf}
+            disabled={!canPrint || busy}
+            style={{ background: C.gold, color: '#000', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 800, cursor: !canPrint || busy ? 'not-allowed' : 'pointer', fontFamily: FONT, opacity: !canPrint || busy ? 0.5 : 1 }}
           >
-            {generating ? '…' : '🖨 Print'}
+            {busy ? 'Generating\u2026' : '\u2b07 Download PDF'}
+          </button>
+          <button
+            onClick={handlePrint}
+            disabled={!canPrint}
+            style={{ background: 'none', color: C.cream, border: '1px solid ' + C.rim, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: !canPrint ? 'not-allowed' : 'pointer', fontFamily: FONT, opacity: !canPrint ? 0.5 : 1 }}
+          >
+            {'\ud83d\udda8 Print'}
           </button>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: `1px solid ${C.edge}`, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: C.muted, cursor: 'pointer', fontFamily: FONT }}
+            style={{ background: 'none', border: '1px solid ' + C.edge, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: C.muted, cursor: 'pointer', fontFamily: FONT }}
           >
             Close
           </button>
         </div>
 
-        {/* Filters */}
-        <div style={{ padding: '16px 24px', borderBottom: `1px solid ${C.edge}`, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid ' + C.edge, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.muted, marginBottom: 5, fontFamily: FONT }}>Game</div>
             <select
               value={selectedGameId}
               onChange={e => setSelectedGameId(e.target.value)}
-              style={{ width: '100%', background: C.surface, border: `1px solid ${C.edge}`, color: C.cream, fontSize: 12, fontFamily: FONT, padding: '7px 10px', borderRadius: 5, outline: 'none' }}
+              style={{ width: '100%', background: C.surface, border: '1px solid ' + C.edge, color: C.cream, fontSize: 12, fontFamily: FONT, padding: '7px 10px', borderRadius: 5, outline: 'none' }}
             >
               <option value="all">All Games</option>
               {games.map(g => (
@@ -331,11 +323,13 @@ export default function PitcherCatcherReport({ team, onClose }) {
           </div>
         </div>
 
-        {/* Preview counts */}
         <div style={{ padding: '16px 24px 20px' }}>
+          {err && (
+            <div style={{ marginBottom: 14, padding: '8px 12px', borderRadius: 6, background: 'rgba(232,64,64,0.12)', border: '1px solid ' + C.red, color: C.red, fontSize: 12, fontFamily: FONT }}>{err}</div>
+          )}
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-              <div style={{ width: 22, height: 22, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <div style={{ width: 22, height: 22, border: '3px solid ' + C.faint, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 12 }}>
@@ -343,7 +337,7 @@ export default function PitcherCatcherReport({ team, onClose }) {
                 { label: 'Pitchers', value: mergedPitchers.length },
                 { label: 'Catchers', value: mergedCatchers.length },
               ].map(s => (
-                <div key={s.label} style={{ background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 7, padding: '10px 18px', textAlign: 'center', minWidth: 80 }}>
+                <div key={s.label} style={{ background: C.surface, border: '1px solid ' + C.edge, borderRadius: 7, padding: '10px 18px', textAlign: 'center', minWidth: 80 }}>
                   <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.muted, fontFamily: FONT }}>{s.label}</div>
                   <div style={{ fontSize: 26, fontWeight: 900, color: s.value > 0 ? C.white : C.faint, fontFamily: FONT }}>{s.value}</div>
                 </div>
