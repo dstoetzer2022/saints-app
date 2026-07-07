@@ -12,7 +12,12 @@
 
 const PAGE = 500;
 
-async function drain(fetchPage, { max = 20000, delayMs = 120 } = {}) {
+// PERF: delayMs was 120ms for every page of every fetch, including plain reads
+// (Get/list/filter). That padding exists to protect writes from rate limits;
+// reads don't need nearly as much room. Trimmed to 30ms — still a buffer
+// against bursts, but ~4x less wall-clock time on multi-page pulls (e.g. the
+// league pool: ~80 pages, was ~9.6s of pure waiting, now ~2.4s).
+async function drain(fetchPage, { max = 20000, delayMs = 30 } = {}) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const seen = new Set();
   const out = [];

@@ -5,6 +5,7 @@ import { normalizePitch, getPitchColor } from '@/lib/ds';
 import { normalizeName, canonicalNameKey } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool } from '@/lib/profileStats';
 import { fetchAllFiltered, fetchAllList } from '@/lib/fetchAll';
+import { getLeaguePitches } from '@/lib/leagueCache';
 import { buildScene } from '@/lib/pitch3dEngine';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
@@ -16,23 +17,8 @@ import ProfileCompareTab from '@/components/shared/ProfileCompareTab';
 import PasswordGate from '@/components/shared/PasswordGate';
 import { C, FONT } from '@/lib/darkTheme';
 
-// ── League pitch cache ────────────────────────────────────────────────────────
-// AUDIT: the league percentile pool was previously rebuilt on EVERY profile
-// open from three 2000-row sorted fetches (a biased subset that worsened as the
-// season grew, and a rate-limit-triggering burst). Now: one paginated pull,
-// cached for 10 minutes and shared across every profile opened in the session.
-let _leagueCache = { rows: null, at: 0, promise: null };
-const LEAGUE_TTL_MS = 10 * 60 * 1000;
-const LEAGUE_MAX_ROWS = 40000; // safety cap; ~full CCL season of pitch rows
-function getLeaguePitches() {
-  const now = Date.now();
-  if (_leagueCache.rows && now - _leagueCache.at < LEAGUE_TTL_MS) return Promise.resolve(_leagueCache.rows);
-  if (_leagueCache.promise) return _leagueCache.promise;
-  _leagueCache.promise = fetchAllList(base44.entities.TrackmanPitch, 'created_date', { max: LEAGUE_MAX_ROWS, delayMs: 150 })
-    .then(rows => { _leagueCache = { rows, at: Date.now(), promise: null }; return rows; })
-    .catch(() => { _leagueCache.promise = null; return _leagueCache.rows || []; });
-  return _leagueCache.promise;
-}
+// League pitch cache now lives in @/lib/leagueCache so HomeScreen can warm it
+// on app mount (see warmLeagueCache) instead of only on first profile open.
 
 // Convert "First Last" → "Last, First" for Trackman queries
 function toTrackmanName(name) {

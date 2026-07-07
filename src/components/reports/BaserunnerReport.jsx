@@ -1,69 +1,163 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
-import {
-  generateReportPdf, openPrintWindow, PC,
-  stealPctColor,
-} from '@/lib/reportPdf';
 
-const SPEED = {
-  fast:    { c: '#0f5f2a', fill: '#c9ebd5', label: 'FAST' },
-  average: { c: '#7a5800', fill: '#fbeecb', label: 'AVG'  },
-  slow:    { c: '#8a2020', fill: '#f6d4d4', label: 'SLOW' },
-};
-const AGGR = {
-  aggressive: { c: '#0f5f2a', fill: '#c9ebd5', label: 'AGGR' },
-  average:    { c: '#7a5800', fill: '#fbeecb', label: 'AVG'  },
-  passive:    { c: '#8a2020', fill: '#f6d4d4', label: 'PASS' },
-};
+const SPEED_COLOR = { fast: C.green, average: C.amber, slow: C.red };
+const AGGR_COLOR  = { aggressive: C.green, average: C.amber, passive: C.red };
 
-const dash = '\u2014';
+function StatBadge({ label, value, color }) {
+  if (!value && value !== 0) return null;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 11, fontWeight: 700, fontFamily: FONT,
+      color: color || C.cream,
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 600, color: C.muted }}>{label}</span> {value}
+    </span>
+  );
+}
 
-// Column layout shared by PDF + print (widths in pt for landscape letter)
-const COLUMNS = [
-  { header: '#',              key: 'jersey', width: 26,  align: 'center' },
-  { header: 'RUNNER',         key: 'name',   width: 112, align: 'left'   },
-  { header: 'POS',            key: 'pos',    width: 32,  align: 'center' },
-  { header: 'B',              key: 'bats',   width: 24,  align: 'center' },
-  { header: 'SPEED',          key: 'speed',  width: 68,  align: 'center' },
-  { header: 'AGGRESSION',     key: 'aggr',   width: 74,  align: 'center' },
-  { header: 'LEAD @ 1B',      key: 'lead',   width: 78,  align: 'left'   },
-  { header: 'SB',             key: 'sb',     width: 66,  align: 'center' },
-  { header: 'PICKOFFS',       key: 'po',     width: 58,  align: 'center' },
-  { header: 'DIRT-BALL ADV',  key: 'dirt',   width: 76,  align: 'center' },
-  { header: 'SCOUTING NOTES', key: 'notes',  align: 'left' },
-];
+function RunnerCard({ obs }) {
+  const stealPct = obs.steal_attempts > 0
+    ? Math.round(obs.steals_successful / obs.steal_attempts * 100)
+    : null;
 
-function num(v) { return v != null && !isNaN(v) ? Math.round(v) : 0; }
+  return (
+    <div style={{
+      background: C.surface,
+      border: `1px solid ${C.edge}`,
+      borderRadius: 8,
+      padding: '14px 18px',
+      pageBreakInside: 'avoid',
+      breakInside: 'avoid',
+    }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+        {obs.jersey_number && (
+          <span style={{ fontSize: 13, fontWeight: 900, color: C.muted, fontFamily: FONT, minWidth: 28 }}>
+            #{obs.jersey_number}
+          </span>
+        )}
+        <span style={{ fontSize: 17, fontWeight: 900, color: C.white, letterSpacing: -0.4, fontFamily: FONT }}>
+          {obs.runner_name}
+        </span>
+        {obs.position && (
+          <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            {obs.position}
+          </span>
+        )}
+        {obs.bats && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: FONT }}>
+            {obs.bats}HB
+          </span>
+        )}
+      </div>
+
+      {/* Ratings row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', marginBottom: 10 }}>
+        {obs.speed_rating && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>Speed</span>
+            <span style={{
+              fontSize: 12, fontWeight: 800, fontFamily: FONT,
+              color: SPEED_COLOR[obs.speed_rating] || C.cream,
+              textTransform: 'capitalize',
+            }}>
+              {obs.speed_rating}
+            </span>
+          </div>
+        )}
+        {obs.aggression_rating && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>Aggression</span>
+            <span style={{
+              fontSize: 12, fontWeight: 800, fontFamily: FONT,
+              color: AGGR_COLOR[obs.aggression_rating] || C.cream,
+              textTransform: 'capitalize',
+            }}>
+              {obs.aggression_rating}
+            </span>
+          </div>
+        )}
+        {obs.lead_size_1b && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>Lead (1B)</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.cream, fontFamily: FONT }}>{obs.lead_size_1b}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Counting stats */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', marginBottom: obs.notes ? 10 : 0 }}>
+        {obs.steal_attempts > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>SB</span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: C.white, fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>
+              {obs.steals_successful ?? 0}/{obs.steal_attempts}
+            </span>
+            {stealPct != null && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: stealPct >= 70 ? C.green : stealPct >= 50 ? C.amber : C.red, fontFamily: FONT }}>
+                ({stealPct}%)
+              </span>
+            )}
+          </div>
+        )}
+        {obs.pickoff_attempts > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>PO Att</span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: C.cream, fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>{obs.pickoff_attempts}</span>
+          </div>
+        )}
+        {obs.dirt_ball_advances > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: FONT }}>Dirt Adv</span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: C.cream, fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>{obs.dirt_ball_advances}</span>
+          </div>
+        )}
+      </div>
+
+      {obs.notes && (
+        <div style={{
+          marginTop: 8, fontSize: 11, fontWeight: 500, color: C.muted, fontStyle: 'italic',
+          fontFamily: FONT, borderLeft: `2px solid ${C.gold}`, paddingLeft: 10, lineHeight: 1.5,
+        }}>
+          "{obs.notes}"
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BaserunnerReport({ team, onClose }) {
   const [obs, setObs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
+  const printRef = useRef(null);
 
   useEffect(() => {
     base44.entities.BaserunnerObservation
       .filter({ runner_team: team.name }, 'runner_name', 500)
       .then(data => {
+        // Deduplicate by normalized runner name — keep the most complete record
         const map = {};
         data.forEach(o => {
           const key = normalizeName(o.runner_name).toLowerCase();
           if (!map[key]) {
             map[key] = { ...o };
           } else {
-            const e = map[key];
-            if (!e.speed_rating && o.speed_rating) e.speed_rating = o.speed_rating;
-            if (!e.aggression_rating && o.aggression_rating) e.aggression_rating = o.aggression_rating;
-            if (!e.lead_size_1b && o.lead_size_1b) e.lead_size_1b = o.lead_size_1b;
-            if (!e.position && o.position) e.position = o.position;
-            if (!e.jersey_number && o.jersey_number) e.jersey_number = o.jersey_number;
-            e.steal_attempts     = num(e.steal_attempts)     + num(o.steal_attempts);
-            e.steals_successful  = num(e.steals_successful)  + num(o.steals_successful);
-            e.pickoff_attempts   = num(e.pickoff_attempts)   + num(o.pickoff_attempts);
-            e.dirt_ball_advances = num(e.dirt_ball_advances) + num(o.dirt_ball_advances);
-            if (o.notes && !e.notes) e.notes = o.notes;
+            // Merge: prefer non-null values; sum counting stats
+            const existing = map[key];
+            if (!existing.speed_rating && o.speed_rating) existing.speed_rating = o.speed_rating;
+            if (!existing.aggression_rating && o.aggression_rating) existing.aggression_rating = o.aggression_rating;
+            if (!existing.lead_size_1b && o.lead_size_1b) existing.lead_size_1b = o.lead_size_1b;
+            if (!existing.position && o.position) existing.position = o.position;
+            if (!existing.jersey_number && o.jersey_number) existing.jersey_number = o.jersey_number;
+            existing.steal_attempts  = (existing.steal_attempts  || 0) + (o.steal_attempts  || 0);
+            existing.steals_successful = (existing.steals_successful || 0) + (o.steals_successful || 0);
+            existing.pickoff_attempts = (existing.pickoff_attempts || 0) + (o.pickoff_attempts || 0);
+            existing.dirt_ball_advances = (existing.dirt_ball_advances || 0) + (o.dirt_ball_advances || 0);
+            if (o.notes && !existing.notes) existing.notes = o.notes;
           }
         });
         const sorted = Object.values(map).sort((a, b) => {
@@ -76,102 +170,117 @@ export default function BaserunnerReport({ team, onClose }) {
       }).catch(() => setLoading(false));
   }, [team.name]);
 
-  const sbInfo = (o) => {
-    const sa = num(o.steal_attempts), ss = num(o.steals_successful);
-    if (!sa) return { text: dash, pct: null };
-    const pct = Math.round(ss / sa * 100);
-    return { sa, ss, pct };
-  };
-
-  const metaLine = () => {
-    const sbAtt = obs.reduce((a, o) => a + num(o.steal_attempts), 0);
-    const sbSuc = obs.reduce((a, o) => a + num(o.steals_successful), 0);
-    const fast  = obs.filter(o => o.speed_rating === 'fast').length;
-    const aggr  = obs.filter(o => o.aggression_rating === 'aggressive').length;
-    return obs.length + ' runners \u00b7 SB ' + sbSuc + '/' + sbAtt + ' \u00b7 ' + fast + ' fast \u00b7 ' + aggr + ' aggressive \u00b7 Printed ' + new Date().toLocaleDateString();
-  };
-
-  const handleDownloadPdf = async () => {
-    setBusy(true); setErr(null);
-    try {
-      const rows = obs.map(o => {
-        const sp = SPEED[o.speed_rating];
-        const ag = AGGR[o.aggression_rating];
-        const sb = sbInfo(o);
-        return [
-          { text: o.jersey_number || dash, bold: true, color: PC.muted, align: 'center' },
-          { text: (o.runner_name || dash).trim(), bold: true },
-          { text: o.position || dash, align: 'center' },
-          { text: o.bats || dash, align: 'center' },
-          sp ? { text: sp.label, color: sp.c, fill: sp.fill, bold: true, align: 'center' } : { text: dash, align: 'center' },
-          ag ? { text: ag.label, color: ag.c, fill: ag.fill, bold: true, align: 'center' } : { text: dash, align: 'center' },
-          { text: (o.lead_size_1b || dash).trim() },
-          sb.text === dash ? { text: dash, align: 'center' }
-            : { text: sb.ss + '/' + sb.sa + ' (' + sb.pct + '%)', bold: true, align: 'center', color: stealPctColor(sb.pct) },
-          { text: num(o.pickoff_attempts) ? String(num(o.pickoff_attempts)) : dash, align: 'center' },
-          { text: num(o.dirt_ball_advances) ? String(num(o.dirt_ball_advances)) : dash, align: 'center' },
-          { text: o.notes ? o.notes : '', italic: true, color: '#555555' },
-        ];
-      });
-      await generateReportPdf({
-        filename: 'Baserunner_Report_' + team.name.replace(/\s+/g, '_') + '.pdf',
-        title: 'Baserunner Scouting Report',
-        team: team.name,
-        meta: metaLine(),
-        sections: [{ headerColor: PC.navy, columns: COLUMNS, rows }],
-        legend: 'Speed / Aggression key:  \u25CF plus  \u25CF average  \u25CF below average.   SB shown as success/attempts (success %).   Pickoffs = pickoff attempts drawn \u00b7 Dirt-Ball Adv = advances on balls in the dirt.   Saints Data Matrix \u00b7 Confidential Scouting Report',
-      });
-    } catch (e) {
-      setErr('PDF generation failed \u2014 try Print instead.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handlePrint = () => {
+    const SPEED_LABELS = { fast: 'Fast', average: 'Average', slow: 'Slow' };
+    const AGGR_LABELS  = { aggressive: 'Aggressive', average: 'Average', passive: 'Passive' };
+    const SPEED_DOT = { fast: '#1a7a3a', average: '#a8780a', slow: '#b53030' };
+    const AGGR_DOT  = { aggressive: '#1a7a3a', average: '#a8780a', passive: '#b53030' };
+
+    const summaryItems = [
+      { label: 'Runners',     value: obs.length },
+      { label: 'SB Att',      value: obs.reduce((a, o) => a + (o.steal_attempts || 0), 0) },
+      { label: 'SB Suc',      value: obs.reduce((a, o) => a + (o.steals_successful || 0), 0) },
+      { label: 'Fast',        value: obs.filter(o => o.speed_rating === 'fast').length },
+      { label: 'Aggressive',  value: obs.filter(o => o.aggression_rating === 'aggressive').length },
+    ];
+
+    // One dense row per runner instead of a stacked card — fits far more
+    // players per printed page while keeping every field readable.
     const rowsHtml = obs.map(o => {
-      const sp = SPEED[o.speed_rating];
-      const ag = AGGR[o.aggression_rating];
-      const sb = sbInfo(o);
-      const spCell = sp ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-weight:800;font-size:8.5px;background:' + sp.fill + ';color:' + sp.c + '">' + sp.label + '</span>' : dash;
-      const agCell = ag ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-weight:800;font-size:8.5px;background:' + ag.fill + ';color:' + ag.c + '">' + ag.label + '</span>' : dash;
-      const sbCell = sb.text === dash ? dash
-        : sb.ss + '/' + sb.sa + ' <span style="color:' + stealPctColor(sb.pct) + ';font-weight:800">(' + sb.pct + '%)</span>';
-      return '<tr>'
-        + '<td class="c" style="font-weight:800;color:' + PC.muted + '">' + (o.jersey_number || dash) + '</td>'
-        + '<td class="name">' + (o.runner_name || dash).trim() + '</td>'
-        + '<td class="c">' + (o.position || dash) + '</td>'
-        + '<td class="c">' + (o.bats || dash) + '</td>'
-        + '<td class="c">' + spCell + '</td>'
-        + '<td class="c">' + agCell + '</td>'
-        + '<td>' + (o.lead_size_1b || dash).trim() + '</td>'
-        + '<td class="c" style="font-weight:800">' + sbCell + '</td>'
-        + '<td class="c">' + (num(o.pickoff_attempts) || dash) + '</td>'
-        + '<td class="c">' + (num(o.dirt_ball_advances) || dash) + '</td>'
-        + '<td class="notes">' + (o.notes || '') + '</td>'
-        + '</tr>';
+      const stealPct = o.steal_attempts > 0
+        ? Math.round((o.steals_successful || 0) / o.steal_attempts * 100)
+        : null;
+      const sbCell = o.steal_attempts > 0
+        ? `${o.steals_successful ?? 0}/${o.steal_attempts}${stealPct != null ? ` (${stealPct}%)` : ''}`
+        : '—';
+      const speedDot = o.speed_rating ? `<span class="dot" style="background:${SPEED_DOT[o.speed_rating]||'#999'}"></span>${SPEED_LABELS[o.speed_rating]||o.speed_rating}` : '—';
+      const aggrDot  = o.aggression_rating ? `<span class="dot" style="background:${AGGR_DOT[o.aggression_rating]||'#999'}"></span>${AGGR_LABELS[o.aggression_rating]||o.aggression_rating}` : '—';
+
+      return `<tr>
+        <td class="num">${o.jersey_number || '—'}</td>
+        <td class="name">${o.runner_name || '—'}</td>
+        <td>${o.position || '—'}</td>
+        <td>${o.bats ? o.bats + 'HB' : '—'}</td>
+        <td class="rate">${speedDot}</td>
+        <td class="rate">${aggrDot}</td>
+        <td>${o.lead_size_1b || '—'}</td>
+        <td class="num">${sbCell}</td>
+        <td class="num">${o.pickoff_attempts || '—'}</td>
+        <td class="num">${o.dirt_ball_advances || '—'}</td>
+        <td class="notes">${o.notes || ''}</td>
+      </tr>`;
     }).join('');
 
-    const ths = COLUMNS.map(c => '<th class="' + (c.align === 'center' ? 'c' : '') + '">' + c.header + '</th>').join('');
-    const sectionsHtml = '<table><thead><tr style="background:' + PC.navy + '">' + ths + '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+    const summaryHtml = summaryItems.map(s =>
+      `<div class="sum-box"><div class="sum-label">${s.label}</div><div class="sum-val">${s.value}</div></div>`
+    ).join('');
 
-    const ok = openPrintWindow({
-      title: 'Baserunner Scouting Report',
-      team: team.name,
-      meta: metaLine(),
-      sectionsHtml,
-      legendHtml: 'Speed / Aggression key: <span class="dot" style="background:' + PC.green + '"></span>plus &nbsp; <span class="dot" style="background:' + PC.amber + '"></span>average &nbsp; <span class="dot" style="background:' + PC.red + '"></span>below average &nbsp;\u00b7&nbsp; SB = success/attempts (%) &nbsp;\u00b7&nbsp; Pickoffs = pickoff attempts drawn \u00b7 Dirt-Ball Adv = advances on balls in the dirt &nbsp;\u00b7&nbsp; Saints Data Matrix \u00b7 Confidential',
-    });
-    if (!ok) setErr('Pop-up blocked \u2014 allow pop-ups for this site to print.');
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Baserunner Report — ${team.name}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Archivo', sans-serif; background: #fff; color: #111; padding: 24px 28px; font-size: 11px; }
+    .report-title { font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+    .team-name { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; color: #000; margin-bottom: 2px; }
+    .meta { font-size: 11px; color: #888; margin-bottom: 12px; }
+    hr { border: none; border-top: 2px solid #000; margin-bottom: 16px; }
+    .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .sum-box { border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; text-align: center; min-width: 64px; }
+    .sum-label { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.1px; color: #888; }
+    .sum-val { font-size: 18px; font-weight: 900; color: #000; }
+    table.roster { width: 100%; border-collapse: collapse; }
+    table.roster thead { display: table-header-group; } /* repeats on every printed page */
+    table.roster th {
+      font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
+      color: #fff; background: #0e253a; text-align: left; padding: 5px 7px; white-space: nowrap;
+    }
+    table.roster th.num, table.roster td.num { text-align: center; }
+    table.roster td { padding: 5px 7px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 11px; }
+    table.roster tr:nth-child(even) td { background: #fafafa; }
+    table.roster tr { page-break-inside: avoid; break-inside: avoid; }
+    td.name { font-weight: 800; color: #000; white-space: nowrap; }
+    td.rate { white-space: nowrap; }
+    td.notes { font-style: italic; color: #555; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    @page { margin: 14mm 16mm; }
+    @media print { body { padding: 14px 18px; } }
+  </style>
+</head>
+<body>
+  <div class="report-title">Baserunner Scouting Report</div>
+  <div class="team-name">${team.name}</div>
+  <div class="meta">${obs.length} runner${obs.length !== 1 ? 's' : ''} · Printed ${new Date().toLocaleDateString()}</div>
+  <hr/>
+  <div class="summary">${summaryHtml}</div>
+  <table class="roster">
+    <thead>
+      <tr>
+        <th class="num">#</th><th>Name</th><th>Pos</th><th>Bats</th>
+        <th>Speed</th><th>Aggression</th><th>Lead (1B)</th>
+        <th class="num">SB</th><th class="num">PO Att</th><th class="num">Dirt Adv</th><th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <script>window.onload = function(){ window.print(); }<\/script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
   };
-
-  const disabled = loading || obs.length === 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '32px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 820, background: C.base, borderRadius: 12, border: '1px solid ' + C.edge, overflow: 'hidden' }}>
+      <div style={{ width: '100%', maxWidth: 820, background: C.base, borderRadius: 12, border: `1px solid ${C.edge}`, overflow: 'hidden' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 24px', borderBottom: '1px solid ' + C.edge, background: C.surface }}>
+        {/* Modal header */}
+        <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 24px', borderBottom: `1px solid ${C.edge}`, background: C.surface }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: C.gold, fontFamily: FONT, marginBottom: 2 }}>
               Baserunner Report
@@ -179,34 +288,38 @@ export default function BaserunnerReport({ team, onClose }) {
             <div style={{ fontSize: 18, fontWeight: 900, color: C.white, fontFamily: FONT, letterSpacing: -0.3 }}>{team.name}</div>
           </div>
           <button
-            onClick={handleDownloadPdf}
-            disabled={disabled || busy}
-            style={{ background: C.gold, color: '#000', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 12, fontWeight: 800, cursor: disabled || busy ? 'not-allowed' : 'pointer', fontFamily: FONT, letterSpacing: 0.3, opacity: disabled || busy ? 0.5 : 1 }}
-          >
-            {busy ? 'Generating\u2026' : '\u2b07 Download PDF'}
-          </button>
-          <button
             onClick={handlePrint}
-            disabled={disabled}
-            style={{ background: 'none', color: C.cream, border: '1px solid ' + C.rim, borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: FONT, opacity: disabled ? 0.5 : 1 }}
+            disabled={loading || obs.length === 0}
+            style={{
+              background: C.gold, color: '#000', border: 'none', borderRadius: 6,
+              padding: '8px 18px', fontSize: 12, fontWeight: 800, cursor: loading || obs.length === 0 ? 'not-allowed' : 'pointer',
+              fontFamily: FONT, letterSpacing: 0.3, opacity: loading || obs.length === 0 ? 0.5 : 1,
+            }}
           >
-            {'\ud83d\udda8 Print'}
+            🖨 Print
           </button>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: '1px solid ' + C.edge, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: C.muted, cursor: 'pointer', fontFamily: FONT }}
+            style={{ background: 'none', border: `1px solid ${C.edge}`, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: C.muted, cursor: 'pointer', fontFamily: FONT }}
           >
             Close
           </button>
         </div>
 
-        <div style={{ padding: '20px 24px 32px' }}>
-          {err && (
-            <div style={{ marginBottom: 14, padding: '8px 12px', borderRadius: 6, background: 'rgba(232,64,64,0.12)', border: '1px solid ' + C.red, color: C.red, fontSize: 12, fontFamily: FONT }}>{err}</div>
-          )}
+        {/* Printable content */}
+        <div ref={printRef} id="baserunner-report-print" style={{ padding: '24px 24px 40px' }}>
+
+          {/* Print-only header */}
+          <div className="print-only" style={{ display: 'none', marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 }}>Baserunner Scouting Report</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#000', marginBottom: 2 }}>{team.name}</div>
+            <div style={{ fontSize: 11, color: '#888' }}>{obs.length} runner{obs.length !== 1 ? 's' : ''} · Printed {new Date().toLocaleDateString()}</div>
+            <hr style={{ marginTop: 16, border: 'none', borderTop: '2px solid #000' }} />
+          </div>
+
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-              <div style={{ width: 24, height: 24, border: '3px solid ' + C.faint, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <div style={{ width: 24, height: 24, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : obs.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 60, color: C.muted, fontFamily: FONT, fontSize: 14 }}>
@@ -214,27 +327,31 @@ export default function BaserunnerReport({ team, onClose }) {
             </div>
           ) : (
             <>
+              {/* Summary strip */}
               <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 {[
                   { label: 'Runners', value: obs.length },
-                  { label: 'SB Att',  value: obs.reduce((a, o) => a + num(o.steal_attempts), 0) },
-                  { label: 'SB Suc',  value: obs.reduce((a, o) => a + num(o.steals_successful), 0) },
+                  { label: 'SB Att',  value: obs.reduce((a, o) => a + (o.steal_attempts || 0), 0) },
+                  { label: 'SB Suc',  value: obs.reduce((a, o) => a + (o.steals_successful || 0), 0) },
                   { label: 'Fast',    value: obs.filter(o => o.speed_rating === 'fast').length },
                   { label: 'Aggressive', value: obs.filter(o => o.aggression_rating === 'aggressive').length },
                 ].map(s => (
-                  <div key={s.label} style={{ background: C.surface, border: '1px solid ' + C.edge, borderRadius: 7, padding: '8px 14px', textAlign: 'center', minWidth: 60 }}>
+                  <div key={s.label} style={{ background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 7, padding: '8px 14px', textAlign: 'center', minWidth: 60 }}>
                     <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.muted, fontFamily: FONT }}>{s.label}</div>
                     <div style={{ fontSize: 20, fontWeight: 900, color: C.white, fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>{s.value}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 11, color: C.muted, fontFamily: FONT, marginBottom: 8 }}>
-                {obs.length} runner{obs.length !== 1 ? 's' : ''} ready {'\u2014'} landscape, one page per team. Download a PDF for the dugout binder or Print directly.
+
+              {/* Runner cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
+                {obs.map((o, i) => <RunnerCard key={i} obs={o} />)}
               </div>
             </>
           )}
         </div>
       </div>
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

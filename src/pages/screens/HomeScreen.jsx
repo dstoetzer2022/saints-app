@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { warmLeagueCache } from '@/lib/leagueCache';
 
 const NAVY_DARK = '#07111c';
 const GOLD = '#c6b583';
@@ -83,6 +84,13 @@ function CarouselCol({ logos, duration, delay }) {
 
 export default function HomeScreen({ setScreen }) {
   const [dugoutLogoUrl, setDugoutLogoUrl] = useState(CCL_LOGO);
+
+  // PERF: kick off the league pitch pool fetch as soon as the app lands on
+  // HomeScreen, instead of waiting for the first profile to be opened. By the
+  // time someone navigates into Data Repository, the cache is usually warm.
+  useEffect(() => {
+    warmLeagueCache();
+  }, []);
 
   useEffect(() => {
     Promise.all([
