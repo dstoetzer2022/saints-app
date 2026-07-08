@@ -261,10 +261,70 @@ function BaseSlot({ base, runner }) {
   );
 }
 
+// ── On-deck / in-the-hole card — name+hand+speed header, then two tinted halves ──
+// Left half tinted by Contact% (higher = redder / more damage), right half by SLG.
+// Both use the same statcast blue-white-red scale (rgba + statT) as the header pills.
+function NextBatterCard({ label, hitter, contactPct, slg, speedRating }) {
+  const hand      = normHand(hitter?.hitter_hand);
+  const handLabel = hand === 'S' ? 'SHH' : hand ? hand+'HB' : null;
+  const theme     = (speedRating && SPEED_THEME[speedRating]) ? SPEED_THEME[speedRating] : null;
+
+  const contactT = statT(contactPct, 0.60, 0.88);
+  const slgT     = statT(slg,        0.350, 0.580);
+
+  return (
+    <div style={{ flex:1, minWidth:0, border:`1px solid ${NAVY_L}`, borderRadius:10, overflow:'hidden', background:'rgba(200,146,12,0.04)' }}>
+      <div style={{ fontSize:13, letterSpacing:'2px', textTransform:'uppercase', fontWeight:900, color:GOLDM, fontFamily:FONT, padding:'8px 12px 5px' }}>
+        {label}
+      </div>
+
+      {hitter ? (
+        <>
+          {/* name + hand + speed — spans full card width */}
+          <div style={{ padding:'0 12px 9px', borderBottom:`1px solid ${NAVY_L}` }}>
+            <div style={{ fontSize:18, fontWeight:800, color:TEXT, fontFamily:FONT, lineHeight:1.15, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {hitter.hitter_name}
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginTop:6, flexWrap:'wrap' }}>
+              {handLabel && (
+                <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:4, background:'rgba(200,146,12,0.18)', color:GOLDM, fontFamily:FONT }}>
+                  {handLabel}
+                </span>
+              )}
+              {theme && (
+                <span style={{ fontSize:12, fontWeight:800, padding:'3px 10px', borderRadius:5,
+                  background:theme.bg, border:`1px solid ${theme.border}`, color:theme.text, fontFamily:FONT }}>
+                  {speedRating}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* two balanced halves — Contact% (left) | SLG (right) */}
+          <div style={{ display:'flex' }}>
+            <div style={{ flex:1, textAlign:'center', padding:'8px 8px', background: contactT != null ? rgba(contactT, 0.32) : 'transparent', borderRight:`1px solid rgba(36,68,95,0.6)`, transition:'background 0.3s' }}>
+              <div style={{ fontSize:18, fontWeight:800, color:TEXT, fontFamily:FONT, fontVariantNumeric:'tabular-nums', lineHeight:1.1 }}>{fmtPct(contactPct)}</div>
+              <div style={{ fontSize:9, letterSpacing:'1px', color:TEXTF, fontWeight:700, fontFamily:FONT, marginTop:2 }}>CONTACT</div>
+            </div>
+            <div style={{ flex:1, textAlign:'center', padding:'8px 8px', background: slgT != null ? rgba(slgT, 0.32) : 'transparent', transition:'background 0.3s' }}>
+              <div style={{ fontSize:18, fontWeight:800, color:TEXT, fontFamily:FONT, fontVariantNumeric:'tabular-nums', lineHeight:1.1 }}>{slg != null ? fmtAvg(slg) : '—'}</div>
+              <div style={{ fontSize:9, letterSpacing:'1px', color:TEXTF, fontWeight:700, fontFamily:FONT, marginTop:2 }}>SLG</div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div style={{ padding:'12px', fontSize:14, color:TEXTF, fontStyle:'italic', fontFamily:FONT }}>—</div>
+      )}
+    </div>
+  );
+}
+
 export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }) {
   const [currentBatter, setCurrentBatter] = useState(null);
   const [batterRows,    setBatterRows]     = useState([]);
   const [runners,       setRunners]        = useState([]);
+  const [lineup,        setLineup]         = useState([]);  // full HitterObservation lineup for this game
+  const [speedByName,   setSpeedByName]    = useState({});  // canonicalNameKey -> speed_rating (from BaserunnerObservation scouting)
   const pollRef = useRef(null);
 
   const poll = useCallback(() => {
@@ -272,9 +332,20 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     Promise.all([
       base44.entities.HitterObservation.filter({ game_id: gameId, is_current_batter: true }, '-updated_date', 1).catch(() => []),
       base44.entities.BaserunnerObservation.filter({ game_id: gameId, is_on_base: true }, 'runner_name', 20).catch(() => []),
-    ]).then(([batters, runnerRows]) => {
+      // Full lineup — drives the on-deck / in-the-hole row (derived from lineup_position).
+      base44.entities.HitterObservation.filter({ game_id: gameId }, 'lineup_position', 30).catch(() => []),
+      // All scouted runners (not just on-base) — speed_rating is the only observed run-speed
+      // in this data, and HitterObservation has no speed field, so on-deck speed comes from here.
+      base44.entities.BaserunnerObservation.filter({ game_id: gameId }, 'runner_name', 60).catch(() => []),
+    ]).then(([batters, runnerRows, lineupRows, allRunners]) => {
       setCurrentBatter(batters?.[0] || null);
       setRunners(runnerRows || []);
+      setLineup(lineupRows || []);
+      const smap = {};
+      for (const r of (allRunners || [])) {
+        if (r.runner_name && r.speed_rating) smap[canonicalNameKey(r.runner_name)] = r.speed_rating;
+      }
+      setSpeedByName(smap);
     }).catch(() => {});
   }, [gameId]);
 
@@ -308,6 +379,47 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
       .catch(() => { if (!cancelled) setTeamLogoUrl(null); });
     return () => { cancelled = true; };
   }, [currentBatter?.hitter_team]);
+
+  // ── On deck / in the hole — next two spots in the batting order ─────────────
+  // Wraps 9 -> 1. Falls back gracefully if lineup_position is sparse/missing.
+  const nextTwo = useMemo(() => {
+    if (!currentBatter || !lineup.length) return [null, null];
+    const sorted = [...lineup]
+      .filter(h => h.lineup_position != null)
+      .sort((a, b) => a.lineup_position - b.lineup_position);
+    if (!sorted.length) return [null, null];
+    const curPos = currentBatter.lineup_position;
+    let idx = curPos != null ? sorted.findIndex(h => h.lineup_position === curPos) : -1;
+    if (idx < 0) idx = sorted.findIndex(h => canonicalNameKey(h.hitter_name) === canonicalNameKey(currentBatter.hitter_name));
+    if (idx < 0) return [null, null];
+    const onDeck    = sorted[(idx + 1) % sorted.length] || null;
+    const inTheHole = sorted[(idx + 2) % sorted.length] || null;
+    return [onDeck, inTheHole];
+  }, [currentBatter, lineup]);
+
+  // Contact% + SLG for the next two hitters, computed from their Trackman rows.
+  // Same team as the current batter, so one team-wide fetch covers both.
+  const [nextStats, setNextStats] = useState({}); // canonicalNameKey -> { contactPct, SLG }
+  useEffect(() => {
+    const team = currentBatter?.hitter_team;
+    const targets = nextTwo.filter(Boolean);
+    if (!team || !targets.length) { setNextStats({}); return; }
+    let cancelled = false;
+    (async () => {
+      const rows = await base44.entities.TrackmanPitch
+        .filter({ batter_team: team }, '-date', 1000).catch(() => []);
+      if (cancelled) return;
+      const out = {};
+      for (const h of targets) {
+        const key = canonicalNameKey(h.hitter_name);
+        const hrows = (rows || []).filter(r => canonicalNameKey(r.batter_name) === key);
+        const s = computeStats(hrows);
+        out[key] = { contactPct: s.contactPct, SLG: s.SLG };
+      }
+      if (!cancelled) setNextStats(out);
+    })();
+    return () => { cancelled = true; };
+  }, [currentBatter?.hitter_team, nextTwo]);
 
   if (!gameId) return null;
 
@@ -359,6 +471,28 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
         </div>
       </div>
 
+      {/* ── ON DECK / IN THE HOLE — vertical view only, mirrors baserunner card styling ── */}
+      {orientation === 'vertical' && currentBatter && (
+        <div style={{ flexShrink:0, background:'rgba(14,37,58,0.75)', borderBottom:`1px solid ${NAVY_L}`, padding:'10px 14px' }}>
+          <div style={{ display:'flex', gap:10 }}>
+            <NextBatterCard
+              label="On Deck"
+              hitter={nextTwo[0]}
+              contactPct={nextTwo[0] ? nextStats[canonicalNameKey(nextTwo[0].hitter_name)]?.contactPct : null}
+              slg={nextTwo[0] ? nextStats[canonicalNameKey(nextTwo[0].hitter_name)]?.SLG : null}
+              speedRating={nextTwo[0] ? speedByName[canonicalNameKey(nextTwo[0].hitter_name)] : null}
+            />
+            <NextBatterCard
+              label="In The Hole"
+              hitter={nextTwo[1]}
+              contactPct={nextTwo[1] ? nextStats[canonicalNameKey(nextTwo[1].hitter_name)]?.contactPct : null}
+              slg={nextTwo[1] ? nextStats[canonicalNameKey(nextTwo[1].hitter_name)]?.SLG : null}
+              speedRating={nextTwo[1] ? speedByName[canonicalNameKey(nextTwo[1].hitter_name)] : null}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── VIZ BODY — Hot Zones | Pitch Type | Spray Chart — side-by-side (horizontal) or stacked (vertical) ───── */}
       <div style={{ flex:1, display:'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', minHeight:0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
 
@@ -366,7 +500,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
         <div style={{
           flex: orientation === 'vertical' ? 'none' : '0 0 42%',
           maxWidth: orientation === 'vertical' ? '100%' : '42%',
-          minHeight: orientation === 'vertical' ? 280 : 0,
+          minHeight: orientation === 'vertical' ? 360 : 0,
           borderRight: orientation === 'vertical' ? 'none' : `1px solid ${NAVY_L}`,
           borderBottom: orientation === 'vertical' ? `1px solid ${NAVY_L}` : 'none',
           padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
@@ -374,7 +508,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
           <SectionTitle>HOT ZONES</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
-              <div style={{ width:'100%', maxWidth:600 }}>
+              <div style={{ width:'100%', maxWidth: orientation === 'vertical' ? 760 : 600 }}>
                 <ZoneHeatmap rows={batterRows} viewMode="pitcher" batterHand={hand} />
               </div>
             ) : (
@@ -416,13 +550,13 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
         <div style={{
           flex: orientation === 'vertical' ? 'none' : '1 1 38%',
           maxWidth: orientation === 'vertical' ? '100%' : 'none',
-          minHeight: orientation === 'vertical' ? 280 : 0,
+          minHeight: orientation === 'vertical' ? 360 : 0,
           padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
         }}>
           <SectionTitle>Spray Chart</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
             {hasData ? (
-              <div style={{ width:'100%', maxWidth:380 }}>
+              <div style={{ width:'100%', maxWidth: orientation === 'vertical' ? 500 : 380 }}>
                 <SprayChart rows={batterRows} hand={hand} dugout={true} />
               </div>
             ) : (
