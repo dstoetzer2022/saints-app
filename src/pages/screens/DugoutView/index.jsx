@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
 import { normalizePitch } from '@/lib/ds';
-import { isStrike, isSwing as isSwingRow, isWhiff } from '@/lib/statsUtils';
+import { isStrike, isSwing as isSwingRow, isWhiff, isFastballVeloType } from '@/lib/statsUtils';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
@@ -445,6 +445,57 @@ function CountSplitsPanel({ arsenal }) {
   );
 }
 
+// ── Velo-by-inning fatigue sparkline (viz improvement #2) ─────────────────────
+// Season-long avg FB velocity per inning from the pitcher's Trackman rows —
+// "does he fade" at a glance. Uses the shared FB_VELO_TYPES membership (cutter
+// excluded) and requires 3+ readings per inning; innings 1-9 only.
+function VeloByInning({ rows }) {
+  const pts = React.useMemo(() => {
+    const byInning = {};
+    for (const r of rows || []) {
+      const inn = Math.round(parseFloat(r.inning));
+      if (!Number.isFinite(inn) || inn < 1 || inn > 9) continue;
+      const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type);
+      if (!isFastballVeloType(pt)) continue;
+      const v = parseFloat(r.rel_speed);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      (byInning[inn] = byInning[inn] || []).push(v);
+    }
+    return Object.entries(byInning)
+      .map(([inn, vs]) => ({ inn: +inn, v: vs.reduce((a,b)=>a+b,0)/vs.length, n: vs.length }))
+      .filter(d => d.n >= 3)
+      .sort((a,b) => a.inn - b.inn);
+  }, [rows]);
+
+  if (pts.length < 2) return null;
+  const W = 132, H = 34, PAD = 4;
+  const vs = pts.map(d => d.v);
+  const vMin = Math.min(...vs), vMax = Math.max(...vs);
+  const span = Math.max(1.5, vMax - vMin);
+  const x = i => PAD + (pts.length > 1 ? i / (pts.length - 1) : 0.5) * (W - 2*PAD);
+  const y = v => PAD + (1 - (v - vMin) / span) * (H - 2*PAD);
+  const delta = pts[pts.length-1].v - pts[0].v;
+  const fading = delta <= -1.5;
+  const lineColor = fading ? '#f87171' : '#c6b583';
+  const d = 'M ' + pts.map((p,i) => `${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' L ');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width={W} height={H} style={{ display: 'block' }}>
+          <path d={d} fill="none" stroke={lineColor} strokeWidth={1.8} />
+          {pts.map((p,i) => <circle key={p.inn} cx={x(i)} cy={y(p.v)} r={2.2} fill={lineColor} />)}
+        </svg>
+        <span style={{ fontSize: 12, fontWeight: 800, color: fading ? '#f87171' : '#7d93a6', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>
+          {(delta >= 0 ? '+' : '') + delta.toFixed(1)}
+        </span>
+      </div>
+      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>
+        FB velo inn {pts[0].inn}-{pts[pts.length-1].inn}
+      </span>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────
 export default function DugoutView({ setScreen }) {
   const [allTeams, setAllTeams] = useState([]);
@@ -453,6 +504,8 @@ export default function DugoutView({ setScreen }) {
   const [seasonRates, setSeasonRates] = useState(null);
   const [curatedTrails, setCuratedTrails] = useState([]);
   const [liveGameId, setLiveGameId] = useState(null);
+  const [liveHomeCode, setLiveHomeCode] = useState(null);
+  const [pitcherTmRows, setPitcherTmRows] = useState([]);
   const [dugoutMode, setDugoutMode] = useState('pitcher'); // 'pitcher' | 'hitter' — controlled remotely
   const [orientation, setOrientation] = useState('horizontal'); // 'horizontal' | 'vertical' — controlled remotely
   const [activeArsenalIdx, setActiveArsenalIdx] = useState(0);
@@ -463,7 +516,7 @@ export default function DugoutView({ setScreen }) {
 
   // Load season data for a given pitcher name (as stored in PitcherObservation)
   const loadSeasonData = useCallback(async (pitcherName, teamTrackmanCode, teamFullName) => {
-    if (!pitcherName) { setSeasonArsenal([]); setSeasonRates(null); setCuratedTrails([]); return; }
+    if (!pitcherName) { setSeasonArsenal([]); setSeasonRates(null); setCuratedTrails([]); setPitcherTmRows([]); return; }
     const lastFirst = toLastFirst(pitcherName);
     const key = canonicalKey(pitcherName);
 
@@ -507,22 +560,25 @@ export default function DugoutView({ setScreen }) {
       ratesArr = broader.filter(r => canonicalKey(r.pitcher_name) === key);
     }
 
+    // Pitcher's raw Trackman rows — fetched for every pitcher now (not just the
+    // no-arsenal fallback) because the velo-by-inning fatigue sparkline (viz
+    // improvement #2) needs them. One paginated pull per pitcher change.
+    const firstLastForm = lastFirst.includes(',') ? lastFirst.split(',').map(s=>s.trim()).reverse().join(' ') : lastFirst;
+    const [tp1, tp2] = await Promise.all([
+      fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: lastFirst }, '-created_date'),
+      firstLastForm !== lastFirst
+        ? fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: firstLastForm }, '-created_date')
+        : Promise.resolve([]),
+    ]);
+    const allRows = [...(tp1||[]), ...(tp2||[])].filter((r,i,a) => a.findIndex(x=>x.id===r.id)===i);
+    setPitcherTmRows(allRows);
+
     // Last resort: compute live from TrackmanPitch if still no arsenal rows
     // This handles pitchers whose aggregation hasn't run yet
     if (!arsenal.length) {
       // AUDIT: shared classifiers (V2+V3 spellings); location-gated denominators.
       const inZone = r => { const h = parseFloat(r.plate_loc_height), s = parseFloat(r.plate_loc_side); return Number.isFinite(h) && Number.isFinite(s) && h >= 1.5 && h <= 3.5 && s >= -0.83 && s <= 0.83; };
       const hasLoc = r => Number.isFinite(parseFloat(r.plate_loc_height)) && Number.isFinite(parseFloat(r.plate_loc_side));
-
-      // Try both name forms against TrackmanPitch — paginated (was capped at 500)
-      const firstLastForm = lastFirst.includes(',') ? lastFirst.split(',').map(s=>s.trim()).reverse().join(' ') : lastFirst;
-      const [tp1, tp2] = await Promise.all([
-        fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: lastFirst }, '-created_date'),
-        firstLastForm !== lastFirst
-          ? fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: firstLastForm }, '-created_date')
-          : Promise.resolve([]),
-      ]);
-      const allRows = [...(tp1||[]), ...(tp2||[])].filter((r,i,a) => a.findIndex(x=>x.id===r.id)===i);
 
       if (allRows.length) {
         const total = allRows.length;
@@ -623,6 +679,7 @@ export default function DugoutView({ setScreen }) {
     ]);
     const gameId = liveGames?.[0]?.id || null;
     setLiveGameId(gameId);
+    setLiveHomeCode(liveGames?.[0]?.home_team_code || null);
     // Display mode is controlled REMOTELY (e.g. Live Scout writes Game.dugout_display_mode).
     // The TV only reads it. Default to 'pitcher' when unset. Never error the view on a missing field.
     const mode = liveGames?.[0]?.dugout_display_mode;
@@ -749,6 +806,7 @@ export default function DugoutView({ setScreen }) {
                   <HeaderStatPill label="Whiff%"       value={seasonRates?.whiff_pct}               avg={21} good={28} />
                   <HeaderStatPill label="Zone%"        value={seasonRates?.zone_pct}                avg={45} good={52} />
                   <HeaderStatPill label="Chase%"       value={seasonRates?.chase_pct}               avg={24} good={30} />
+                  <VeloByInning rows={pitcherTmRows} />
                   {seasonArsenal.length > 0 && seasonArsenal[0]?.total_pitches && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px' }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{seasonArsenal[0].total_pitches}</span>
@@ -827,7 +885,7 @@ export default function DugoutView({ setScreen }) {
       {/* HITTER TAB — controlled remotely via Game.dugout_display_mode */}
       {dugoutMode === 'hitter' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <HitterDugoutPanel gameId={liveGameId} orientation={orientation} />
+          <HitterDugoutPanel gameId={liveGameId} orientation={orientation} homeTeamCode={liveHomeCode} />
         </div>
       )}
     </div>

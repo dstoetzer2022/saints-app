@@ -538,20 +538,45 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const normalizedName = normalizeName(player.name);
 
   useEffect(() => {
+    // AUDIT: observation entities store names in BOTH formats — live scouting
+    // writes "First Last" while Trackman-sourced records keep "Last, First"
+    // (confirmed live: "Wren, Grayson" CatcherObservation pop-time rows were
+    // invisible on the Grayson Wren profile because the old single exact-match
+    // query only tried one spelling). Team-based fetching is NOT a fix — team
+    // values are inconsistent across sibling records ("San Diego Bombers" vs
+    // "SAN_DIE24") and joining on team is a standing no-go. So: query both
+    // spellings server-side, union, de-dupe by id, and canonical-key gate as
+    // a final guard.
+    const fetchObsBothNames = (entity, field) => Promise.all([
+      fetchAllFiltered(entity, { [field]: normalizedName }, field),
+      normalizedName === trackmanName
+        ? Promise.resolve([])
+        : fetchAllFiltered(entity, { [field]: trackmanName }, field),
+    ]).then(([a, b]) => {
+      const wantKey = canonicalNameKey(player.name);
+      const seen = new Set();
+      return [...(a || []), ...(b || [])].filter(r => {
+        if (!r || seen.has(r.id)) return false;
+        if (canonicalNameKey(r[field]) !== wantKey) return false;
+        seen.add(r.id);
+        return true;
+      });
+    });
+
     // AUDIT: player fetches now paginate (the old 1000/500 caps silently
     // truncated any player past that many pitches).
     const playerFetch = isPitcher
       ? [
           fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: trackmanName }, 'date'),
-          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normalizedName }, 'pitcher_name'),
+          fetchObsBothNames(base44.entities.PitcherObservation, 'pitcher_name'),
           Promise.resolve([]),
           Promise.resolve([]),
         ]
       : [
           fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: trackmanName }, 'date'),
           Promise.resolve([]),
-          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normalizedName }, 'catcher_name'),
-          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normalizedName }, 'runner_name'),
+          fetchObsBothNames(base44.entities.CatcherObservation, 'catcher_name'),
+          fetchObsBothNames(base44.entities.BaserunnerObservation, 'runner_name'),
         ];
 
     Promise.all([

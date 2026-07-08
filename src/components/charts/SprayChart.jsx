@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { C, FONT } from '@/lib/darkTheme';
+import { fenceDistanceAt } from '@/lib/profileStats';
 
 // Canonical field geometry constants
 const W = 400, H = 380;
@@ -70,7 +71,7 @@ function foulPt(side, dist) { // side: -1 = left, 1 = right
   return { x: CX + Math.sin(angle) * r, y: CY - Math.cos(angle) * r };
 }
 
-export default function SprayChart({ pitches }) {
+export default function SprayChart({ pitches, park = null, parkLabel = '' }) {
   const [resultFilter, setResultFilter] = useState('all');
   const [hitType, setHitType] = useState('all');
   const [evBin, setEvBin] = useState('all');
@@ -130,6 +131,23 @@ export default function SprayChart({ pitches }) {
   const rfWall = foulPt(1, MAX_DIST);
   const cfTop  = toXY(0, MAX_DIST);
 
+  // Viz improvement #1: real park fence overlay (same interpolation xHR uses).
+  let fenceD = null, fenceLblY = null;
+  if (park) {
+    const pts = [];
+    let ok = true;
+    for (let b = -45; b <= 45; b += 3) {
+      const dist = fenceDistanceAt(park, b);
+      if (dist == null) { ok = false; break; }
+      const { x, y } = toXY(b, dist);
+      pts.push(`${x.toFixed(1)} ${y.toFixed(1)}`);
+    }
+    if (ok && pts.length) {
+      fenceD = 'M ' + pts.join(' L ');
+      fenceLblY = Math.max(12, toXY(0, fenceDistanceAt(park, 0)).y - 6);
+    }
+  }
+
   // Infield diamond (90ft bases, scaled)
   const base = 90 / MAX_DIST * (H - 60);
   const diamond = [
@@ -171,6 +189,11 @@ export default function SprayChart({ pitches }) {
         {/* Outfield wall arc */}
         <path d={`M ${lfWall.x} ${lfWall.y} A ${H-60} ${H-60} 0 0 1 ${rfWall.x} ${rfWall.y}`}
           fill="none" stroke="rgba(255,255,255,.3)" strokeWidth={1.5} />
+        {fenceD && <path d={fenceD} fill="none" stroke="#c8920c" strokeWidth={1.6} />}
+        {fenceD && parkLabel && (
+          <text x={CX} y={fenceLblY} textAnchor="middle" fontSize={9} fontWeight={700}
+            fill="#c8920c" fontFamily={FONT} letterSpacing={0.5}>{parkLabel}</text>
+        )}
         {/* Distance arcs */}
         {[200, 300, 370].map(d => (
           <path key={d} d={arcPath(d)} fill="none"

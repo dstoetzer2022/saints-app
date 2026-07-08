@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
+import { CCL_PARK_DIMENSIONS } from '@/lib/profileStats';
 import { ZoneHeatmap, SprayChart, rgba } from './HitterViz';
 
 const FONT   = "'Archivo', system-ui, sans-serif";
@@ -319,7 +320,13 @@ function NextBatterCard({ label, hitter, contactPct, slg, speedRating }) {
   );
 }
 
-export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }) {
+export default function HitterDugoutPanel({ gameId, orientation = 'horizontal', homeTeamCode = null }) {
+  // Viz improvement #1: venue fence overlay on the spray chart. The venue is
+  // the HOME team's park; when the Saints are on the road, Brookside is drawn
+  // as a dashed reference arc. Travel/affiliate codes map to null by design.
+  const venuePark = homeTeamCode ? (CCL_PARK_DIMENSIONS[homeTeamCode] || null) : null;
+  const venueLabel = venuePark ? `${venuePark.name.split(' (')[0]} · ${venuePark.cf}' CF` : '';
+  const refPark = venuePark && homeTeamCode !== 'ARR_SEC' ? CCL_PARK_DIMENSIONS.ARR_SEC : null;
   const [currentBatter, setCurrentBatter] = useState(null);
   const [batterRows,    setBatterRows]     = useState([]);
   const [runners,       setRunners]        = useState([]);
@@ -333,7 +340,11 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
       base44.entities.HitterObservation.filter({ game_id: gameId, is_current_batter: true }, '-updated_date', 1).catch(() => []),
       base44.entities.BaserunnerObservation.filter({ game_id: gameId, is_on_base: true }, 'runner_name', 20).catch(() => []),
       // Full lineup — drives the on-deck / in-the-hole row (derived from lineup_position).
-      base44.entities.HitterObservation.filter({ game_id: gameId }, 'lineup_position', 30).catch(() => []),
+      // AUDIT: was sorted by lineup_position with limit 30 — in a sub-heavy game
+      // past 30 rows, truncation could drop the NEWEST row for a spot, making
+      // the keep-newest dedup keep a stale hitter. Newest-first + a higher cap
+      // guarantees the freshest row per spot always survives truncation.
+      base44.entities.HitterObservation.filter({ game_id: gameId }, '-updated_date', 100).catch(() => []),
       // All scouted runners (not just on-base) — speed_rating is the only observed run-speed
       // in this data, and HitterObservation has no speed field, so on-deck speed comes from here.
       base44.entities.BaserunnerObservation.filter({ game_id: gameId }, 'runner_name', 60).catch(() => []),
@@ -356,18 +367,35 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     return () => clearInterval(pollRef.current);
   }, [gameId, poll]);
 
+  // ── Shared team pitch fetch ───────────────────────────────────────────────
+  // AUDIT: both the current-batter effect and the on-deck stats effect did
+  // .filter({batter_team}, '-date', 1000) — confirmed live that the Bombers
+  // already exceed 1,000 rows as batter_team, so every dugout hitter stat was
+  // silently computed from a shrinking recent-games window. Both effects also
+  // pulled the same rows twice. Now: one fetchAllFiltered (full pagination)
+  // per team, cached for 60s (Trackman rows only change on CSV import, never
+  // mid-game) and shared by both consumers.
+  const teamRowsRef = useRef({ team: null, promise: null, at: 0 });
+  const getTeamRows = useCallback((team) => {
+    const c = teamRowsRef.current;
+    if (c.team === team && c.promise && Date.now() - c.at < 60000) return c.promise;
+    const promise = fetchAllFiltered(base44.entities.TrackmanPitch, { batter_team: team }, '-date')
+      .catch(() => []);
+    teamRowsRef.current = { team, promise, at: Date.now() };
+    return promise;
+  }, []);
+
   useEffect(() => {
     if (!currentBatter?.hitter_name || !currentBatter?.hitter_team) { setBatterRows([]); return; }
     let cancelled = false;
     (async () => {
-      const rows = await base44.entities.TrackmanPitch
-        .filter({ batter_team: currentBatter.hitter_team }, '-date', 1000).catch(() => []);
+      const rows = await getTeamRows(currentBatter.hitter_team);
       if (cancelled) return;
       const key = canonicalNameKey(currentBatter.hitter_name);
       setBatterRows((rows||[]).filter(r => canonicalNameKey(r.batter_name) === key));
     })();
     return () => { cancelled = true; };
-  }, [currentBatter?.hitter_name, currentBatter?.hitter_team]);
+  }, [currentBatter?.hitter_name, currentBatter?.hitter_team, getTeamRows]);
 
   // Resolve opposing team logo — matches Pitcher Dugout View's lookup pattern
   const [teamLogoUrl, setTeamLogoUrl] = useState(null);
@@ -428,8 +456,9 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     if (!team || !targets.length) { setNextStats({}); return; }
     let cancelled = false;
     (async () => {
-      const rows = await base44.entities.TrackmanPitch
-        .filter({ batter_team: team }, '-date', 1000).catch(() => []);
+      // Shares the cached full-pagination team pull with the current-batter
+      // effect above (see getTeamRows AUDIT note).
+      const rows = await getTeamRows(team);
       if (cancelled) return;
       const out = {};
       for (const h of targets) {
@@ -441,7 +470,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
       if (!cancelled) setNextStats(out);
     })();
     return () => { cancelled = true; };
-  }, [currentBatter?.hitter_team, nextTwo]);
+  }, [currentBatter?.hitter_team, nextTwo, getTeamRows]);
 
   if (!gameId) return null;
 
@@ -581,7 +610,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? (
               <div style={{ maxWidth: orientation === 'vertical' ? 440 : 380, maxHeight:'100%', width:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <SprayChart rows={batterRows} hand={hand} dugout={true} />
+                <SprayChart rows={batterRows} hand={hand} dugout={true} park={venuePark} parkLabel={venueLabel} refPark={refPark} />
               </div>
             ) : (
               <div style={{ color:TEXTF, fontSize:13, fontStyle:'italic', textAlign:'center' }}>

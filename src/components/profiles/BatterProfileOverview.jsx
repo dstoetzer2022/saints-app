@@ -6,10 +6,11 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend, LabelList
 } from 'recharts';
-import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
+import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing, isSecondBasePop } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
+import { CCL_PARK_DIMENSIONS } from '@/lib/profileStats';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 import XHRParkTable from '@/components/shared/XHRParkTable';
@@ -383,11 +384,23 @@ function ScoutNotes({ catcherObs, runnerObs }) {
   const hasRunner = runnerObs.length > 0;
   if (!hasCatcher && !hasRunner) return null;
 
-  // Catcher
-  const popTimes = catcherObs.flatMap(o => [o.warmup_pop_time, ...(o.pop_times || [])].filter(v => v != null));
-  const armGrade = catcherObs.map(o => o.arm).filter(Boolean)[0];
-  const exchange = catcherObs.map(o => o.exchange).filter(Boolean)[0];
-  const stealAttempts = catcherObs.reduce((a, o) => a + (o.steal_attempts || 0), 0);
+  // Catcher — AUDIT: the old block read o.pop_times / o.arm / o.exchange,
+  // none of which exist in the CatcherObservation schema (fields are
+  // trackman_pop_times, steal_attempts, between_innings_throws,
+  // blocking_notes, warmup_pop_time), so Arm/Exchange never rendered and
+  // "Pop time" only ever saw warmup_pop_time. steal_attempts is an ARRAY of
+  // {pop_time, base, result} objects — the old numeric reduce produced string
+  // concatenation the moment an attempt was logged. Rewritten against the
+  // real schema. Pop times keep 2B throws only: Trackman rows through the
+  // shared isSecondBasePop gate, scouted steal-attempt pops by their base tag.
+  const tmPops = catcherObs.flatMap(o => (o.trackman_pop_times || []).filter(isSecondBasePop).map(p => p.pop_time));
+  const stealAttemptRows = catcherObs.flatMap(o => o.steal_attempts || []);
+  const scoutPops = stealAttemptRows.filter(s => s.pop_time != null && s.base !== '3B').map(s => s.pop_time);
+  const popTimes = [...tmPops, ...scoutPops];
+  const warmupPop = catcherObs.map(o => o.warmup_pop_time).filter(v => v != null)[0];
+  const stealAttempts = stealAttemptRows.length;
+  const caught = stealAttemptRows.filter(s => s.result === 'out').length;
+  const blockingNotes = catcherObs.map(o => o.blocking_notes).filter(Boolean)[0];
 
   // Runner
   const speedRating = runnerObs.map(o => o.speed_rating).filter(Boolean)[0];
@@ -406,15 +419,15 @@ function ScoutNotes({ catcherObs, runnerObs }) {
           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', color: '#6aace0', marginBottom: 8, ...FONT_STYLE }}>Catcher</div>
           {popTimes.length > 0 && (
             <div style={{ marginBottom: 5 }}>
-              <span style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Pop time: </span>
+              <span style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Pop time (2B): </span>
               <span style={{ fontSize: 13, fontWeight: 800, color: C.cream, ...FONT_STYLE }}>
                 {Math.min(...popTimes).toFixed(2)}s best · {(mean(popTimes)).toFixed(2)}s avg
               </span>
             </div>
           )}
-          {armGrade && <div style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Arm: <b style={{ color: C.cream }}>{armGrade}</b></div>}
-          {exchange && <div style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Exchange: <b style={{ color: C.cream }}>{exchange}</b></div>}
-          {stealAttempts > 0 && <div style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Steal attempts: <b style={{ color: C.cream }}>{stealAttempts}</b></div>}
+          {warmupPop != null && <div style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Warmup pop: <b style={{ color: C.cream }}>{warmupPop.toFixed(2)}s</b></div>}
+          {stealAttempts > 0 && <div style={{ fontSize: 11, color: C.muted, ...FONT_STYLE }}>Steals against: <b style={{ color: C.cream }}>{caught}/{stealAttempts} caught</b></div>}
+          {blockingNotes && <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 6, ...FONT_STYLE }}>"{blockingNotes}"</div>}
         </div>
       )}
       {hasRunner && (
@@ -545,7 +558,7 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
             </Card>
             <Card style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, ...FONT_STYLE }}>Spray chart</div>
-              <SprayChart pitches={pitches} />
+              <SprayChart pitches={pitches} park={CCL_PARK_DIMENSIONS.ARR_SEC} parkLabel={`Brookside \u00b7 ${CCL_PARK_DIMENSIONS.ARR_SEC.cf}' CF`} />
             </Card>
           </div>
         </>

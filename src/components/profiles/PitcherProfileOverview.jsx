@@ -15,6 +15,7 @@ import { C, FONT } from '@/lib/darkTheme';
 import MovementScatterCircular from '@/components/charts/MovementScatterCircular';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
+import { CCL_PARK_DIMENSIONS } from '@/lib/profileStats';
 import BattedBallContactPanel from '@/components/shared/BattedBallContactPanel';
 import PlatoonSplitsTable from '@/components/shared/PlatoonSplitsTable';
 import XHRParkTable from '@/components/shared/XHRParkTable';
@@ -375,7 +376,7 @@ function ContactSection({ pitches }) {
         </div>
         <div style={{ flex: '1 1 240px', maxWidth: 300 }}>
           <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textAlign: 'center', ...FONT_STYLE }}>Spray (contact allowed)</div>
-          <SprayChart pitches={pitches} />
+          <SprayChart pitches={pitches} park={CCL_PARK_DIMENSIONS.ARR_SEC} parkLabel={`Brookside \u00b7 ${CCL_PARK_DIMENSIONS.ARR_SEC.cf}' CF`} />
         </div>
       </div>
     </div>

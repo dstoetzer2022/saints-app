@@ -5,18 +5,24 @@ const VALUE = '#edeae0';
 const MUTED = '#4a6070';
 const FONT = "'Archivo', system-ui, sans-serif";
 
+// Viz improvement #3: same diverging stops as the dugout heat surfaces
+// (HitterViz colorAt / statsUtils divergingColorAt) — blue (47,99,166) ->
+// neutral -> red (200,40,44) — so the whole app speaks one color language.
+// Neutral is pulled down to 170 (vs 242 on heatmap fills) purely so the
+// midpoint marker stays visible against the dark profile background.
 function markerColor(pct) {
+  const N = 170;
   if (pct <= 50) {
     const t = pct / 50;
-    const r = Math.round(80 + (160 - 80) * t);
-    const g = Math.round(110 + (160 - 110) * t);
-    const b = Math.round(180 + (160 - 180) * t);
+    const r = Math.round(47 + (N - 47) * t);
+    const g = Math.round(99 + (N - 99) * t);
+    const b = Math.round(166 + (N - 166) * t);
     return `rgb(${r},${g},${b})`;
   } else {
     const t = (pct - 50) / 50;
-    const r = Math.round(160 + (201 - 160) * t);
-    const g = Math.round(160 + (40 - 160) * t);
-    const b = Math.round(160 + (42 - 160) * t);
+    const r = Math.round(N + (200 - N) * t);
+    const g = Math.round(N + (40 - N) * t);
+    const b = Math.round(N + (44 - N) * t);
     return `rgb(${r},${g},${b})`;
   }
 }
