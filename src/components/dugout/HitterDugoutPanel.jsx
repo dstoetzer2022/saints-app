@@ -380,21 +380,43 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     return () => { cancelled = true; };
   }, [currentBatter?.hitter_team]);
 
-  // ── On deck / in the hole — next two spots in the batting order ─────────────
-  // Wraps 9 -> 1. Falls back gracefully if lineup_position is sparse/missing.
+  // ── On deck / in the hole — relative to the CURRENT batter's lineup spot ─────
+  // Data has multiple HitterObservation rows per spot across a game (subs, edits),
+  // so we first collapse to ONE hitter per lineup_position (most-recent wins), then
+  // index off the lineup NUMBER (not array position). Current batter in the 2-hole
+  // => on deck = 3-hole, in the hole = 4-hole. Wraps 9 -> 1.
   const nextTwo = useMemo(() => {
     if (!currentBatter || !lineup.length) return [null, null];
-    const sorted = [...lineup]
-      .filter(h => h.lineup_position != null)
-      .sort((a, b) => a.lineup_position - b.lineup_position);
-    if (!sorted.length) return [null, null];
-    const curPos = currentBatter.lineup_position;
-    let idx = curPos != null ? sorted.findIndex(h => h.lineup_position === curPos) : -1;
-    if (idx < 0) idx = sorted.findIndex(h => canonicalNameKey(h.hitter_name) === canonicalNameKey(currentBatter.hitter_name));
-    if (idx < 0) return [null, null];
-    const onDeck    = sorted[(idx + 1) % sorted.length] || null;
-    const inTheHole = sorted[(idx + 2) % sorted.length] || null;
-    return [onDeck, inTheHole];
+
+    // Collapse to one row per lineup_position, keeping the newest by updated_date.
+    const bySpot = new Map();
+    for (const h of lineup) {
+      if (h.lineup_position == null) continue;
+      const spot = Math.round(h.lineup_position);
+      const prev = bySpot.get(spot);
+      if (!prev || new Date(h.updated_date) > new Date(prev.updated_date)) bySpot.set(spot, h);
+    }
+    if (!bySpot.size) return [null, null];
+
+    // The current batter's authoritative spot: prefer their own lineup_position,
+    // else find which spot their name occupies in the deduped map.
+    let curSpot = currentBatter.lineup_position != null ? Math.round(currentBatter.lineup_position) : null;
+    if (curSpot == null || !bySpot.has(curSpot)) {
+      const curKey = canonicalNameKey(currentBatter.hitter_name);
+      for (const [spot, h] of bySpot) {
+        if (canonicalNameKey(h.hitter_name) === curKey) { curSpot = spot; break; }
+      }
+    }
+    if (curSpot == null) return [null, null];
+
+    // Highest occupied spot defines the wrap point (usually 9, but guards short lineups).
+    const maxSpot = Math.max(...bySpot.keys());
+    const step = (n) => {
+      let s = curSpot;
+      for (let i = 0; i < n; i++) s = s >= maxSpot ? 1 : s + 1;
+      return bySpot.get(s) || null;
+    };
+    return [step(1), step(2)];
   }, [currentBatter, lineup]);
 
   // Contact% + SLG for the next two hitters, computed from their Trackman rows.
@@ -494,21 +516,23 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
       )}
 
       {/* ── VIZ BODY — Hot Zones | Pitch Type | Spray Chart — side-by-side (horizontal) or stacked (vertical) ───── */}
-      <div style={{ flex:1, display:'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', minHeight:0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
+      {/* Vertical: no scroll — the three panels flex to share whatever height remains
+          after the header, on-deck row, and baserunner footer. SVGs scale to fit. */}
+      <div style={{ flex:1, display:'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', minHeight:0, overflow:'hidden' }}>
 
         {/* LEFT/TOP — hot zones */}
         <div style={{
-          flex: orientation === 'vertical' ? 'none' : '0 0 42%',
+          flex: orientation === 'vertical' ? '1.15 1 0' : '0 0 42%',
           maxWidth: orientation === 'vertical' ? '100%' : '42%',
-          minHeight: orientation === 'vertical' ? 360 : 0,
+          minHeight: 0,
           borderRight: orientation === 'vertical' ? 'none' : `1px solid ${NAVY_L}`,
           borderBottom: orientation === 'vertical' ? `1px solid ${NAVY_L}` : 'none',
-          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+          padding:'10px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
         }}>
           <SectionTitle>HOT ZONES</SectionTitle>
-          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? (
-              <div style={{ width:'100%', maxWidth: orientation === 'vertical' ? 760 : 600 }}>
+              <div style={{ maxWidth: orientation === 'vertical' ? 640 : 600, maxHeight:'100%', width:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <ZoneHeatmap rows={batterRows} viewMode="pitcher" batterHand={hand} />
               </div>
             ) : (
@@ -518,7 +542,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
             )}
           </div>
           {/* Legend — blue (weak contact/EV) → white (moderate) → red (strong contact + high EV) */}
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8, fontSize:12, color:TEXTF, flexShrink:0, justifyContent:'center' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, fontSize:12, color:TEXTF, flexShrink:0, justifyContent:'center' }}>
             <span>Weak</span>
             <div style={{ display:'flex', height:9, borderRadius:3, overflow:'hidden', width:140 }}>
               {['rgba(47,99,166,0.9)','rgba(144,170,205,0.9)','rgba(242,242,242,0.9)','rgba(221,138,140,0.9)','rgba(200,40,44,0.9)'].map((c,i)=><span key={i} style={{flex:1,background:c}}/>)}
@@ -529,12 +553,12 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
 
         {/* CENTER — pitch type production table */}
         <div style={{
-          flex: orientation === 'vertical' ? 'none' : '0 0 25%',
+          flex: orientation === 'vertical' ? '0 1 auto' : '0 0 25%',
           maxWidth: orientation === 'vertical' ? '100%' : '25%',
-          minHeight: orientation === 'vertical' ? 220 : 0,
+          minHeight: 0,
           borderRight: orientation === 'vertical' ? 'none' : `1px solid ${NAVY_L}`,
           borderBottom: orientation === 'vertical' ? `1px solid ${NAVY_L}` : 'none',
-          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+          padding:'10px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
         }}>
           <SectionTitle>By Pitch Type</SectionTitle>
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
@@ -548,15 +572,15 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
 
         {/* RIGHT/BOTTOM — spray chart */}
         <div style={{
-          flex: orientation === 'vertical' ? 'none' : '1 1 38%',
+          flex: orientation === 'vertical' ? '1.15 1 0' : '1 1 38%',
           maxWidth: orientation === 'vertical' ? '100%' : 'none',
-          minHeight: orientation === 'vertical' ? 360 : 0,
-          padding:'12px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
+          minHeight: 0,
+          padding:'10px 14px', display:'flex', flexDirection:'column', overflow:'hidden',
         }}>
           <SectionTitle>Spray Chart</SectionTitle>
-          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0 }}>
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? (
-              <div style={{ width:'100%', maxWidth: orientation === 'vertical' ? 500 : 380 }}>
+              <div style={{ maxWidth: orientation === 'vertical' ? 440 : 380, maxHeight:'100%', width:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <SprayChart rows={batterRows} hand={hand} dugout={true} />
               </div>
             ) : (
