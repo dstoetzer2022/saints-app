@@ -7,10 +7,10 @@ import React from 'react';
 // Print-only CSS (hiding chrome, expanding scroll areas) lives in index.css
 // under @media print, scoped to [data-print-root].
 
-export default function ExportProfileButton({ style }) {
+export default function ExportProfileButton({ style, onClick }) {
   return (
     <button
-      onClick={() => window.print()}
+      onClick={onClick || (() => window.print())}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
         background: 'transparent', border: '1px solid #c6b583', color: '#c6b583',

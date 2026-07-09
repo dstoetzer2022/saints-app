@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { isSwing, isWhiff, isValidBattedBall, sprayDistribution } from '@/lib/statsUtils';
-import { fenceDistanceAt } from '@/lib/profileStats';
 
 const FONT = "\'Archivo\', system-ui, sans-serif";
 const NAVY = '#0e253a';
@@ -119,7 +118,7 @@ function zoneDamageStats(rows) {
 const ALL_ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14];
 const K_CONTACT = 6;  // pseudo-swings of shrinkage strength toward this batter's overall rate
 const K_EV      = 4;  // pseudo-batted-balls of shrinkage strength
-const LOW_SAMPLE_N = 5; // matches the MIN_N=5 convention used app-wide (viz improvement #5)
+const LOW_SAMPLE_N = 3; // zones with fewer pitches than this get hatched as "thin sample"
 const ZONE_LIFT = 16; // px the strike zone group is nudged up, off the plate tip
 
 export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
@@ -162,13 +161,10 @@ export function ZoneHeatmap({ rows, viewMode='pitcher', batterHand='' }) {
     const { z, st, score } = zd;
     const t = Math.max(0, Math.min(1, (score-minS)/range));
     const coverage = st.n / maxN;
+    const alpha = st.n === 0 ? 0.08 : Math.max(0.35, Math.min(0.92, 0.30 + 0.62*coverage));
+    const fill = rgba(t, alpha);
     const isShadow = z >= 11;
     const lowSample = st.n > 0 && st.n < LOW_SAMPLE_N;
-    // Viz improvement #5: thin-sample cells are dimmed (alpha capped) on top of
-    // the existing hatch, so a 3-pitch cell never reads as saturated fact on TV.
-    let alpha = st.n === 0 ? 0.08 : Math.max(0.35, Math.min(0.92, 0.30 + 0.62*coverage));
-    if (lowSample) alpha = Math.min(alpha, 0.30);
-    const fill = rgba(t, alpha);
 
     if (isShadow) {
       const sp = shadowPoints(z, mirror);
@@ -247,7 +243,7 @@ function wedgeFillColor(pct, maxPct) {
   return rgba(t, 0.18 + t*0.62);
 }
 
-export function SprayChart({ rows, hand, dugout=false, park=null, parkLabel='', refPark=null }) {
+export function SprayChart({ rows, hand, dugout=false }) {
   const [mode,   setMode]   = useState('dots');
   const [filter, setFilter] = useState('all');
   const activeMode   = dugout ? 'mixed' : mode;
@@ -264,31 +260,6 @@ export function SprayChart({ rows, hand, dugout=false, park=null, parkLabel='', 
     const x1=homeX+Math.sin(flRad)*r, y1=homeY-Math.cos(flRad)*r;
     return <path key={'a'+d} d={`M${x0.toFixed(1)} ${y0.toFixed(1)} A${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`} fill="none" stroke="rgba(36,68,95,0.65)" strokeWidth={1} strokeDasharray="2 3" />;
   };
-  // Viz improvement #1: venue fence overlay. Samples the same 5-point fence
-  // interpolation xHR uses, so a dot beyond the gold line = out at THIS park.
-  // refPark (dashed) gives the home-park comparison when playing on the road.
-  const maxFencePx = homeY - 8;
-  const fenceD = (p) => {
-    if (!p) return null;
-    const pts = [];
-    for (let b = -45; b <= 45; b += 3) {
-      const d = fenceDistanceAt(p, b);
-      if (d == null) return null;
-      const r = Math.min(d*scale, maxFencePx);
-      pts.push(`${(homeX+Math.sin(b*Math.PI/180)*r).toFixed(1)} ${(homeY-Math.cos(b*Math.PI/180)*r).toFixed(1)}`);
-    }
-    return 'M ' + pts.join(' L ');
-  };
-  const venueD = fenceD(park);
-  const refD   = fenceD(refPark);
-  const fence = (venueD || refD) ? (<g key="fence">
-    {refD && <path d={refD} fill="none" stroke="rgba(198,181,131,0.35)" strokeWidth={1.2} strokeDasharray="4 4" />}
-    {venueD && <path d={venueD} fill="none" stroke="#c8920c" strokeWidth={1.8} />}
-    {venueD && parkLabel && (
-      <text x={homeX} y={Math.max(12, homeY - Math.min(fenceDistanceAt(park,0)*scale, maxFencePx) - 6)} textAnchor="middle" fontSize={10} fontWeight={700} fill="#c8920c" fontFamily={FONT} letterSpacing={0.5}>{parkLabel}</text>
-    )}
-  </g>) : null;
-
   const foul = (<>
     <line x1={homeX} y1={homeY} x2={homeX-Math.sin(flRad)*MAXD*scale} y2={homeY-Math.cos(flRad)*MAXD*scale} stroke="rgba(159,178,196,0.3)" strokeWidth={1.2} />
     <line x1={homeX} y1={homeY} x2={homeX+Math.sin(flRad)*MAXD*scale} y2={homeY-Math.cos(flRad)*MAXD*scale} stroke="rgba(159,178,196,0.3)" strokeWidth={1.2} />
@@ -334,7 +305,7 @@ export function SprayChart({ rows, hand, dugout=false, park=null, parkLabel='', 
       <path d={wedgeD(-45,-15)} fill={wedgeFillColor(lfData.pct,maxPct)}  stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
       <path d={wedgeD(-15, 15)} fill={wedgeFillColor(midData.pct,maxPct)} stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
       <path d={wedgeD( 15, 45)} fill={wedgeFillColor(rfData.pct,maxPct)}  stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
-      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}{dots}
+      {[150,250,350,MAXD].map(arc)}{infield}{foul}{dots}
       {wLbl(lfData,-30)}{wLbl(midData,0)}{wLbl(rfData,30)}
       {sideLabels}
     </>);
@@ -354,7 +325,7 @@ export function SprayChart({ rows, hand, dugout=false, park=null, parkLabel='', 
       <path d={wedgeD(-45,-15)} fill={wedgeFillColor(lfData.pct,maxPct)}  stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
       <path d={wedgeD(-15, 15)} fill={wedgeFillColor(midData.pct,maxPct)} stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
       <path d={wedgeD( 15, 45)} fill={wedgeFillColor(rfData.pct,maxPct)}  stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
-      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}
+      {[150,250,350,MAXD].map(arc)}{infield}{foul}
       {lbl(lfData,lblPos(-30))}{lbl(midData,lblPos(0))}{lbl(rfData,lblPos(30))}
       {sideLabels}
     </>);
@@ -363,7 +334,7 @@ export function SprayChart({ rows, hand, dugout=false, park=null, parkLabel='', 
       activeFilter==='hits' ? isHit(r.play_result) : activeFilter==='outs' ? !isHit(r.play_result) : true
     );
     body = (<>
-      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}
+      {[150,250,350,MAXD].map(arc)}{infield}{foul}
       {valid.map((r,i) => {
         const rad=parseFloat(r.bearing)*Math.PI/180, d=parseFloat(r.hit_distance);
         return <circle key={i} cx={(homeX+Math.sin(rad)*d*scale).toFixed(1)} cy={(homeY-Math.cos(rad)*d*scale).toFixed(1)} r={evRadius(r.exit_speed).toFixed(1)} fill={resultColor(r.play_result)} fillOpacity={0.85} stroke="rgba(14,37,58,0.8)" strokeWidth={0.8} />;

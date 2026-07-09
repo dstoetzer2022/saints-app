@@ -158,24 +158,6 @@ export function isWhiff(r) { return callOf(r) === 'StrikeSwinging'; }
 // Contact: a swing that was not a whiff.
 export function isContact(r) { return CONTACT_CALLS.includes(callOf(r)); }
 
-// ── Catcher pop-time validity: 2B throws only (single source of truth) ────────
-// Trackman's trackman_pop_times rows carry NO target-base field, but
-// time_to_base (throw flight time) separates target bases cleanly: a ~70mph
-// throw cannot reach 2B (127 ft) in under ~1.2s, while 3B throws and pickoffs
-// arrive in 0.85–1.1s. Verified against live data (Wren, Grayson: 1.68s/1.80s
-// pops with 0.96s/1.02s flight = 3B throws; 2.06s/2.15s pops at 1.43s = 2B).
-// Rows with a null time_to_base are KEPT (can't prove they aren't 2B — matches
-// the null-tolerant convention used elsewhere). The 1.50–2.60s pop_time band
-// drops Trackman noise and botched exchanges, same band the PDF report uses.
-// Use this everywhere trackman_pop_times feeds a "pop time" stat.
-export function isSecondBasePop(p) {
-  const pt = parseFloat(p && p.pop_time);
-  if (!Number.isFinite(pt) || pt < 1.5 || pt > 2.6) return false;
-  const ttb = parseFloat(p && p.time_to_base);
-  if (Number.isFinite(ttb) && ttb < 1.2) return false; // 3B throw / pickoff
-  return true;
-}
-
 // ── Fastball-family velocity membership (single source of truth) ──────────────
 // For VELOCITY surfaces (Avg/Max FB, velo histogram, velo-by-outing/inning) the
 // cutter is intentionally EXCLUDED — its velo sits between true fastballs and the
@@ -361,25 +343,12 @@ export function aggregateArsenal(pitches, pitcherName, pitcherTeam, pitcherHand,
 }
 
 // Percentile color coding
-// Viz improvement #3: ONE diverging color language app-wide. These are the
-// exact stops the dugout heat surfaces use (HitterViz colorAt): blue (47,99,166)
-// -> neutral (242,242,242) -> red (200,40,44). getPercentileColor previously
-// returned a 5-step green/yellow/red traffic-light scale that clashed with the
-// Statcast-style blue-white-red used everywhere else. Traffic-light semantics
-// remain ONLY on categorical ratings (getSpeedColor / getAggressionColor).
-export function divergingColorAt(t) {
-  t = Math.max(0, Math.min(1, t));
-  const lerp = (a, b, k) => a + (b - a) * k;
-  if (t <= 0.5) {
-    const k = t / 0.5;
-    return [lerp(47, 242, k), lerp(99, 242, k), lerp(166, 242, k)];
-  }
-  const k = (t - 0.5) / 0.5;
-  return [lerp(242, 200, k), lerp(242, 40, k), lerp(242, 44, k)];
-}
 export function getPercentileColor(pct) {
-  const [r, g, b] = divergingColorAt((pct ?? 50) / 100);
-  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+  if (pct >= 80) return "#22c55e";
+  if (pct >= 60) return "#84cc16";
+  if (pct >= 40) return "#eab308";
+  if (pct >= 20) return "#f97316";
+  return "#ef4444";
 }
 
 // Speed/aggression colors

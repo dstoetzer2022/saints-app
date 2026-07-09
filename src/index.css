@@ -63,22 +63,46 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Coach-handout print report: on screen it's a gray preview desk with a
+   white letter "page"; in print, everything except the page itself is hidden
+   (including the whole app under #root — the report portals onto body). The
+   old flatten-everything [data-print-root] rules are gone: they produced a
+   dark-theme dump with unreadable heatmaps, superseded by the dedicated
+   light-palette PrintProfileReport component. */
+.print-report-page {
+  width: 7.7in;
+  min-height: 10in;
+  margin: 0 auto 24px;
+  background: #ffffff;
+  padding: 0.4in;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
 @media print {
+  @page { size: letter portrait; margin: 0.4in; }
   .no-print { display: none !important; }
   body { background: white !important; }
-  header { display: none !important; }
-  /* AUDIT (Savant-parity export): print-friendly player profile — expand the
-     scrollable content region to full height and drop dark backgrounds so
-     stat cards print legibly instead of dark-on-dark. */
-  [data-print-root] {
-    overflow: visible !important;
-    height: auto !important;
+  body.print-report-open #root { display: none !important; }
+  .print-report-overlay {
+    position: static !important;
+    background: none !important;
     padding: 0 !important;
-    background: white !important;
+    overflow: visible !important;
   }
-  [data-print-root] * {
-    background: white !important;
-    color: #111 !important;
-    border-color: #ccc !important;
+  .print-report-page {
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  /* Force exact colors so zone-grid fills and pitch-type dots survive the
+     browser's default ink-saver background stripping. */
+  .print-report-page * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

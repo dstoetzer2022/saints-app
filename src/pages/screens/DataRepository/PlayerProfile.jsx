@@ -13,6 +13,7 @@ import { lazy, Suspense } from 'react';
 const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
+import PrintProfileReport from '@/components/reports/PrintProfileReport';
 import ProfileCompareTab from '@/components/shared/ProfileCompareTab';
 import PasswordGate from '@/components/shared/PasswordGate';
 import { C, FONT } from '@/lib/darkTheme';
@@ -532,51 +533,27 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const [leaguePitches, setLeaguePitches] = useState([]);
   const [school, setSchool] = useState(player.school || '');
   const [hand, setHand] = useState(player.hand || '');
+  const [printOpen, setPrintOpen] = useState(false);
 
   const isPitcher = player.role === 'Pitcher';
   const trackmanName = toTrackmanName(player.name);
   const normalizedName = normalizeName(player.name);
 
   useEffect(() => {
-    // AUDIT: observation entities store names in BOTH formats — live scouting
-    // writes "First Last" while Trackman-sourced records keep "Last, First"
-    // (confirmed live: "Wren, Grayson" CatcherObservation pop-time rows were
-    // invisible on the Grayson Wren profile because the old single exact-match
-    // query only tried one spelling). Team-based fetching is NOT a fix — team
-    // values are inconsistent across sibling records ("San Diego Bombers" vs
-    // "SAN_DIE24") and joining on team is a standing no-go. So: query both
-    // spellings server-side, union, de-dupe by id, and canonical-key gate as
-    // a final guard.
-    const fetchObsBothNames = (entity, field) => Promise.all([
-      fetchAllFiltered(entity, { [field]: normalizedName }, field),
-      normalizedName === trackmanName
-        ? Promise.resolve([])
-        : fetchAllFiltered(entity, { [field]: trackmanName }, field),
-    ]).then(([a, b]) => {
-      const wantKey = canonicalNameKey(player.name);
-      const seen = new Set();
-      return [...(a || []), ...(b || [])].filter(r => {
-        if (!r || seen.has(r.id)) return false;
-        if (canonicalNameKey(r[field]) !== wantKey) return false;
-        seen.add(r.id);
-        return true;
-      });
-    });
-
     // AUDIT: player fetches now paginate (the old 1000/500 caps silently
     // truncated any player past that many pitches).
     const playerFetch = isPitcher
       ? [
           fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: trackmanName }, 'date'),
-          fetchObsBothNames(base44.entities.PitcherObservation, 'pitcher_name'),
+          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normalizedName }, 'pitcher_name'),
           Promise.resolve([]),
           Promise.resolve([]),
         ]
       : [
           fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: trackmanName }, 'date'),
           Promise.resolve([]),
-          fetchObsBothNames(base44.entities.CatcherObservation, 'catcher_name'),
-          fetchObsBothNames(base44.entities.BaserunnerObservation, 'runner_name'),
+          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normalizedName }, 'catcher_name'),
+          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normalizedName }, 'runner_name'),
         ];
 
     Promise.all([
@@ -682,7 +659,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         </div>
         {/* Edit bar — jersey + school only */}
         <div className="no-print" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ExportProfileButton />
+          <ExportProfileButton onClick={() => setPrintOpen(true)} />
           <PlayerInfoBar playerName={trackmanName} team={team.name} isPitcher={isPitcher} onSchoolChange={setSchool} onBatsChange={setHand} />
         </div>
       </div>
@@ -744,6 +721,17 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <PrintProfileReport
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        player={player}
+        team={team}
+        school={school}
+        hand={isPitcher ? (player.throws || hand) : (player.bats || hand)}
+        isPitcher={isPitcher}
+        pitches={pitches}
+        hitterPool={hitterPool}
+      />
       <FloatingPlayerNav player={player} roster={roster} onNavigate={onNavigate} />
     </div>
   );
