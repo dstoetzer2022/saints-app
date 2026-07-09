@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import {
   zoneGrid, pitcherProfile, hitterTrackmanProfile, slashLine,
-  platoonSplitRows, xStatsForRows,
+  platoonSplitRows, xStatsForRows, percentileRank,
 } from '@/lib/profileStats';
 import { isSwing, isWhiff } from '@/lib/statsUtils';
+import { ZoneHeatmap as DugoutZoneHeatmap, rgba as divergingRgba } from '@/components/dugout/HitterViz';
 
 // Coach handout: one clean portrait letter page per player, rendered as a
 // full-screen preview overlay (portal on document.body) with a native
@@ -72,42 +73,73 @@ function PrintZoneGrid({ cells, mode, label }) {
   );
 }
 
-// ── Print spray chart (BIP by bearing × distance, light field) ───────────
+// ── Print spray chart — mirrors the profile SprayChart's field graphics
+// (outfield grass, fence arc, distance rings, infield dirt, mound, plate)
+// and its EV color / hit-type shape encoding, re-inked for white paper. ──
 function PrintSprayChart({ pitches }) {
-  const W = 200, H = 190, CX = W / 2, CY = H - 12, MAX = 420;
+  const W = 250, H = 235, CX = W / 2, CY = H - 14, MAX = 420;
+  const R = H - 44;
   const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.bearing != null && p.hit_distance != null && p.hit_distance > 0);
   const toXY = (b, d) => {
-    const r = Math.min(d / MAX, 1) * (H - 34);
+    const r = Math.min(d / MAX, 1) * R;
     const rad = (b * Math.PI) / 180;
     return { x: CX + Math.sin(rad) * r, y: CY - Math.cos(rad) * r };
   };
   const arc = d => {
-    const r = Math.min(d / MAX, 1) * (H - 34);
+    const r = Math.min(d / MAX, 1) * R;
     const a = 45 * Math.PI / 180;
-    const x1 = CX - Math.sin(a) * r, y1 = CY - Math.cos(a) * r;
-    const x2 = CX + Math.sin(a) * r, y2 = CY - Math.cos(a) * r;
-    return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
+    return `M ${CX - Math.sin(a) * r} ${CY - Math.cos(a) * r} A ${r} ${r} 0 0 1 ${CX + Math.sin(a) * r} ${CY - Math.cos(a) * r}`;
   };
-  const foul = () => {
-    const r = H - 34, a = 45 * Math.PI / 180;
-    return { lx: CX - Math.sin(a) * r, rx: CX + Math.sin(a) * r, y: CY - Math.cos(a) * r };
+  const foulPt = side => {
+    const a = side * 45 * Math.PI / 180;
+    return { x: CX + Math.sin(a) * R, y: CY - Math.cos(a) * R };
   };
-  const f = foul();
-  const isHit = p => ['Single', 'Double', 'Triple', 'HomeRun'].includes(p.play_result);
+  const lf = foulPt(-1), rf = foulPt(1);
+  const base = 90 / MAX * R;
+  const dPts = [
+    [CX, CY], [CX - base * 0.707, CY - base * 0.707],
+    [CX, CY - base * 1.414], [CX + base * 0.707, CY - base * 0.707],
+  ].map(p => p.join(',')).join(' ');
+
+  const points = bip.map(p => {
+    const ev = p.exit_speed;
+    const color = ev >= 95 ? '#E24B4A' : ev >= 80 ? '#EF9F27' : ev > 0 ? '#1D9E75' : '#888780';
+    const la = p.launch_angle;
+    const shape = la == null ? 'circle' : la < 10 ? 'square' : la < 25 ? 'diamond' : la < 50 ? 'circle' : 'triangle';
+    return { ...toXY(p.bearing, p.hit_distance), color, shape };
+  });
+  const dot = (p, i) => {
+    const r = 3.2;
+    if (p.shape === 'square') return <rect key={i} x={p.x - r} y={p.y - r} width={r * 2} height={r * 2} fill={p.color} fillOpacity="0.85" stroke="rgba(0,0,0,.3)" strokeWidth="0.5" />;
+    if (p.shape === 'diamond') return <polygon key={i} points={`${p.x},${p.y - r} ${p.x + r},${p.y} ${p.x},${p.y + r} ${p.x - r},${p.y}`} fill={p.color} fillOpacity="0.85" stroke="rgba(0,0,0,.3)" strokeWidth="0.5" />;
+    if (p.shape === 'triangle') return <polygon key={i} points={`${p.x},${p.y - r} ${p.x + r},${p.y + r} ${p.x - r},${p.y + r}`} fill={p.color} fillOpacity="0.75" stroke="rgba(0,0,0,.3)" strokeWidth="0.5" />;
+    return <circle key={i} cx={p.x} cy={p.y} r={r} fill={p.color} fillOpacity="0.85" stroke="rgba(0,0,0,.3)" strokeWidth="0.5" />;
+  };
+
   return (
     <div>
       <div style={{ fontSize: 9, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>Spray chart (BIP)</div>
       <svg width={W} height={H} style={{ display: 'block' }}>
-        <line x1={CX} y1={CY} x2={f.lx} y2={f.y} stroke={EDGE} strokeWidth="1" />
-        <line x1={CX} y1={CY} x2={f.rx} y2={f.y} stroke={EDGE} strokeWidth="1" />
-        {[150, 250, 350].map(d => <path key={d} d={arc(d)} fill="none" stroke="#e8e4d8" strokeWidth="1" />)}
-        {bip.map((p, i) => {
-          const { x, y } = toXY(p.bearing, p.hit_distance);
-          const hit = isHit(p);
-          return <circle key={i} cx={x} cy={y} r="3" fill={hit ? '#c8920c' : 'none'} stroke={hit ? '#8a6508' : FAINT} strokeWidth="1" />;
+        <path d={`M ${CX} ${CY} L ${lf.x} ${lf.y} A ${R} ${R} 0 0 1 ${rf.x} ${rf.y} Z`} fill="rgba(29,158,117,.10)" />
+        <line x1={CX} y1={CY} x2={lf.x} y2={lf.y} stroke="#b9b4a6" strokeWidth="1" />
+        <line x1={CX} y1={CY} x2={rf.x} y2={rf.y} stroke="#b9b4a6" strokeWidth="1" />
+        <path d={arc(MAX)} fill="none" stroke="#8a8577" strokeWidth="1.5" />
+        {[200, 300, 370].map(d => <path key={d} d={arc(d)} fill="none" stroke="#d5d0c2" strokeWidth="1" strokeDasharray="4 3" />)}
+        {[200, 300, 370].map(d => {
+          const { x, y } = toXY(0, d);
+          return <text key={d} x={x} y={y - 3} textAnchor="middle" fontSize="7.5" fill={FAINT} fontFamily={REPORT_FONT}>{d}</text>;
         })}
+        <polygon points={dPts} fill="rgba(180,140,80,.18)" stroke="#c2ac86" strokeWidth="1" />
+        <circle cx={CX} cy={CY - base * 1.414 + (base * 1.414) * 0.57} r="4" fill="rgba(180,140,80,.35)" stroke="#c2ac86" strokeWidth="0.75" />
+        <polygon points={`${CX},${CY - 6} ${CX + 4},${CY - 2.5} ${CX + 4},${CY + 2.5} ${CX - 4},${CY + 2.5} ${CX - 4},${CY - 2.5}`} fill="#555" />
+        {[...points].sort((a, b) => a.shape === 'circle' ? 1 : -1).map(dot)}
+        <text x={12} y={CY - 34} fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>LF</text>
+        <text x={W - 12} y={CY - 34} textAnchor="end" fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>RF</text>
+        <text x={CX} y={16} textAnchor="middle" fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>CF</text>
       </svg>
-      <div style={{ fontSize: 8, color: FAINT }}>Gold = hit · open = out · arcs at 150/250/350 ft · n = {bip.length}</div>
+      <div style={{ fontSize: 8, color: FAINT, marginTop: 2 }}>
+        <span style={{ color: '#E24B4A' }}>●</span> 95+ <span style={{ color: '#EF9F27' }}>●</span> 80–94 <span style={{ color: '#1D9E75' }}>●</span> &lt;80 mph · ■ GB ◆ LD ● FB ▲ PU · n = {bip.length}
+      </div>
     </div>
   );
 }
@@ -243,51 +275,141 @@ function ReportFooter({ n, note }) {
 }
 
 // ── Page bodies ──────────────────────────────────────────────────────────
+// Diverging cell background: percentile vs the league hitter pool, mapped
+// onto the same blue-white-red scale the dugout heatmap uses (rgba from
+// HitterViz — one implementation, fix-at-source). invert=true flips metrics
+// where lower is better (K%, GB%, Soft%). No pool / no value → no color.
+function divergingCell(raw, pool, invert = false) {
+  if (raw == null || !pool || pool.length < 4) return {};
+  let t = percentileRank(pool, raw) / 100;
+  if (invert) t = 1 - t;
+  return { background: divergingRgba(t, 0.5) };
+}
+
+// Compact vs-pitch-type table — same computation as the profile's
+// VsPitchType (shared classifiers, same rulebook OOZ bounds), trimmed to
+// six columns so it fits the half-column under the platoon splits.
+function PrintVsPitchType({ pitches }) {
+  const rows = useMemo(() => {
+    const byType = {};
+    pitches.forEach(p => {
+      const t = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+      (byType[t] = byType[t] || []).push(p);
+    });
+    const ooz = p => p.plate_loc_height != null && (p.plate_loc_height < 1.5 || p.plate_loc_height > 3.5 || p.plate_loc_side < -0.83 || p.plate_loc_side > 0.83);
+    return Object.entries(byType)
+      .filter(([, rs]) => rs.length >= 3)
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([t, rs]) => {
+        const swings = rs.filter(r => isSwing(r.pitch_call)).length;
+        const whiffs = rs.filter(r => r.pitch_call === 'StrikeSwinging').length;
+        const chases = rs.filter(r => ooz(r) && isSwing(r.pitch_call)).length;
+        const oozN = rs.filter(r => ooz(r)).length;
+        const evs = rs.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0).map(r => r.exit_speed);
+        const contact = rs.filter(r => ['FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(r.pitch_call)).length;
+        return {
+          t, n: rs.length,
+          swingPct: rs.length ? swings / rs.length : null,
+          whiffPct: swings ? whiffs / swings : null,
+          chasePct: oozN ? chases / oozN : null,
+          contactPct: swings ? contact / swings : null,
+          avgEV: evs.length ? evs.reduce((a, b) => a + b, 0) / evs.length : null,
+        };
+      });
+  }, [pitches]);
+  if (!rows.length) return null;
+  const cTh = { ...thS, padding: '2px 4px', fontSize: 8 };
+  const cTd = { ...tdS, padding: '2px 4px', fontSize: 9.5 };
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead><tr>
+        <th style={cTh}>Pitch (n)</th><th style={cTh}>Swing%</th><th style={cTh}>Whiff%</th><th style={cTh}>Chase%</th><th style={cTh}>Contact%</th><th style={cTh}>Avg EV</th>
+      </tr></thead>
+      <tbody>
+        {rows.map(d => (
+          <tr key={d.t}>
+            <td style={{ ...cTd, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: getPitchColor(d.t), display: 'inline-block', marginRight: 4 }} />
+              {d.t} <span style={{ color: FAINT, fontWeight: 400 }}>({d.n})</span>
+            </td>
+            <td style={cTd}>{pct(d.swingPct)}</td>
+            <td style={{ ...cTd, color: d.whiffPct != null && d.whiffPct >= 0.30 ? '#c0392b' : INK, fontWeight: d.whiffPct != null && d.whiffPct >= 0.30 ? 700 : 400 }}>{pct(d.whiffPct)}</td>
+            <td style={cTd}>{pct(d.chasePct)}</td>
+            <td style={{ ...cTd, color: d.contactPct != null && d.contactPct >= 0.80 ? '#1e8449' : INK, fontWeight: d.contactPct != null && d.contactPct >= 0.80 ? 700 : 400 }}>{pct(d.contactPct)}</td>
+            <td style={cTd}>{n1(d.avgEV)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
   const tm = useMemo(() => hitterTrackmanProfile(pitches), [pitches]);
   const sl = useMemo(() => slashLine(pitches), [pitches]);
-  const zones = useMemo(() => zoneGrid(pitches, { swingOnly: true }), [pitches]);
   const splits = useMemo(() => platoonSplitRows(pitches, 'pitcher_hand'), [pitches]);
   const xs = useMemo(() => hitterPool?.xGrid ? xStatsForRows(pitches, hitterPool.xGrid) : null, [pitches, hitterPool]);
+  const P = hitterPool || {};
 
+  // [label, display, raw, pool, invert]
   const statRows = tm ? [
-    ['xBA (approx)', xs ? n3(xs.xBA) : '—'], ['xwOBA (approx)', xs ? n3(xs.xwOBA) : '—'], ['xSLG (approx)', xs ? n3(xs.xSLG) : '—'],
-    ['ISO', n3(tm.iso)], ['BABIP', n3(tm.babip)], ['Barrel% (approx)', pct(tm.barrelPct)],
-    ['Hard%', pct(tm.hardPct)], ['Soft%', pct(tm.softPct)], ['Max EV', n1(tm.maxEV)],
-    ['GB%', pct(tm.gbPct)], ['LD%', pct(tm.ldPct)], ['FB%', pct(tm.fbPct)],
-    ['Avg LA', tm.avgLaunchAngle != null ? n1(tm.avgLaunchAngle) + '°' : '—'], ['Swing%', pct(tm.swingPct)], ['2K Contact%', pct(tm.twoKContactPct)],
+    ['xBA (approx)', xs ? n3(xs.xBA) : '—', xs?.xBA, P.xBA, false],
+    ['xwOBA (approx)', xs ? n3(xs.xwOBA) : '—', xs?.xwOBA, P.xwOBA, false],
+    ['xSLG (approx)', xs ? n3(xs.xSLG) : '—', xs?.xSLG, P.xSLG, false],
+    ['ISO', n3(tm.iso), tm.iso, P.iso, false],
+    ['BABIP', n3(tm.babip), tm.babip, P.babip, false],
+    ['Barrel% (approx)', pct(tm.barrelPct), tm.barrelPct, P.barrelPct, false],
+    ['Hard%', pct(tm.hardPct), tm.hardPct, P.hardPct, false],
+    ['Soft%', pct(tm.softPct), tm.softPct, P.softPct, true],
+    ['Max EV', n1(tm.maxEV), tm.maxEV, P.maxEV, false],
+    ['GB%', pct(tm.gbPct), tm.gbPct, P.gbPct, true],
+    ['LD%', pct(tm.ldPct), tm.ldPct, P.ldPct, false],
+    ['FB%', pct(tm.fbPct), tm.fbPct, P.fbPct, false],
+    ['Avg LA', tm.avgLaunchAngle != null ? n1(tm.avgLaunchAngle) + '°' : '—', tm.avgLaunchAngle, P.launchAngle, false],
+    ['Swing%', pct(tm.swingPct), tm.swingPct, P.swingPct, false],
+    ['2K Contact%', pct(tm.twoKContactPct), tm.twoKContactPct, P.twoKContactPct, false],
   ] : [];
 
   return (
     <div className="print-report-page">
       <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={false} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginBottom: 8 }}>
         <StatCard label="AVG / OBP / SLG" value={`${n3(sl.avg)} / ${n3(sl.obp)} / ${n3(sl.slg)}`} />
         <StatCard label="K% / BB%" value={tm ? `${pct(tm.kPct)} / ${pct(tm.bbPct)}` : '—'} />
         <StatCard label="Avg EV / EV90" value={tm ? `${n1(tm.avgEV)} / ${n1(tm.ev90)}` : '—'} />
         <StatCard label="Contact%" value={tm ? pct(tm.contactPct) : '—'} />
         <StatCard label="Chase%" value={tm ? pct(tm.chasePct) : '—'} />
       </div>
-      <div style={{ display: 'flex', gap: 18, marginBottom: 12 }}>
-        <PrintZoneGrid cells={zones} mode="swing" label="Swing% by zone" />
-        <PrintZoneGrid cells={zones} mode="whiff" label="Whiff% by zone" />
+      <div style={{ display: 'flex', gap: 16, marginBottom: 8, alignItems: 'flex-start' }}>
+        <div style={{ width: 232, flexShrink: 0 }}>
+          <SectionLabel>Hot zones (damage)</SectionLabel>
+          <DugoutZoneHeatmap rows={pitches} viewMode="pitcher" batterHand={hand === 'Left' ? 'L' : hand === 'Right' ? 'R' : (hand || '')} />
+        </div>
         <PrintSprayChart pitches={pitches} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 10 }}>
         <div>
-          <SectionLabel>Contact and batted-ball profile</SectionLabel>
+          <SectionLabel>Contact and batted-ball profile · vs CCL percentile</SectionLabel>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            {statRows.map(([l, v]) => (
-              <tr key={l}><td style={{ ...tdS, color: MUT }}>{l}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700 }}>{v}</td></tr>
+            {statRows.map(([l, v, raw, pool, inv]) => (
+              <tr key={l}>
+                <td style={{ ...tdS, color: MUT, padding: '2.5px 6px' }}>{l}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, padding: '2.5px 6px', ...divergingCell(raw, pool, inv) }}>{v}</td>
+              </tr>
             ))}
           </tbody></table>
+          <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Cell color = CCL percentile · blue = below league, red = above (flipped where lower is better)</div>
         </div>
         <div>
           <SectionLabel>Platoon splits</SectionLabel>
           <SplitsTable splits={splits} isPitcher={false} />
+          <div style={{ marginTop: 8 }}>
+            <SectionLabel>Vs pitch type</SectionLabel>
+            <PrintVsPitchType pitches={pitches} />
+          </div>
         </div>
       </div>
-      <ReportFooter n={pitches.length} note="xStats are approximations · low-sample cells shown as —" />
+      <ReportFooter n={pitches.length} note="xStats are approximations · low-sample cells shown as — / hatched" />
     </div>
   );
 }
