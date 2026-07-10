@@ -343,9 +343,11 @@ const PITCH_FAMILIES = [
 
 function pitchTypeLine(rs, allN) {
   const ooz = p => p.plate_loc_height != null && (p.plate_loc_height < 1.5 || p.plate_loc_height > 3.5 || p.plate_loc_side < -0.83 || p.plate_loc_side > 0.83);
-  const swings = rs.filter(r => isSwing(r.pitch_call)).length;
-  const whiffs = rs.filter(r => r.pitch_call === 'StrikeSwinging').length;
-  const chases = rs.filter(r => ooz(r) && isSwing(r.pitch_call)).length;
+  // NOTE: shared isSwing/isWhiff take the ROW (they read r.pitch_call
+  // internally) — passing the call string silently classifies nothing.
+  const swings = rs.filter(r => isSwing(r)).length;
+  const whiffs = rs.filter(r => isWhiff(r)).length;
+  const chases = rs.filter(r => ooz(r) && isSwing(r)).length;
   const oozN = rs.filter(r => ooz(r)).length;
   const evs = rs.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0).map(r => r.exit_speed);
   const contact = rs.filter(r => ['FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(r.pitch_call)).length;
@@ -509,7 +511,7 @@ function PitcherPage({ player, team, school, hand, pitches }) {
       const spins = rows.map(r => r.spin_rate).filter(v => v != null);
       const ivbs = rows.map(r => r.induced_vert_break).filter(v => v != null);
       const hbs = rows.map(r => r.horz_break).filter(v => v != null);
-      const swings = rows.filter(r => isSwing(r.pitch_call)).length;
+      const swings = rows.filter(r => isSwing(r)).length;
       const whiffs = rows.filter(r => isWhiff(r)).length;
       const m = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
       return {
