@@ -5,7 +5,7 @@ import {
   zoneGrid, pitcherProfile, hitterTrackmanProfile, slashLine,
   platoonSplitRows, xStatsForRows, percentileRank,
 } from '@/lib/profileStats';
-import { isSwing, isWhiff } from '@/lib/statsUtils';
+import { isSwing, isWhiff, sprayDistribution, normHand } from '@/lib/statsUtils';
 import { ZoneHeatmap as DugoutZoneHeatmap, rgba as divergingRgba } from '@/components/dugout/HitterViz';
 
 // Coach handout: one clean portrait letter page per player, rendered as a
@@ -75,11 +75,18 @@ function PrintZoneGrid({ cells, mode, label }) {
 
 // ── Print spray chart — mirrors the profile SprayChart's field graphics
 // (outfield grass, fence arc, distance rings, infield dirt, mound, plate)
-// and its EV color / hit-type shape encoding, re-inked for white paper. ──
-function PrintSprayChart({ pitches }) {
+// and its EV color / hit-type shape encoding, re-inked for white paper.
+// The dugout "mixed" mode's pull/middle/oppo wedges sit on top: three ±45°
+// sectors shaded by share of BBE (same sprayDistribution/sprayThird
+// classifiers), with % + label at each sector's centroid. Wedges only render
+// for a known R/L hand — switch or unknown hands would mislabel pull/oppo. ──
+function PrintSprayChart({ pitches, hand }) {
   const W = 250, H = 235, CX = W / 2, CY = H - 14, MAX = 420;
   const R = H - 44;
   const bip = pitches.filter(p => p.pitch_call === 'InPlay' && p.bearing != null && p.hit_distance != null && p.hit_distance > 0);
+  const nh = normHand(hand);
+  const dist = sprayDistribution(pitches, nh);
+  const showWedges = (nh === 'R' || nh === 'L') && dist.total > 0;
   const toXY = (b, d) => {
     const r = Math.min(d / MAX, 1) * R;
     const rad = (b * Math.PI) / 180;
@@ -101,6 +108,25 @@ function PrintSprayChart({ pitches }) {
     [CX, CY - base * 1.414], [CX + base * 0.707, CY - base * 0.707],
   ].map(p => p.join(',')).join(' ');
 
+  // Pull/mid/oppo wedges (±45..±15 = LF/RF sectors, ±15 = middle)
+  const wedgeD = (b0, b1) => {
+    const r0 = b0 * Math.PI / 180, r1 = b1 * Math.PI / 180;
+    return `M ${CX} ${CY} L ${CX + Math.sin(r0) * R} ${CY - Math.cos(r0) * R} A ${R} ${R} 0 0 1 ${CX + Math.sin(r1) * R} ${CY - Math.cos(r1) * R} Z`;
+  };
+  const lblPos = bDeg => ({ x: CX + Math.sin(bDeg * Math.PI / 180) * R * 0.62, y: CY - Math.cos(bDeg * Math.PI / 180) * R * 0.62 });
+  const maxPct = Math.max(dist.pullPct, dist.midPct, dist.oppoPct, 0.001);
+  const lfIsPull = nh === 'R';
+  const lfData = lfIsPull ? { label: 'PULL', pct: dist.pullPct, n: dist.pull } : { label: 'OPPO', pct: dist.oppoPct, n: dist.oppo };
+  const rfData = lfIsPull ? { label: 'OPPO', pct: dist.oppoPct, n: dist.oppo } : { label: 'PULL', pct: dist.pullPct, n: dist.pull };
+  const midData = { label: 'MID', pct: dist.midPct, n: dist.middle };
+  const wedgeFill = p => divergingRgba(maxPct > 0 ? Math.min(1, p / maxPct) : 0, 0.14 + Math.min(1, p / maxPct) * 0.30);
+  const wLbl = (d, bDeg) => d.n > 0 ? (
+    <g key={d.label}>
+      <text x={lblPos(bDeg).x} y={lblPos(bDeg).y} textAnchor="middle" fontSize="13" fontWeight="800" fill={INK} stroke="rgba(255,255,255,0.75)" strokeWidth="2.5" paintOrder="stroke" fontFamily={REPORT_FONT}>{Math.round(d.pct * 100)}%</text>
+      <text x={lblPos(bDeg).x} y={lblPos(bDeg).y + 11} textAnchor="middle" fontSize="8" fontWeight="700" fill="#8a6508" stroke="rgba(255,255,255,0.75)" strokeWidth="2" paintOrder="stroke" fontFamily={REPORT_FONT} letterSpacing="0.5">{d.label}</text>
+    </g>
+  ) : null;
+
   const points = bip.map(p => {
     const ev = p.exit_speed;
     const color = ev >= 95 ? '#E24B4A' : ev >= 80 ? '#EF9F27' : ev > 0 ? '#1D9E75' : '#888780';
@@ -117,10 +143,15 @@ function PrintSprayChart({ pitches }) {
   };
 
   return (
-    <div>
-      <div style={{ fontSize: 9, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>Spray chart (BIP)</div>
-      <svg width={W} height={H} style={{ display: 'block' }}>
+    <div style={{ width: '100%' }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>Spray chart · pull/mid/oppo (BIP)</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
         <path d={`M ${CX} ${CY} L ${lf.x} ${lf.y} A ${R} ${R} 0 0 1 ${rf.x} ${rf.y} Z`} fill="rgba(29,158,117,.10)" />
+        {showWedges && (<>
+          <path d={wedgeD(-45, -15)} fill={wedgeFill(lfData.pct)} stroke="#c9c3b4" strokeWidth="0.5" />
+          <path d={wedgeD(-15, 15)} fill={wedgeFill(midData.pct)} stroke="#c9c3b4" strokeWidth="0.5" />
+          <path d={wedgeD(15, 45)} fill={wedgeFill(rfData.pct)} stroke="#c9c3b4" strokeWidth="0.5" />
+        </>)}
         <line x1={CX} y1={CY} x2={lf.x} y2={lf.y} stroke="#b9b4a6" strokeWidth="1" />
         <line x1={CX} y1={CY} x2={rf.x} y2={rf.y} stroke="#b9b4a6" strokeWidth="1" />
         <path d={arc(MAX)} fill="none" stroke="#8a8577" strokeWidth="1.5" />
@@ -133,6 +164,7 @@ function PrintSprayChart({ pitches }) {
         <circle cx={CX} cy={CY - base * 1.414 + (base * 1.414) * 0.57} r="4" fill="rgba(180,140,80,.35)" stroke="#c2ac86" strokeWidth="0.75" />
         <polygon points={`${CX},${CY - 6} ${CX + 4},${CY - 2.5} ${CX + 4},${CY + 2.5} ${CX - 4},${CY + 2.5} ${CX - 4},${CY - 2.5}`} fill="#555" />
         {[...points].sort((a, b) => a.shape === 'circle' ? 1 : -1).map(dot)}
+        {showWedges && (<>{wLbl(lfData, -30)}{wLbl(midData, 0)}{wLbl(rfData, 30)}</>)}
         <text x={12} y={CY - 34} fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>LF</text>
         <text x={W - 12} y={CY - 34} textAnchor="end" fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>RF</text>
         <text x={CX} y={16} textAnchor="middle" fontSize="8" fontWeight="700" fill={FAINT} fontFamily={REPORT_FONT}>CF</text>
@@ -224,24 +256,31 @@ function SectionLabel({ children }) {
 const thS = { textAlign: 'left', fontSize: 8.5, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.4, padding: '3px 6px', borderBottom: `1px solid ${EDGE}` };
 const tdS = { fontSize: 10.5, padding: '3px 6px', borderBottom: `0.5px solid #eae6da`, fontVariantNumeric: 'tabular-nums' };
 
-function SplitsTable({ splits, isPitcher }) {
+// pools (optional): { avg, obp, slg, kPct, whiffPct } league arrays — when
+// provided, stat cells get the same diverging percentile shading as the main
+// stats table (K% and Whiff% inverted: lower is better for hitters).
+function SplitsTable({ splits, isPitcher, pools }) {
+  const cell = (raw, key, inv) => pools ? divergingCell(raw, pools[key], inv) : {};
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead><tr>
         <th style={thS}>{isPitcher ? 'vs' : 'vs'}</th><th style={thS}>PA</th><th style={thS}>AVG</th><th style={thS}>OBP</th><th style={thS}>SLG</th><th style={thS}>K%</th><th style={thS}>Whiff%</th>
       </tr></thead>
       <tbody>
-        {splits.map(s => (
-          <tr key={s.label}>
-            <td style={{ ...tdS, fontWeight: 700 }}>{s.label}</td>
-            <td style={tdS}>{s.stats.pa || 0}</td>
-            <td style={tdS}>{n3(s.stats.avg)}</td>
-            <td style={tdS}>{n3(s.stats.obp)}</td>
-            <td style={tdS}>{n3(s.stats.slg)}</td>
-            <td style={tdS}>{s.stats.pa ? pct(s.stats.k / s.stats.pa) : '—'}</td>
-            <td style={tdS}>{pct(s.stats.whiffPct)}</td>
-          </tr>
-        ))}
+        {splits.map(s => {
+          const kPct = s.stats.pa ? s.stats.k / s.stats.pa : null;
+          return (
+            <tr key={s.label}>
+              <td style={{ ...tdS, fontWeight: 700 }}>{s.label}</td>
+              <td style={tdS}>{s.stats.pa || 0}</td>
+              <td style={{ ...tdS, ...cell(s.stats.avg, 'avg', false) }}>{n3(s.stats.avg)}</td>
+              <td style={{ ...tdS, ...cell(s.stats.obp, 'obp', false) }}>{n3(s.stats.obp)}</td>
+              <td style={{ ...tdS, ...cell(s.stats.slg, 'slg', false) }}>{n3(s.stats.slg)}</td>
+              <td style={{ ...tdS, ...cell(kPct, 'kPct', true) }}>{kPct != null ? pct(kPct) : '—'}</td>
+              <td style={{ ...tdS, ...cell(s.stats.whiffPct, 'whiffPct', true) }}>{pct(s.stats.whiffPct)}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -251,11 +290,13 @@ function ReportHeader({ player, team, school, isPitcher, hand }) {
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: `2.5px solid ${NAVY}`, paddingBottom: 6, marginBottom: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-        {player.jerseyNumber != null && player.jerseyNumber !== '' && (
-          <span style={{ fontSize: 22, fontWeight: 900, color: GOLD, letterSpacing: -1, fontVariantNumeric: 'tabular-nums' }}>#{player.jerseyNumber}</span>
-        )}
-        <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.4 }}>{player.name}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          {player.jerseyNumber != null && player.jerseyNumber !== '' && (
+            <span style={{ fontSize: 24, fontWeight: 900, color: GOLD, letterSpacing: -1, fontVariantNumeric: 'tabular-nums' }}>#{player.jerseyNumber}</span>
+          )}
+          <span style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.5 }}>{player.name}</span>
+        </div>
         <span style={{ fontSize: 10.5, color: MUT }}>
           {[isPitcher ? 'Pitcher' : 'Hitter', hand ? `${isPitcher ? 'Throws' : 'Bats'} ${hand}` : null, school].filter(Boolean).join(' · ')}
         </span>
@@ -286,58 +327,94 @@ function divergingCell(raw, pool, invert = false) {
   return { background: divergingRgba(t, 0.5) };
 }
 
-// Compact vs-pitch-type table — same computation as the profile's
-// VsPitchType (shared classifiers, same rulebook OOZ bounds), trimmed to
-// six columns so it fits the half-column under the platoon splits.
+// Family-grouped vs-pitch-type table. Families per Derek's spec:
+// Fastballs = Four-Seam / Sinker / Cutter; Breaking = Slider / Sweeper /
+// Curveball (Knucklecurve folded in — it's a curveball variant and would
+// otherwise silently drop); Offspeed = ChangeUp / Splitter. Each family gets
+// a bold cumulative row computed over ALL its raw rows (not an average of
+// the variation rows), then one row per variation seen. 'Undefined' and any
+// unmapped raw type strings are excluded entirely. Same shared classifiers
+// and rulebook OOZ bounds as the profile's VsPitchType.
+const PITCH_FAMILIES = [
+  { label: 'Fastballs', types: ['Four-Seam', 'Sinker', 'Cutter'] },
+  { label: 'Breaking', types: ['Slider', 'Sweeper', 'Curveball', 'Knucklecurve'] },
+  { label: 'Offspeed', types: ['ChangeUp', 'Splitter'] },
+];
+
+function pitchTypeLine(rs, allN) {
+  const ooz = p => p.plate_loc_height != null && (p.plate_loc_height < 1.5 || p.plate_loc_height > 3.5 || p.plate_loc_side < -0.83 || p.plate_loc_side > 0.83);
+  const swings = rs.filter(r => isSwing(r.pitch_call)).length;
+  const whiffs = rs.filter(r => r.pitch_call === 'StrikeSwinging').length;
+  const chases = rs.filter(r => ooz(r) && isSwing(r.pitch_call)).length;
+  const oozN = rs.filter(r => ooz(r)).length;
+  const evs = rs.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0).map(r => r.exit_speed);
+  const contact = rs.filter(r => ['FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(r.pitch_call)).length;
+  return {
+    n: rs.length,
+    swingPct: rs.length ? swings / rs.length : null,
+    whiffPct: swings ? whiffs / swings : null,
+    chasePct: oozN ? chases / oozN : null,
+    contactPct: swings ? contact / swings : null,
+    avgEV: evs.length ? evs.reduce((a, b) => a + b, 0) / evs.length : null,
+  };
+}
+
 function PrintVsPitchType({ pitches }) {
-  const rows = useMemo(() => {
+  const families = useMemo(() => {
     const byType = {};
     pitches.forEach(p => {
       const t = normalizePitch(p.tagged_pitch_type || p.pitch_type);
       (byType[t] = byType[t] || []).push(p);
     });
-    const ooz = p => p.plate_loc_height != null && (p.plate_loc_height < 1.5 || p.plate_loc_height > 3.5 || p.plate_loc_side < -0.83 || p.plate_loc_side > 0.83);
-    return Object.entries(byType)
-      .filter(([, rs]) => rs.length >= 3)
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([t, rs]) => {
-        const swings = rs.filter(r => isSwing(r.pitch_call)).length;
-        const whiffs = rs.filter(r => r.pitch_call === 'StrikeSwinging').length;
-        const chases = rs.filter(r => ooz(r) && isSwing(r.pitch_call)).length;
-        const oozN = rs.filter(r => ooz(r)).length;
-        const evs = rs.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0).map(r => r.exit_speed);
-        const contact = rs.filter(r => ['FoulBall', 'FoulTip', 'FoulBallNotFieldable', 'FoulBallFieldable', 'InPlay'].includes(r.pitch_call)).length;
-        return {
-          t, n: rs.length,
-          swingPct: rs.length ? swings / rs.length : null,
-          whiffPct: swings ? whiffs / swings : null,
-          chasePct: oozN ? chases / oozN : null,
-          contactPct: swings ? contact / swings : null,
-          avgEV: evs.length ? evs.reduce((a, b) => a + b, 0) / evs.length : null,
-        };
-      });
+    return PITCH_FAMILIES.map(fam => {
+      const famRows = fam.types.flatMap(t => byType[t] || []);
+      if (!famRows.length) return null;
+      return {
+        label: fam.label,
+        total: pitchTypeLine(famRows),
+        variations: fam.types
+          .filter(t => byType[t]?.length)
+          .map(t => ({ t, line: pitchTypeLine(byType[t]) })),
+      };
+    }).filter(Boolean);
   }, [pitches]);
-  if (!rows.length) return null;
+
+  if (!families.length) return null;
   const cTh = { ...thS, padding: '2px 4px', fontSize: 8 };
   const cTd = { ...tdS, padding: '2px 4px', fontSize: 9.5 };
+  const statCells = (line, bold = false) => (
+    <>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{pct(line.swingPct)}</td>
+      <td style={{ ...cTd, fontWeight: (line.whiffPct != null && line.whiffPct >= 0.30) || bold ? 700 : 400, color: line.whiffPct != null && line.whiffPct >= 0.30 ? '#c0392b' : INK }}>{pct(line.whiffPct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{pct(line.chasePct)}</td>
+      <td style={{ ...cTd, fontWeight: (line.contactPct != null && line.contactPct >= 0.80) || bold ? 700 : 400, color: line.contactPct != null && line.contactPct >= 0.80 ? '#1e8449' : INK }}>{pct(line.contactPct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{n1(line.avgEV)}</td>
+    </>
+  );
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead><tr>
         <th style={cTh}>Pitch (n)</th><th style={cTh}>Swing%</th><th style={cTh}>Whiff%</th><th style={cTh}>Chase%</th><th style={cTh}>Contact%</th><th style={cTh}>Avg EV</th>
       </tr></thead>
       <tbody>
-        {rows.map(d => (
-          <tr key={d.t}>
-            <td style={{ ...cTd, fontWeight: 700, whiteSpace: 'nowrap' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: getPitchColor(d.t), display: 'inline-block', marginRight: 4 }} />
-              {d.t} <span style={{ color: FAINT, fontWeight: 400 }}>({d.n})</span>
-            </td>
-            <td style={cTd}>{pct(d.swingPct)}</td>
-            <td style={{ ...cTd, color: d.whiffPct != null && d.whiffPct >= 0.30 ? '#c0392b' : INK, fontWeight: d.whiffPct != null && d.whiffPct >= 0.30 ? 700 : 400 }}>{pct(d.whiffPct)}</td>
-            <td style={cTd}>{pct(d.chasePct)}</td>
-            <td style={{ ...cTd, color: d.contactPct != null && d.contactPct >= 0.80 ? '#1e8449' : INK, fontWeight: d.contactPct != null && d.contactPct >= 0.80 ? 700 : 400 }}>{pct(d.contactPct)}</td>
-            <td style={cTd}>{n1(d.avgEV)}</td>
-          </tr>
+        {families.map(fam => (
+          <React.Fragment key={fam.label}>
+            <tr style={{ background: CARD }}>
+              <td style={{ ...cTd, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, whiteSpace: 'nowrap' }}>
+                {fam.label} <span style={{ color: FAINT, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({fam.total.n})</span>
+              </td>
+              {statCells(fam.total, true)}
+            </tr>
+            {fam.variations.map(({ t, line }) => (
+              <tr key={t}>
+                <td style={{ ...cTd, whiteSpace: 'nowrap', paddingLeft: 12 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: getPitchColor(t), display: 'inline-block', marginRight: 4 }} />
+                  {t} <span style={{ color: FAINT }}>({line.n})</span>
+                </td>
+                {statCells(line)}
+              </tr>
+            ))}
+          </React.Fragment>
         ))}
       </tbody>
     </table>
@@ -380,12 +457,14 @@ function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
         <StatCard label="Contact%" value={tm ? pct(tm.contactPct) : '—'} />
         <StatCard label="Chase%" value={tm ? pct(tm.chasePct) : '—'} />
       </div>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 8, alignItems: 'flex-start' }}>
-        <div style={{ width: 232, flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 8, alignItems: 'flex-start' }}>
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
           <SectionLabel>Hot zones (damage)</SectionLabel>
           <DugoutZoneHeatmap rows={pitches} viewMode="pitcher" batterHand={hand === 'Left' ? 'L' : hand === 'Right' ? 'R' : (hand || '')} />
         </div>
-        <PrintSprayChart pitches={pitches} />
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <PrintSprayChart pitches={pitches} hand={hand} />
+        </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 10 }}>
         <div>
@@ -401,10 +480,10 @@ function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
           <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Cell color = CCL percentile · blue = below league, red = above (flipped where lower is better)</div>
         </div>
         <div>
-          <SectionLabel>Platoon splits</SectionLabel>
-          <SplitsTable splits={splits} isPitcher={false} />
+          <SectionLabel>Platoon splits · vs CCL percentile</SectionLabel>
+          <SplitsTable splits={splits} isPitcher={false} pools={{ avg: P.avg, obp: P.obp, slg: P.slg, kPct: P.kPct, whiffPct: P.whiffPct }} />
           <div style={{ marginTop: 8 }}>
-            <SectionLabel>Vs pitch type</SectionLabel>
+            <SectionLabel>Vs pitch type · by family</SectionLabel>
             <PrintVsPitchType pitches={pitches} />
           </div>
         </div>

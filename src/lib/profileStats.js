@@ -843,7 +843,7 @@ export function buildHitterPool(allPitches) {
     avgEV: [], maxEV: [], hardPct: [], gbPct: [],
     airPullPct: [], whiffPct: [], chasePct: [],
     oSwingPct: [], fStrikePct: [], zContactPct: [], oContactPct: [],
-    slg: [], obp: [], iso: [], babip: [],
+    slg: [], obp: [], iso: [], babip: [], avg: [],
     runValue: [], xBA: [], xwOBA: [], xSLG: [], bbPct: [], kPct: [], launchAngle: [], ev90: [], laAtEv90: [],
     fbPct: [], ldPct: [], softPct: [], barrelPct: [], contactPct: [], twoKContactPct: [], swingPct: [], fpSwPct: [],
     qualifiedN: 0,
@@ -869,6 +869,7 @@ export function buildHitterPool(allPitches) {
     if (prof.iso != null) pool.iso.push(prof.iso);
     if (prof.babip != null) pool.babip.push(prof.babip);
     if (prof.bbPct != null) pool.bbPct.push(prof.bbPct);
+    if (prof.avg != null) pool.avg.push(prof.avg);
     if (prof.kPct != null) pool.kPct.push(prof.kPct);
     if (prof.avgLaunchAngle != null) pool.launchAngle.push(prof.avgLaunchAngle);
     if (prof.ev90 != null) pool.ev90.push(prof.ev90);
