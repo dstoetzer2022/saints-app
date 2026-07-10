@@ -5,6 +5,7 @@ import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/stats
 import PlayerProfile from './PlayerProfile';
 import BaserunnerReport from '@/components/reports/BaserunnerReport';
 import PitcherCatcherReport from '@/components/reports/PitcherCatcherReport';
+import BatchPrintReport from '@/components/reports/BatchPrintReport';
 import { C, FONT } from '@/lib/darkTheme';
 
 // Which sources a player has data in
@@ -111,7 +112,12 @@ function JerseyCell({ value, onSave, color }) {
 }
 
 // ── Wide roster table for desktop/TV ──────────────────────────
-function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSaveJersey }) {
+// selected: Set of canonical name keys currently checked. onToggle(name):
+// flip one player. onToggleAllVisible(names, checked): header checkbox —
+// bulk-set every currently visible row (this section's pitchers OR
+// hitters, whichever tab is open) without touching selections made on the
+// other tab, since selection is tracked globally by canonical key.
+function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSaveJersey, selected, onToggle, onToggleAllVisible }) {
   const accentColor = team?.primary_color || C.gold;
   const isPitcherView = pitchers.length > 0;
   const allPlayers = [
@@ -131,33 +137,45 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
   const headers = isPitcherView
     ? ['#', 'Name', 'Hand', 'School', 'Time to Plate']
     : ['#', 'Name', 'Hand', 'School', 'Speed', 'Aggressiveness'];
-  const colCount = headers.length;
+  const colCount = headers.length + 1; // +1 for the checkbox column
+
+  const visibleKeys = allPlayers.map(p => canonicalNameKey(p.name));
+  const allVisibleChecked = visibleKeys.length > 0 && visibleKeys.every(k => selected.has(k));
 
   return (
     <div style={{ overflowX: 'auto', overflowY: 'auto', height: '100%' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT, tableLayout: 'fixed', minWidth: 700 }}>
         <colgroup>
+          <col style={{ width: 34 }} />
           {isPitcherView ? (
             <>
               <col style={{ width: '6%' }} />
-              <col style={{ width: '24%' }} />
+              <col style={{ width: '23%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '29%' }} />
-              <col style={{ width: '29%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '28%' }} />
             </>
           ) : (
             <>
               <col style={{ width: '6%' }} />
-              <col style={{ width: '24%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '19%' }} />
-              <col style={{ width: '19%' }} />
+              <col style={{ width: '23%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '18%' }} />
             </>
           )}
         </colgroup>
         <thead>
           <tr>
+            <th style={{ ...thStyle, width: 34 }}>
+              <input
+                type="checkbox"
+                checked={allVisibleChecked}
+                onChange={e => onToggleAllVisible(visibleKeys, e.target.checked)}
+                style={{ width: 14, height: 14, accentColor: C.gold, cursor: 'pointer', display: 'block' }}
+              />
+            </th>
             {headers.map(h => (
               <th key={h} style={thStyle}>{h}</th>
             ))}
@@ -181,21 +199,31 @@ function WideRosterTable({ pitchers, hitters, activePlayer, onSelect, team, onSa
                     ? (p.hand ? (p.hand[0]?.toUpperCase() === 'L' ? 'LHP' : 'RHP') : '—')
                     : (p.hand || '—');
                   const keyStat = p.quickStat || '—';
+                  const rowKey = canonicalNameKey(p.name);
+                  const isChecked = selected.has(rowKey);
 
                   return (
                     <tr
                       key={p.name}
                       onClick={() => onSelect(p)}
                       style={{
-                        background: isActive ? C.raised : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)',
-                        borderLeft: isActive ? `3px solid ${C.gold}` : '3px solid transparent',
+                        background: isActive ? C.raised : isChecked ? 'rgba(200,146,12,.07)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)',
+                        borderLeft: isActive ? `3px solid ${C.gold}` : isChecked ? `3px solid ${C.gold}` : '3px solid transparent',
                         cursor: 'pointer',
                         borderBottom: `1px solid rgba(255,255,255,0.03)`,
                         transition: 'background 0.1s',
                       }}
                       onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = C.raised; }}
-                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isChecked ? 'rgba(200,146,12,.07)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
                     >
+                      <td style={{ padding: '9px 14px' }} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => onToggle(rowKey)}
+                          style={{ width: 14, height: 14, accentColor: C.gold, cursor: 'pointer', display: 'block' }}
+                        />
+                      </td>
                       <td style={{ padding: '9px 14px', fontWeight: 900 }}>
                         <JerseyCell
                           value={p.jerseyNumber}
@@ -255,6 +283,12 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [showRunnerReport, setShowRunnerReport] = useState(false);
   const [showPitcherCatcherReport, setShowPitcherCatcherReport] = useState(false);
   const [playerRoster, setPlayerRoster] = useState([]);
+  // Batch print selection — canonical name keys, tracked globally across the
+  // Pitchers/Hitters tab toggle so a coach can check arms on one tab, bats
+  // on the other, then print one combined PDF (pitchers first, then hitters).
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [showBatchPrint, setShowBatchPrint] = useState(false);
 
   const teamName = team.name;
   const trackmanCode = team.trackman_code || teamName;
@@ -553,6 +587,28 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const reportLabel = sidebarTab === 'hitters' ? 'Baserunner Report' : 'Pitcher & Catcher Report';
   const openReport = () => sidebarTab === 'hitters' ? setShowRunnerReport(true) : setShowPitcherCatcherReport(true);
 
+  const toggleSelected = key => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const toggleAllVisible = (keys, checked) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      keys.forEach(k => { if (checked) next.add(k); else next.delete(k); });
+      return next;
+    });
+  };
+  // Resolve selected canonical keys back to full player rows across BOTH
+  // lists (not just the currently visible tab) so a selection made on the
+  // other tab survives the switch.
+  const selectedPlayers = useMemo(() => {
+    const all = [...pitchers, ...hitters];
+    return all.filter(p => selectedKeys.has(canonicalNameKey(p.name)));
+  }, [pitchers, hitters, selectedKeys]);
+
   return (
     <div style={{ display: 'flex', height: '100vh', background: C.base, fontFamily: FONT, overflow: 'hidden' }}>
 
@@ -604,16 +660,30 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                   {[team.division && team.division + ' Division', gameCount > 0 && gameCount + ' games'].filter(Boolean).join(' · ')}
                 </div>
               </div>
-              <button
-                onClick={openReport}
-                style={{
-                  flexShrink: 0, background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
-                  borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: C.gold,
-                  fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
-                }}
-              >
-                🖨 {reportLabel}
-              </button>
+              <div className="print-selected-btn" style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {selectedPlayers.length > 0 && (
+                  <button
+                    onClick={() => setShowBatchConfirm(true)}
+                    style={{
+                      background: C.gold, border: `1px solid ${C.gold}`,
+                      borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: '#1a1a1a',
+                      fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
+                    }}
+                  >
+                    🖨 Print Selected ({selectedPlayers.length})
+                  </button>
+                )}
+                <button
+                  onClick={openReport}
+                  style={{
+                    flexShrink: 0, background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`,
+                    borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: C.gold,
+                    fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
+                  }}
+                >
+                  🖨 {reportLabel}
+                </button>
+              </div>
             </div>
 
             {/* Wide table — shown on desktop/TV, hidden below 768px via inline media is not possible,
@@ -632,6 +702,9 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                     onSelect={p => { setActivePlayer(p); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
                     team={team}
                     onSaveJersey={saveJerseyNumber}
+                    selected={selectedKeys}
+                    onToggle={toggleSelected}
+                    onToggleAllVisible={toggleAllVisible}
                   />
                 </div>
                 <div className="narrow-roster-empty" style={{ flex: 1, display: 'none', alignItems: 'center', justifyContent: 'center' }}>
@@ -651,6 +724,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
         @media (max-width: 767px) {
           .wide-roster-table { display: none !important; }
           .narrow-roster-empty { display: flex !important; }
+          .print-selected-btn { display: none !important; }
         }
         @media (min-width: 1920px) {
           .wide-roster-table table { font-size: 15px !important; }
@@ -665,6 +739,47 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       {showPitcherCatcherReport && (
         <PitcherCatcherReport team={team} onClose={() => setShowPitcherCatcherReport(false)} />
       )}
+
+      {showBatchConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowBatchConfirm(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#2b2e32', borderRadius: 8, padding: '18px 20px', maxWidth: 480, width: '90%', fontFamily: FONT }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.white, marginBottom: 10 }}>
+              Print reports for {selectedPlayers.length} player{selectedPlayers.length === 1 ? '' : 's'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
+              {[...selectedPlayers].sort((a, b) => (a.role === 'Pitcher' ? 0 : 1) - (b.role === 'Pitcher' ? 0 : 1)).map(p => (
+                <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,.04)', borderRadius: 5, padding: '7px 10px', fontSize: 12 }}>
+                  <span style={{ fontWeight: 700, color: C.cream }}>{p.jerseyNumber ? `#${p.jerseyNumber} ` : ''}{p.name}</span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.muted }}>{p.role}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowBatchConfirm(false)}
+                style={{ background: 'rgba(200,146,12,.1)', border: `1px solid rgba(200,146,12,.3)`, color: C.gold, borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setShowBatchConfirm(false); setShowBatchPrint(true); }}
+                style={{ background: C.gold, border: `1px solid ${C.gold}`, color: '#1a1a1a', borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}
+              >
+                Open Print Preview →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BatchPrintReport
+        open={showBatchPrint}
+        onClose={() => setShowBatchPrint(false)}
+        players={selectedPlayers}
+        team={team}
+        pitches={pitches}
+        batterPitches={batterPitches}
+      />
     </div>
   );
 }

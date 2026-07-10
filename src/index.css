@@ -105,4 +105,12 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+  /* Batch print (BatchPrintReport): multiple .print-report-page elements
+     stack in one portal. Break to a new physical page between players —
+     harmless no-op for the single-player report, which only ever renders
+     one .print-report-page. */
+  .print-report-page:not(:last-of-type) {
+    page-break-after: always;
+    break-after: page;
+  }
 }

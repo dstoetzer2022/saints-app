@@ -669,6 +669,12 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
   );
 }
 
+// Named exports so BatchPrintReport can render the exact same page bodies —
+// one implementation of the pitcher/hitter print page, reused by both the
+// single-player overlay (default export below) and the multi-player batch
+// print flow. REPORT_FONT/INK/print-report-page class are shared chrome.
+export { PitcherPage, HitterPage, REPORT_FONT, INK };
+
 // ── Overlay shell ────────────────────────────────────────────────────────
 export default function PrintProfileReport({ open, onClose, player, team, school, hand, isPitcher, pitches, hitterPool, arsenalPool }) {
   useEffect(() => {
