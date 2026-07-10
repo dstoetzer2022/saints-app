@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
-import { buildPitcherPool, buildHitterPool } from '@/lib/profileStats';
+import { buildPitcherPool, buildHitterPool, buildArsenalPool } from '@/lib/profileStats';
 import { fetchAllFiltered, fetchAllList } from '@/lib/fetchAll';
 import { getLeaguePitches } from '@/lib/leagueCache';
 import { buildScene } from '@/lib/pitch3dEngine';
@@ -530,6 +530,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const [allTeams, setAllTeams] = useState([]);
   const [pitcherPool, setPitcherPool] = useState(null);
   const [hitterPool, setHitterPool] = useState(null);
+  const [arsenalPool, setArsenalPool] = useState(null);
   const [leaguePitches, setLeaguePitches] = useState([]);
   const [school, setSchool] = useState(player.school || '');
   const [hand, setHand] = useState(player.hand || '');
@@ -588,6 +589,12 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       if (isPitcher) {
         setPitcherObs(obsA);
         setPitcherPool(buildPitcherPool(leaguePitches));
+        // Print report needs these on pitcher profiles too: splits-allowed
+        // shading percentiles vs the league HITTER pool (an opposing batting
+        // line is a batting line), and the arsenal table percentiles vs
+        // per-pitch-type league distributions.
+        setHitterPool(buildHitterPool(leaguePitches));
+        setArsenalPool(buildArsenalPool(leaguePitches));
       } else {
         setCatcherObs(obsB);
         setRunnerObs(obsC);
@@ -731,6 +738,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         isPitcher={isPitcher}
         pitches={pitches}
         hitterPool={hitterPool}
+        arsenalPool={arsenalPool}
       />
       <FloatingPlayerNav player={player} roster={roster} onNavigate={onNavigate} />
     </div>

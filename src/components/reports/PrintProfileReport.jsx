@@ -2,9 +2,10 @@ import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import {
-  zoneGrid, pitcherProfile, hitterTrackmanProfile, slashLine,
+  pitcherProfile, hitterTrackmanProfile, slashLine, spinDirectionByType,
   platoonSplitRows, xStatsForRows, percentileRank,
 } from '@/lib/profileStats';
+import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import { isSwing, isWhiff, sprayDistribution, normHand } from '@/lib/statsUtils';
 import { ZoneHeatmap as DugoutZoneHeatmap, rgba as divergingRgba } from '@/components/dugout/HitterViz';
 
@@ -27,51 +28,6 @@ const REPORT_FONT = "'Archivo', system-ui, sans-serif";
 const pct = v => v == null ? '—' : (v * 100).toFixed(0) + '%';
 const n1 = v => v == null ? '—' : Number(v).toFixed(1);
 const n3 = v => { if (v == null) return '—'; const s = Number(v).toFixed(3); return s.startsWith('0.') ? s.slice(1) : s; };
-
-// ── Print-safe zone grid (light palette: paper → gold / paper → red) ─────
-function mix(a, b, t) {
-  const h = x => [parseInt(x.slice(1, 3), 16), parseInt(x.slice(3, 5), 16), parseInt(x.slice(5, 7), 16)];
-  const [r1, g1, b1] = h(a), [r2, g2, b2] = h(b);
-  return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
-}
-
-function PrintZoneGrid({ cells, mode, label }) {
-  if (!cells || cells.length !== 9) return null;
-  const colorFor = c => {
-    if (mode === 'usage') {
-      if (c.usagePct == null || c.count === 0) return '#f2efe8';
-      return mix('#f2efe8', '#c8920c', Math.min(1, c.usagePct / 25));
-    }
-    if (mode === 'swing') {
-      if (c.lowN || c.count === 0) return '#f2efe8';
-      return mix('#f2efe8', '#c8920c', Math.min(1, (c.swings / c.count) / 0.7));
-    }
-    if (c.lowN || c.whiffPct == null) return '#f2efe8';
-    return mix('#f2efe8', '#d4534f', Math.min(1, c.whiffPct / 50));
-  };
-  const valueFor = c => {
-    if (mode === 'usage') return c.count > 0 ? `${c.usagePct}%` : '—';
-    if (mode === 'swing') return (c.lowN || c.count === 0) ? '—' : `${Math.round((c.swings / c.count) * 100)}%`;
-    return (c.lowN || c.whiffPct == null) ? '—' : `${c.whiffPct}%`;
-  };
-  const textFor = (bg) => bg === '#f2efe8' ? FAINT : INK;
-  return (
-    <div>
-      <div style={{ fontSize: 9, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>{label}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, width: 132 }}>
-        {cells.map((c, i) => {
-          const bg = colorFor(c);
-          return (
-            <div key={i} style={{ background: bg, border: `0.5px solid ${EDGE}`, borderRadius: 3, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: textFor(bg), fontVariantNumeric: 'tabular-nums' }}>{valueFor(c)}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Catcher's view · "—" = under min sample</div>
-    </div>
-  );
-}
 
 // ── Print spray chart — mirrors the profile SprayChart's field graphics
 // (outfield grass, fence arc, distance rings, infield dirt, mound, plate)
@@ -208,37 +164,6 @@ function PrintMovementPlot({ pitches }) {
   );
 }
 
-// ── FB velo by inning sparkline ──────────────────────────────────────────
-function PrintVeloByInning({ pitches }) {
-  const byInning = {};
-  pitches.forEach(p => {
-    const t = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-    if (!['Fastball', 'Four-Seam', 'Sinker'].includes(t)) return;
-    if (p.rel_speed == null || p.rel_speed <= 0 || p.inning == null) return;
-    (byInning[p.inning] = byInning[p.inning] || []).push(Number(p.rel_speed));
-  });
-  const innings = Object.keys(byInning).map(Number).sort((a, b) => a - b);
-  if (innings.length < 2) return null;
-  const avgs = innings.map(i => byInning[i].reduce((a, b) => a + b, 0) / byInning[i].length);
-  const min = Math.min(...avgs) - 0.5, max = Math.max(...avgs) + 0.5;
-  const W = 210, H = 54, pad = 6;
-  const sx = i => pad + (i / (innings.length - 1)) * (W - 2 * pad);
-  const sy = v => H - pad - ((v - min) / (max - min)) * (H - 2 * pad);
-  const path = avgs.map((v, i) => `${i === 0 ? 'M' : 'L'} ${sx(i)} ${sy(v)}`).join(' ');
-  return (
-    <div>
-      <div style={{ fontSize: 9, fontWeight: 700, color: MUT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>Avg FB velo by inning</div>
-      <svg width={W} height={H} style={{ display: 'block' }}>
-        <path d={path} fill="none" stroke={GOLD} strokeWidth="1.5" />
-        {avgs.map((v, i) => <circle key={i} cx={sx(i)} cy={sy(v)} r="2" fill={GOLD} />)}
-      </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: FAINT }}>
-        {innings.map((inn, i) => <span key={inn}>{inn}: {avgs[i].toFixed(1)}</span>)}
-      </div>
-    </div>
-  );
-}
-
 // ── Shared bits ──────────────────────────────────────────────────────────
 function StatCard({ label, value }) {
   return (
@@ -260,7 +185,12 @@ const tdS = { fontSize: 10.5, padding: '3px 6px', borderBottom: `0.5px solid #ea
 // provided, stat cells get the same diverging percentile shading as the main
 // stats table (K% and Whiff% inverted: lower is better for hitters).
 function SplitsTable({ splits, isPitcher, pools }) {
-  const cell = (raw, key, inv) => pools ? divergingCell(raw, pools[key], inv) : {};
+  // Direction flips by audience. Hitter page: red = good hitting line (high
+  // AVG/OBP/SLG, low K%/Whiff%). Pitcher page ("splits allowed"): the same
+  // columns invert — a LOW line allowed reads red/good, HIGH K%/Whiff%
+  // forced reads red/good — so red is always "good for the player on the
+  // report" and coaches never have to re-learn the scale between pages.
+  const cell = (raw, key, inv) => pools ? divergingCell(raw, pools[key], isPitcher ? !inv : inv) : {};
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead><tr>
@@ -519,18 +449,98 @@ function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
   );
 }
 
-function PitcherPage({ player, team, school, hand, pitches }) {
+// Light paper palette for the print KDE cells — the component itself is the
+// same LocationContourPlot the on-screen profile renders (one KDE
+// implementation, fix-at-source); only surfaces/strokes re-ink for paper.
+const KDE_PRINT_PALETTE = { bg: '#f7f5ef', edge: EDGE, muted: FAINT, zone: INK, label: INK, accent: GOLD };
+
+const hasLoc = p => Number.isFinite(parseFloat(p.plate_loc_side)) && Number.isFinite(parseFloat(p.plate_loc_height));
+
+// ── Tendencies · usage by situation ──────────────────────────────────────
+// Fills the old fatigue slot. Shading is diverging vs the pitch's OWN
+// overall usage — NOT raw intensity, which would just paint the primary
+// pitch red in every column: red = leans on it more than usual in that
+// situation, blue = shelves it, near-white = matches the normal mix. Full
+// saturation at ±20 usage points. Count defs: 1st P = 0-0; Ahead =
+// strikes > balls excluding two-strike counts (those live in 2K); Behind =
+// balls > strikes (3-2 appears in both Behind and 2K — each column has its
+// own denominator, so overlap is fine); hand splits from batter_hand via
+// shared normHand. Situation columns under MIN_SIT total pitches render —
+// with no shading. Only "real" arsenal types (same filter as the KDE row
+// and movement plot) appear; columns sum to 100% within that set.
+const MIN_SIT = 10;
+function PrintTendencies({ pitches, typeOrder }) {
+  const data = useMemo(() => {
+    const typeSet = new Set(typeOrder);
+    const rows = pitches.filter(p => typeSet.has(normalizePitch(p.tagged_pitch_type || p.pitch_type)));
+    const num = v => v == null ? NaN : Number(v);
+    const sits = [
+      { key: '1st P', test: p => num(p.balls) === 0 && num(p.strikes) === 0 },
+      { key: 'Ahead', test: p => num(p.strikes) > num(p.balls) && num(p.strikes) < 2 },
+      { key: 'Behind', test: p => num(p.balls) > num(p.strikes) },
+      { key: '2K', test: p => num(p.strikes) === 2 },
+      { key: 'vs LHH', test: p => normHand(p.batter_hand) === 'L' },
+      { key: 'vs RHH', test: p => normHand(p.batter_hand) === 'R' },
+    ];
+    const typeOf = p => normalizePitch(p.tagged_pitch_type || p.pitch_type);
+    const overall = {};
+    typeOrder.forEach(t => { overall[t] = rows.length ? rows.filter(p => typeOf(p) === t).length / rows.length : null; });
+    const cols = sits.map(sit => {
+      const sub = rows.filter(sit.test);
+      return {
+        key: sit.key, n: sub.length,
+        usage: Object.fromEntries(typeOrder.map(t => [t, sub.length ? sub.filter(p => typeOf(p) === t).length / sub.length : null])),
+      };
+    });
+    return { overall, cols };
+  }, [pitches, typeOrder]);
+
+  if (!typeOrder.length) return null;
+  const shade = (u, base) => {
+    if (u == null || base == null) return {};
+    const t = 0.5 + Math.max(-0.5, Math.min(0.5, (u - base) / 0.40));
+    return { background: divergingRgba(t, 0.5) };
+  };
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead><tr>
+        <th style={thS}>Pitch</th>
+        {data.cols.map(c => <th key={c.key} style={thS}>{c.key}</th>)}
+      </tr></thead>
+      <tbody>
+        {typeOrder.map(t => (
+          <tr key={t}>
+            <td style={{ ...tdS, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: getPitchColor(t), display: 'inline-block', marginRight: 5 }} />{t}
+            </td>
+            {data.cols.map(c => (
+              <td key={c.key} style={{ ...tdS, ...(c.n >= MIN_SIT ? shade(c.usage[t], data.overall[t]) : {}) }}>
+                {c.n >= MIN_SIT && c.usage[t] != null ? pct(c.usage[t]) : '—'}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalPool }) {
   const prof = useMemo(() => pitcherProfile(pitches), [pitches]);
-  const zones = useMemo(() => zoneGrid(pitches), [pitches]);
   const splits = useMemo(() => platoonSplitRows(pitches, 'batter_hand'), [pitches]);
 
-  const arsenal = useMemo(() => {
+  // Arsenal grouping + mistag filter. A type only appears in the KDE row,
+  // movement plot, and tendencies table if it's plausibly a real pitch —
+  // never Undefined/Other, and at least 3 pitches AND 2% usage (one-off
+  // mistags vanish). The arsenal TABLE keeps every tag so the raw mix stays
+  // auditable, but mistag rows can't shade (no league pool exists for them).
+  const { arsenal, realTypes } = useMemo(() => {
     const byType = {};
     pitches.forEach(p => {
       const t = normalizePitch(p.tagged_pitch_type || p.pitch_type);
       (byType[t] = byType[t] || []).push(p);
     });
-    return Object.entries(byType).sort((a, b) => b[1].length - a[1].length).map(([t, rows]) => {
+    const arsenal = Object.entries(byType).sort((a, b) => b[1].length - a[1].length).map(([t, rows]) => {
       const velos = rows.map(r => r.rel_speed).filter(v => v != null && v > 0);
       const spins = rows.map(r => r.spin_rate).filter(v => v != null);
       const ivbs = rows.map(r => r.induced_vert_break).filter(v => v != null);
@@ -539,11 +549,48 @@ function PitcherPage({ player, team, school, hand, pitches }) {
       const whiffs = rows.filter(r => isWhiff(r)).length;
       const m = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
       return {
-        t, usage: rows.length / pitches.length, velo: m(velos), spin: m(spins),
+        t, n: rows.length, usage: rows.length / pitches.length, velo: m(velos), spin: m(spins),
         ivb: m(ivbs), hb: m(hbs), whiff: swings ? whiffs / swings : null,
       };
     });
+    const realTypes = arsenal
+      .filter(a => a.t !== 'Undefined' && a.t !== 'Other' && a.n >= 3 && a.usage >= 0.02)
+      .map(a => a.t);
+    return { arsenal, realTypes };
   }, [pitches]);
+
+  const realPitches = useMemo(() => {
+    const set = new Set(realTypes);
+    return pitches.filter(p => set.has(normalizePitch(p.tagged_pitch_type || p.pitch_type)));
+  }, [pitches, realTypes]);
+
+  // KDE cells: one per real type with 15+ located pitches (the KDE minimum) —
+  // sub-threshold types drop entirely rather than printing a placeholder box.
+  const kdeGroups = useMemo(() => {
+    const spinByType = Object.fromEntries(spinDirectionByType(pitches).map(sp => [sp.type, sp]));
+    return realTypes
+      .map(t => {
+        const rows = pitches.filter(p => normalizePitch(p.tagged_pitch_type || p.pitch_type) === t);
+        return { t, rows, located: rows.filter(hasLoc).length };
+      })
+      .filter(g => g.located >= 15)
+      .map(g => ({
+        label: g.t, pitches: g.rows,
+        axisDeg: spinByType[g.t]?.axisDeg, color: spinByType[g.t]?.color, spinGated: spinByType[g.t]?.nullGated,
+      }));
+  }, [pitches, realTypes]);
+
+  // Fit cells on one 7.7in-page row (≈650px inside padding) for up to ~5 types.
+  const kdeCellW = Math.max(100, Math.min(150, Math.floor((650 - 14 * Math.max(0, kdeGroups.length - 1)) / Math.max(1, kdeGroups.length))));
+
+  // Per-pitch-type shading vs the league arsenal pool: red = above CCL
+  // average FOR THAT PITCH TYPE, blue = below — descriptive, not good/bad
+  // ("more break" isn't universally better). HB percentiles on |HB| so
+  // LHP/RHP compare on movement magnitude, not sign; the cell still
+  // displays the raw signed value. Whiff% is the one true good/bad column
+  // (red = better). divergingCell's ≥4-entry pool gate leaves rare types
+  // uncolored rather than shading off a 2-pitcher pool.
+  const aCell = (t, raw, key) => (raw == null || !arsenalPool?.[t]) ? {} : divergingCell(raw, arsenalPool[t][key], false);
 
   return (
     <div className="print-report-page">
@@ -556,7 +603,7 @@ function PitcherPage({ player, team, school, hand, pitches }) {
         <StatCard label="GB%" value={prof ? pct(prof.gbPct) : '—'} />
       </div>
       <div style={{ marginBottom: 10 }}>
-        <SectionLabel>Arsenal</SectionLabel>
+        <SectionLabel>Arsenal · vs CCL by pitch type</SectionLabel>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={thS}>Pitch</th><th style={thS}>Usage</th><th style={thS}>Velo</th><th style={thS}>Spin</th><th style={thS}>IVB</th><th style={thS}>HB</th><th style={thS}>Whiff%</th>
@@ -568,23 +615,50 @@ function PitcherPage({ player, team, school, hand, pitches }) {
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: getPitchColor(a.t), display: 'inline-block', marginRight: 5 }} />{a.t}
                 </td>
                 <td style={tdS}>{pct(a.usage)}</td>
-                <td style={tdS}>{n1(a.velo)}</td>
-                <td style={tdS}>{a.spin != null ? Math.round(a.spin) : '—'}</td>
-                <td style={tdS}>{n1(a.ivb)}</td>
-                <td style={tdS}>{n1(a.hb)}</td>
-                <td style={tdS}>{pct(a.whiff)}</td>
+                <td style={{ ...tdS, ...aCell(a.t, a.velo, 'velo') }}>{n1(a.velo)}</td>
+                <td style={{ ...tdS, ...aCell(a.t, a.spin, 'spin') }}>{a.spin != null ? Math.round(a.spin) : '—'}</td>
+                <td style={{ ...tdS, ...aCell(a.t, a.ivb, 'ivb') }}>{n1(a.ivb)}</td>
+                <td style={{ ...tdS, ...aCell(a.t, a.hb != null ? Math.abs(a.hb) : null, 'absHb') }}>{n1(a.hb)}</td>
+                <td style={{ ...tdS, ...aCell(a.t, a.whiff, 'whiff') }}>{pct(a.whiff)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>
+          Velo/Spin/IVB/|HB|: red = above CCL avg for the pitch type, blue = below · Whiff%: red = better · unqualified pools uncolored
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 22, marginBottom: 10, alignItems: 'flex-start' }}>
-        <PrintZoneGrid cells={zones} mode="usage" label="Location by zone (usage)" />
-        <PrintMovementPlot pitches={pitches} />
+      <div style={{ marginBottom: 10 }}>
+        <SectionLabel>Pitch location (KDE density · catcher's view)</SectionLabel>
+        {kdeGroups.length ? (
+          <LocationContourPlot
+            groups={kdeGroups}
+            palette={KDE_PRINT_PALETTE}
+            cellWidth={kdeCellW}
+            cellHeight={188}
+            gap={14}
+            wrap="nowrap"
+            minPoints={15}
+            labelSize={13}
+            clockSize={30}
+          />
+        ) : (
+          <div style={{ fontSize: 9.5, color: FAINT }}>No pitch type has 15+ located pitches.</div>
+        )}
+        <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Blue = low density → red = high · types under 15 located pitches omitted (still listed in Arsenal)</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 12 }}>
-        <div><SectionLabel>Fatigue</SectionLabel><PrintVeloByInning pitches={pitches} /></div>
-        <div><SectionLabel>Splits allowed</SectionLabel><SplitsTable splits={splits} isPitcher={true} /></div>
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 18, marginBottom: 12, alignItems: 'flex-start' }}>
+        <PrintMovementPlot pitches={realPitches} />
+        <div>
+          <SectionLabel>Splits allowed · vs CCL percentile</SectionLabel>
+          <SplitsTable splits={splits} isPitcher={true} pools={hitterPool ? { avg: hitterPool.avg, obp: hitterPool.obp, slg: hitterPool.slg, kPct: hitterPool.kPct, whiffPct: hitterPool.whiffPct } : null} />
+          <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Cell color = CCL percentile · red = better for pitcher, blue = worse</div>
+          <div style={{ marginTop: 10 }}>
+            <SectionLabel>Tendencies · usage by situation</SectionLabel>
+            <PrintTendencies pitches={pitches} typeOrder={realTypes} />
+            <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Red = above his overall mix in that spot, blue = below, white = normal usage · columns sum to 100%</div>
+          </div>
+        </div>
       </div>
       <ReportFooter n={pitches.length} note="low-sample cells shown as —" />
     </div>
@@ -592,7 +666,7 @@ function PitcherPage({ player, team, school, hand, pitches }) {
 }
 
 // ── Overlay shell ────────────────────────────────────────────────────────
-export default function PrintProfileReport({ open, onClose, player, team, school, hand, isPitcher, pitches, hitterPool }) {
+export default function PrintProfileReport({ open, onClose, player, team, school, hand, isPitcher, pitches, hitterPool, arsenalPool }) {
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('print-report-open');
@@ -617,7 +691,7 @@ export default function PrintProfileReport({ open, onClose, player, team, school
         </button>
       </div>
       {isPitcher
-        ? <PitcherPage player={player} team={team} school={school} hand={hand} pitches={pitches} />
+        ? <PitcherPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} arsenalPool={arsenalPool} />
         : <HitterPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} />}
     </div>,
     document.body

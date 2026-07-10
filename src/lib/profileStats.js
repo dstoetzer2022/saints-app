@@ -1062,3 +1062,42 @@ export function platoonSplitRows(rows, side) {
     { label: side === 'batter_hand' ? 'LHH' : 'LHP', rows: left, stats: slashLine(left) },
   ].filter(s => s.rows.length >= MIN_N);
 }
+// ── buildArsenalPool: per-pitch-type league distributions for the print
+// report's arsenal-table shading. Each qualified (pitcher, pitch type) pair
+// with ≥10 pitches of that type contributes ONE value per metric: its avg
+// velo/spin/IVB, its mean |HB| (absolute value so LHP/RHP horizontal movement
+// compares on magnitude, not sign — raw HB sign flips with pitcher hand), and
+// its whiff rate (gated at ≥5 swings so a 1-for-2 doesn't pollute the pool).
+// Undefined/Other tags are excluded — they're mistags, not pitches. Keyed on
+// canonicalNameKey like buildPitcherPool (raw-string grouping splits pitchers
+// on spelling variants). Returns { [pitchType]: { velo, spin, ivb, absHb,
+// whiff } } arrays for percentileRank/divergingCell.
+export function buildArsenalPool(allPitches) {
+  const byKey = {};
+  for (const p of allPitches) {
+    if (!p.pitcher_name) continue;
+    const t = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+    if (t === 'Undefined' || t === 'Other') continue;
+    const k = `${canonicalNameKey(p.pitcher_name)}|${t}`;
+    (byKey[k] = byKey[k] || { t, rows: [] }).rows.push(p);
+  }
+  const meanOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const nums = (rows, f) => rows.map(f).map(Number).filter(Number.isFinite);
+  const pool = {};
+  Object.values(byKey).forEach(({ t, rows }) => {
+    if (rows.length < 10) return;
+    const P = (pool[t] = pool[t] || { velo: [], spin: [], ivb: [], absHb: [], whiff: [] });
+    const velo = meanOf(nums(rows, r => r.rel_speed).filter(v => v > 0));
+    const spin = meanOf(nums(rows, r => r.spin_rate));
+    const ivb = meanOf(nums(rows, r => r.induced_vert_break));
+    const absHb = meanOf(nums(rows, r => r.horz_break).map(Math.abs));
+    const swings = rows.filter(r => isSwingRow(r)).length;
+    const whiffs = rows.filter(r => isWhiff(r)).length;
+    if (velo != null) P.velo.push(velo);
+    if (spin != null) P.spin.push(spin);
+    if (ivb != null) P.ivb.push(ivb);
+    if (absHb != null) P.absHb.push(absHb);
+    if (swings >= 5) P.whiff.push(whiffs / swings);
+  });
+  return pool;
+}
