@@ -327,6 +327,27 @@ function divergingCell(raw, pool, invert = false) {
   return { background: divergingRgba(t, 0.5) };
 }
 
+// Vs-pitch-type table has no per-pitch-type league pool to percentile
+// against (buildHitterPool only tracks whole-hitter rates), so cells are
+// shaded on a fixed plausible CCL range using the SAME divergingRgba scale
+// as the percentile table and the dugout heatmap — same red/blue look,
+// just anchored to a range instead of a live pool. invert=true means lower
+// is better for the hitter (red still = good, blue = below average).
+const FIXED_RANGES = {
+  swingPct: [0.30, 0.75, false],
+  whiffPct: [0.05, 0.40, true],
+  chasePct: [0.10, 0.40, true],
+  contactPct: [0.55, 0.90, false],
+  avgEV: [75, 95, false],
+};
+function fixedDivergingCell(value, key) {
+  if (value == null) return {};
+  const [lo, hi, invert] = FIXED_RANGES[key];
+  let t = Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
+  if (invert) t = 1 - t;
+  return { background: divergingRgba(t, 0.5) };
+}
+
 // Family-grouped vs-pitch-type table. Families per Derek's spec:
 // Fastballs = Four-Seam / Sinker / Cutter; Breaking = Slider / Sweeper /
 // Curveball (Knucklecurve folded in — it's a curveball variant and would
@@ -386,11 +407,11 @@ function PrintVsPitchType({ pitches }) {
   const cTd = { ...tdS, padding: '2px 4px', fontSize: 9.5 };
   const statCells = (line, bold = false) => (
     <>
-      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{pct(line.swingPct)}</td>
-      <td style={{ ...cTd, fontWeight: (line.whiffPct != null && line.whiffPct >= 0.30) || bold ? 700 : 400, color: line.whiffPct != null && line.whiffPct >= 0.30 ? '#c0392b' : INK }}>{pct(line.whiffPct)}</td>
-      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{pct(line.chasePct)}</td>
-      <td style={{ ...cTd, fontWeight: (line.contactPct != null && line.contactPct >= 0.80) || bold ? 700 : 400, color: line.contactPct != null && line.contactPct >= 0.80 ? '#1e8449' : INK }}>{pct(line.contactPct)}</td>
-      <td style={{ ...cTd, fontWeight: bold ? 700 : 400 }}>{n1(line.avgEV)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400, ...fixedDivergingCell(line.swingPct, 'swingPct') }}>{pct(line.swingPct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400, ...fixedDivergingCell(line.whiffPct, 'whiffPct') }}>{pct(line.whiffPct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400, ...fixedDivergingCell(line.chasePct, 'chasePct') }}>{pct(line.chasePct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400, ...fixedDivergingCell(line.contactPct, 'contactPct') }}>{pct(line.contactPct)}</td>
+      <td style={{ ...cTd, fontWeight: bold ? 700 : 400, ...fixedDivergingCell(line.avgEV, 'avgEV') }}>{n1(line.avgEV)}</td>
     </>
   );
   return (
@@ -399,10 +420,13 @@ function PrintVsPitchType({ pitches }) {
         <th style={cTh}>Pitch (n)</th><th style={cTh}>Swing%</th><th style={cTh}>Whiff%</th><th style={cTh}>Chase%</th><th style={cTh}>Contact%</th><th style={cTh}>Avg EV</th>
       </tr></thead>
       <tbody>
-        {families.map(fam => (
+        {families.map((fam, fi) => (
           <React.Fragment key={fam.label}>
+            {fi > 0 && (
+              <tr aria-hidden="true"><td colSpan={6} style={{ border: 'none', padding: 0, height: 7 }} /></tr>
+            )}
             <tr style={{ background: CARD }}>
-              <td style={{ ...cTd, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, whiteSpace: 'nowrap' }}>
+              <td style={{ ...cTd, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, whiteSpace: 'nowrap', borderTop: `1.5px solid ${NAVY}` }}>
                 {fam.label} <span style={{ color: FAINT, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({fam.total.n})</span>
               </td>
               {statCells(fam.total, true)}
