@@ -3,7 +3,7 @@ import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import {
   pitcherProfile, percentileRank, fmtStat,
-  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend,
+  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend, maxFastballVelo,
   leagueMovementProfile, runValue, xERA, xStatsForRows,
 } from '@/lib/profileStats';
 import {
@@ -58,12 +58,9 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   // uses ALL pitches (bypassing the 4%-noise filter) so a rare/mislabeled
   // fastball tag isn't dropped. Percentile ranking still uses the same pool,
   // just the raw value being ranked is computed the same way as the pill.
-  const maxFbSource = allPitches || pitches;
-  const maxFbVelos = maxFbSource
-    .filter(p => isFastballVeloType(normalizePitch(p.tagged_pitch_type || p.pitch_type)))
-    .map(p => p.rel_speed)
-    .filter(v => v != null && v > 0);
-  const maxFbVelo = maxFbVelos.length ? Math.max(...maxFbVelos) : null;
+  // Computation now lives in shared maxFastballVelo (profileStats) — the
+  // print report's velo pill uses the same export, so they cannot diverge.
+  const maxFbVelo = maxFastballVelo(allPitches || pitches);
 
   const rv = P.xGrid ? runValue(pitches, P.leagueWoba, { invert: true }) : null;
   const xe = P.xGrid ? xERA(pitches, P.xGrid, P.leagueWoba) : null;

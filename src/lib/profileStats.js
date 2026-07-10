@@ -1101,3 +1101,20 @@ export function buildArsenalPool(allPitches) {
   });
   return pool;
 }
+
+// ── maxFastballVelo: the ONE definition of "Max FB" ──────────────────────
+// Max rel_speed across ALL pitches tagged any true-fastball velo type
+// (Fastball/Four-Seam/Sinker — no Cutter), NOT prof.fb.maxVelo, which is
+// scoped to the single highest-usage fastball type and reads low whenever
+// the hardest pitch of an outing wears a different fastball tag. Pass the
+// UNFILTERED pitch set: the profile percentile bars deliberately bypass the
+// 4%-noise filter here so a rare/mislabeled fastball isn't dropped. Used by
+// both PitcherProfileOverview (Max FB bar) and PrintProfileReport (velo
+// pill) so the two can never disagree again.
+export function maxFastballVelo(rows) {
+  const velos = rows
+    .filter(p => isFastballVeloType(normalizePitch(p.tagged_pitch_type || p.pitch_type)))
+    .map(p => p.rel_speed)
+    .filter(v => v != null && v > 0);
+  return velos.length ? Math.max(...velos) : null;
+}

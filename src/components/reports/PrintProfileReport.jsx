@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import {
-  pitcherProfile, hitterTrackmanProfile, slashLine, spinDirectionByType,
+  pitcherProfile, hitterTrackmanProfile, slashLine, spinDirectionByType, maxFastballVelo,
   platoonSplitRows, xStatsForRows, percentileRank,
 } from '@/lib/profileStats';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
@@ -527,6 +527,10 @@ function PrintTendencies({ pitches, typeOrder }) {
 
 function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalPool }) {
   const prof = useMemo(() => pitcherProfile(pitches), [pitches]);
+  // Same shared export as the profile's "Max FB" percentile bar — max over
+  // ALL true-fastball tags, not just the primary FB type — so the pill here
+  // matches the on-screen bars exactly.
+  const maxFbVelo = useMemo(() => maxFastballVelo(pitches), [pitches]);
   const splits = useMemo(() => platoonSplitRows(pitches, 'batter_hand'), [pitches]);
 
   // Arsenal grouping + mistag filter. A type only appears in the KDE row,
@@ -596,7 +600,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
     <div className="print-report-page">
       <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={true} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginBottom: 10 }}>
-        <StatCard label="FB velo (avg / max)" value={prof?.fb ? `${n1(prof.fb.avgVelo)} / ${n1(prof.fb.maxVelo)}` : '—'} />
+        <StatCard label="FB velo (avg / max)" value={prof?.fb ? `${n1(prof.fb.avgVelo)} / ${n1(maxFbVelo)}` : '—'} />
         <StatCard label="K% / BB%" value={prof ? `${pct(prof.kPct)} / ${pct(prof.bbPct)}` : '—'} />
         <StatCard label="Whiff%" value={prof ? pct(prof.whiffPct) : '—'} />
         <StatCard label="Strike%" value={prof ? pct(prof.strikePct) : '—'} />
