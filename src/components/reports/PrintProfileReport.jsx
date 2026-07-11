@@ -636,7 +636,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
         </div>
       </div>
       <div style={{ marginBottom: 10 }}>
-        <SectionLabel>Pitch location (KDE density · catcher's view)</SectionLabel>
+        <SectionLabel>Pitch location (KDE density · pitcher's view)</SectionLabel>
         {kdeGroups.length ? (
           <LocationContourPlot
             groups={kdeGroups}
