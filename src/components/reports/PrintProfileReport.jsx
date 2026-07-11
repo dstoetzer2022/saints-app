@@ -568,8 +568,11 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
     return pitches.filter(p => set.has(normalizePitch(p.tagged_pitch_type || p.pitch_type)));
   }, [pitches, realTypes]);
 
-  // KDE cells: one per real type with 15+ located pitches (the KDE minimum) —
-  // sub-threshold types drop entirely rather than printing a placeholder box.
+  // KDE cells: one per real type with 3+ located pitches — 15+ gets a real
+  // density contour, 3-14 falls back to raw location dots (see
+  // LocationContourPlot's scatterMin), under 3 drops entirely. Matches the
+  // arsenal table's own "real type" cutoff (n>=3) so a pitch that counts as
+  // real anywhere else on the page isn't silently missing from the zone row.
   const kdeGroups = useMemo(() => {
     const spinByType = Object.fromEntries(spinDirectionByType(pitches).map(sp => [sp.type, sp]));
     return realTypes
@@ -577,7 +580,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
         const rows = pitches.filter(p => normalizePitch(p.tagged_pitch_type || p.pitch_type) === t);
         return { t, rows, located: rows.filter(hasLoc).length };
       })
-      .filter(g => g.located >= 15)
+      .filter(g => g.located >= 3)
       .map(g => ({
         label: g.t, pitches: g.rows,
         axisDeg: spinByType[g.t]?.axisDeg, color: spinByType[g.t]?.color, spinGated: spinByType[g.t]?.nullGated,
@@ -643,13 +646,14 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
             gap={14}
             wrap="nowrap"
             minPoints={15}
+            scatterMin={3}
             labelSize={13}
             clockSize={30}
           />
         ) : (
-          <div style={{ fontSize: 9.5, color: FAINT }}>No pitch type has 15+ located pitches.</div>
+          <div style={{ fontSize: 9.5, color: FAINT }}>No pitch type has 3+ located pitches.</div>
         )}
-        <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Blue = low density → red = high · types under 15 located pitches omitted (still listed in Arsenal)</div>
+        <div style={{ fontSize: 8, color: FAINT, marginTop: 3 }}>Blue = low density → red = high · 15+ located pitches shows a KDE contour, 3-14 shows raw location dots, under 3 omitted</div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 18, marginBottom: 12, alignItems: 'flex-start' }}>
         <PrintMovementPlot pitches={realPitches} />

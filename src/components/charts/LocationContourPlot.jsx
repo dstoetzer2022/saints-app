@@ -54,12 +54,19 @@ function MiniSpinClock({ axisDeg, color, size = 24, pal }) {
   );
 }
 
-function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, minPoints, pal, labelSize, clockSize }) {
+function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, minPoints, scatterMin, pal, labelSize, clockSize }) {
   const toPx = useMemo(() => makeToPx(cw, ch), [cw, ch]);
   const contours = useMemo(() => {
     if (pts.length < minPoints) return null;
     return contourDensity().x(d => d[0]).y(d => d[1]).size([cw, ch]).bandwidth(18).thresholds(14)(pts);
   }, [pts, cw, ch]);
+  // Below the KDE minimum — a density estimate off a handful of points is
+  // noise, not signal — fall back to plotting the actual located pitches as
+  // dots. Honest about the small sample (n is always shown), still gives a
+  // real answer instead of an empty cell for a pitch a guy has genuinely
+  // thrown, just not enough of to smooth. Below scatterMin, nothing to plot
+  // at all — placeholder text only.
+  const showScatter = !contours && pts.length >= scatterMin;
 
   const cx = cw / 2;
   const zTL = toPx(-PLATE_HALF_WIDTH, ZONE_TOP);
@@ -77,8 +84,10 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, min
               <path key={`${i}-${pi}-${ri}`} d={'M' + ring.map(pt => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join('L') + 'Z'} fill={col} stroke="none" />
             )));
           });
-        })() : (
-          <text x={cw / 2} y={ch / 2} textAnchor="middle" fontSize={10} fill={pal.muted}>Need {minPoints}+ located pitches</text>
+        })() : showScatter ? (
+          pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={3.2} fill={spinColor || pal.accent} fillOpacity={0.75} stroke={pal.bg} strokeWidth={0.75} />)
+        ) : (
+          <text x={cw / 2} y={ch / 2} textAnchor="middle" fontSize={10} fill={pal.muted}>Need {scatterMin}+ located pitches</text>
         )}
         <line x1={zTL.x - 14} y1={zTL.y} x2={zTL.x - 14} y2={zBR.y} stroke={pal.muted} strokeWidth={1.2} />
         <line x1={zBR.x + 14} y1={zTL.y} x2={zBR.x + 14} y2={zBR.y} stroke={pal.muted} strokeWidth={1.2} />
@@ -90,7 +99,7 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, min
         {axisDeg !== undefined && <MiniSpinClock axisDeg={axisDeg} color={spinColor} size={clockSize} pal={pal} />}
       </div>
       <div style={{ fontSize: labelSize > 10 ? 9 : 9, color: pal.muted, fontFamily: FONT }}>
-        n={n}{axisDeg != null ? ` · spin ${Math.round(axisDeg / 30) % 12 || 12}:00` : (spinGated ? ' · no spin data' : '')}
+        n={n}{showScatter ? ' · raw locations (below KDE min)' : ''}{axisDeg != null ? ` · spin ${Math.round(axisDeg / 30) % 12 || 12}:00` : (spinGated ? ' · no spin data' : '')}
       </div>
     </div>
   );
@@ -104,7 +113,7 @@ function ContourCell({ pts, label, n, axisDeg, spinColor, spinGated, cw, ch, min
 // blue→white→red density scale everywhere. labelSize/clockSize let print
 // callers enlarge the pitch-type caption and spin clock without touching
 // the on-screen profile's sizing.
-export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, cellHeight = DEFAULT_CH, gap = 18, wrap = 'wrap', minPoints = 15, palette, labelSize = 10, clockSize = 24 }) {
+export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, cellHeight = DEFAULT_CH, gap = 18, wrap = 'wrap', minPoints = 15, scatterMin = 3, palette, labelSize = 10, clockSize = 24 }) {
   const pal = { bg: C.base, edge: C.edge, muted: C.muted, zone: C.cream, label: C.cream, accent: C.gold, ...palette };
   const toPx = useMemo(() => makeToPx(cellWidth, cellHeight), [cellWidth, cellHeight]);
   const cells = useMemo(() => groups.map(g => {
@@ -122,7 +131,7 @@ export default function LocationContourPlot({ groups, cellWidth = DEFAULT_CW, ce
   return (
     <div style={{ display: 'flex', gap, flexWrap: wrap }}>
       {cells.map(c => (
-        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} cw={cellWidth} ch={cellHeight} minPoints={minPoints} pal={pal} labelSize={labelSize} clockSize={clockSize} />
+        <ContourCell key={c.label} pts={c.pts} label={c.label} n={c.n} axisDeg={c.axisDeg} spinColor={c.spinColor} spinGated={c.spinGated} cw={cellWidth} ch={cellHeight} minPoints={minPoints} scatterMin={scatterMin} pal={pal} labelSize={labelSize} clockSize={clockSize} />
       ))}
     </div>
   );
