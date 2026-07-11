@@ -14,7 +14,7 @@
 //    (curly apostrophes, "First Last") no longer leave orphan season rows.
 
 import { base44 } from '@/api/base44Client';
-import { isStrike, isSwing, isWhiff, canonicalNameKey } from '@/lib/statsUtils';
+import { isStrike, isSwing, isWhiff, canonicalNameKey, getZone, normHand } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 
@@ -142,13 +142,36 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
     const strike_pct = rs.length > 0 ? (strikeCount / rs.length) * 100 : null;
 
     let ahead_count = 0, even_count = 0, behind_count = 0, first_pitch_count = 0;
+    // two_strike_count CROSS-CUTS the buckets above (0-2/1-2 are "ahead",
+    // 2-2 is "even", 3-2 is "behind") — it is an overlapping putaway bucket,
+    // NOT part of the ahead/even/behind partition.
+    let two_strike_count = 0;
+    // Handedness splits: raw COUNTS only. Usage% vs a side needs that side's
+    // total across the whole arsenal as denominator, so percentages are
+    // derived at display time — never stored (avoids stale denominators).
+    let lhh_count = 0, rhh_count = 0, lhh_strike_count = 0, rhh_strike_count = 0;
+    // 13-zone location frequency (shared getZone — same geometry as ZoneHeatmap).
+    const zone_counts = {};
+    // Per-pitch whiff: shared classifiers, whiffs over swings.
+    let swing_n = 0, whiff_n = 0;
     for (const r of rs) {
       const b = r.balls ?? 0, s = r.strikes ?? 0;
       if (s > b) ahead_count++;
       else if (b > s) behind_count++;
       else even_count++;
       if (b === 0 && s === 0) first_pitch_count++;
+      if (s === 2) two_strike_count++;
+
+      const hand = normHand(r.batter_hand);
+      if (hand === 'L') { lhh_count++; if (isStrike(r)) lhh_strike_count++; }
+      else if (hand === 'R') { rhh_count++; if (isStrike(r)) rhh_strike_count++; }
+
+      const z = getZone(r.plate_loc_side, r.plate_loc_height);
+      if (z != null) zone_counts[z] = (zone_counts[z] || 0) + 1;
+
+      if (isSwing(r)) { swing_n++; if (isWhiff(r)) whiff_n++; }
     }
+    const whiff_pct = swing_n > 0 ? (whiff_n / swing_n) * 100 : null;
 
     const record = {
       pitcher_name: lastFirstName,
@@ -171,8 +194,15 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
       even_count,
       behind_count,
       first_pitch_count,
+      two_strike_count,
+      lhh_count,
+      rhh_count,
+      lhh_strike_count,
+      rhh_strike_count,
+      zone_counts,
     };
     record.strike_pct = strike_pct; // explicit assignment (known silent-drop failure mode)
+    record.whiff_pct = whiff_pct;   // same explicit-assignment pattern
     return record;
   }).filter(r => r.usage_pct > 2); // drop noise <2%
 
