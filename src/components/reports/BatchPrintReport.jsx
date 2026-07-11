@@ -59,8 +59,18 @@ export default function BatchPrintReport({ open, onClose, players, team, pitches
   const pageFor = player => {
     const isPitcher = player.role === 'Pitcher';
     const key = canonicalNameKey(player.name);
+    // AUDIT: `pitches` (team pitcher_team scope) is padded with synthetic
+    // PitcherArsenal placeholder rows — see RosterView's `_fromArsenal`
+    // rows — so a pitcher with only season-aggregate arsenal data still
+    // appears in the roster list. Those rows carry pitcher_name/hand/team
+    // ONLY (no pitch_type, no Trackman fields) purely to seed the list;
+    // they are NOT real pitches. Left in, every one of them normalizes to
+    // "Undefined" in the arsenal breakdown, inflating the Undefined bucket
+    // by however many arsenal rows that pitcher has (often 7-15% of the
+    // set). Must be excluded here — the print report needs real per-pitch
+    // rows, not roster-membership markers.
     const rows = isPitcher
-      ? pitches.filter(p => canonicalNameKey(p.pitcher_name) === key)
+      ? pitches.filter(p => canonicalNameKey(p.pitcher_name) === key && !p._fromArsenal)
       : batterPitches.filter(p => canonicalNameKey(p.batter_name) === key);
     const hand = isPitcher ? player.hand : player.hand;
     const commonProps = { player, team, school: player.school, hand, pitches: rows };
