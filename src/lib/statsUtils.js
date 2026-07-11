@@ -273,37 +273,6 @@ export function getCountCategory(balls, strikes) {
   return "even";
 }
 
-// ── Strike-zone region assignment (13 zones) ─────────────────────────────────
-// CANONICAL SOURCE — moved here from HitterViz.jsx so both display components
-// and the season aggregation pipeline use the exact same zone geometry
-// (centralized-classifier principle; HitterViz now imports from here).
-// Zones 1-9: inner 3x3 grid, row 0 = BOTTOM (zone 1 = bottom-left in plate
-// coords, zone 9 = top-right). Zones 11-14: shadow quadrants around the zone
-// (11 = left-top, 12 = right-top, 13 = left-bottom, 14 = right-bottom).
-// Plate coords are catcher's perspective: negative side = catcher's left.
-export const ZONE_SZ   = { LEFT: -0.83, RIGHT: 0.83, BOT: 1.50, TOP: 3.50 }; // rulebook zone
-export const ZONE_BAND = 0.40;
-export const ZONE_OUTB = { LEFT: ZONE_SZ.LEFT - ZONE_BAND, RIGHT: ZONE_SZ.RIGHT + ZONE_BAND, BOT: ZONE_SZ.BOT - ZONE_BAND, TOP: ZONE_SZ.TOP + ZONE_BAND };
-export const ALL_ZONE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14];
-
-export function getZone(side, height) {
-  const s = parseFloat(side), h = parseFloat(height);
-  if (!isFinite(s) || !isFinite(h)) return null;
-  if (s < ZONE_OUTB.LEFT || s > ZONE_OUTB.RIGHT || h < ZONE_OUTB.BOT || h > ZONE_OUTB.TOP) return null;
-  const inX = s >= ZONE_SZ.LEFT && s <= ZONE_SZ.RIGHT, inY = h >= ZONE_SZ.BOT && h <= ZONE_SZ.TOP;
-  if (inX && inY) {
-    const COL = (ZONE_SZ.RIGHT - ZONE_SZ.LEFT) / 3, ROW = (ZONE_SZ.TOP - ZONE_SZ.BOT) / 3;
-    const col = s < (ZONE_SZ.LEFT + COL) ? 0 : s < (ZONE_SZ.LEFT + 2 * COL) ? 1 : 2;
-    const row = h < (ZONE_SZ.BOT + ROW) ? 0 : h < (ZONE_SZ.BOT + 2 * ROW) ? 1 : 2;
-    return row * 3 + col + 1;
-  }
-  const left = s < (ZONE_SZ.LEFT + ZONE_SZ.RIGHT) / 2, bot = h < (ZONE_SZ.BOT + ZONE_SZ.TOP) / 2;
-  if (left && !bot) return 11;
-  if (!left && !bot) return 12;
-  if (left && bot) return 13;
-  return 14;
-}
-
 export function formatNum(val, decimals = 1) {
   if (val === null || val === undefined || isNaN(val)) return "—";
   return Number(val).toFixed(decimals);

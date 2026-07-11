@@ -399,7 +399,13 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!o.catcher_name) return;
       const normalized = normalizeName(o.catcher_name);
       const key = canonicalNameKey(o.catcher_name);
-      if (pitcherMap[key]) return;
+      // NOTE: previously `if (pitcherMap[key]) return;` here — that silently
+      // dropped every two-way player's hitting-side data the moment they had
+      // ANY pitching appearance, so they could never show up on the Hitters
+      // tab. pitcherMap and hitterMap are independent lists rendered on
+      // separate tabs (no cross-dedupe below), so a two-way player now gets
+      // one row in each — a Pitcher entry AND a Hitter entry, same as a
+      // real two-way roster spot.
       if (!positionsMap[key]) positionsMap[key] = new Set();
       positionsMap[key].add('C');
       const parts = normalized.split(' ');
@@ -425,7 +431,6 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!o.runner_name) return;
       const normalized = normalizeName(o.runner_name);
       const key = canonicalNameKey(o.runner_name);
-      if (pitcherMap[key]) return;
       const parts = normalized.split(' ');
       if (!hitterMap[key]) {
         hitterMap[key] = {
@@ -449,7 +454,6 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!p.batter_name) return;
       const normalized = normalizeName(p.batter_name);
       const key = canonicalNameKey(p.batter_name);
-      if (pitcherMap[key]) return;
       const parts = normalized.split(' ');
       const normalizedHand = normalizeHandLabel(p.batter_hand);
       if (normalizedHand === 'Right' || normalizedHand === 'Left') {

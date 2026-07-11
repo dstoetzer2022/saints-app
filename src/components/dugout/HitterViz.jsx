@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { isSwing, isWhiff, isValidBattedBall, sprayDistribution, getZone, ZONE_SZ, ZONE_OUTB } from '@/lib/statsUtils';
+import { isSwing, isWhiff, isValidBattedBall, sprayDistribution } from '@/lib/statsUtils';
 
 const FONT = "\'Archivo\', system-ui, sans-serif";
 const NAVY = '#0e253a';
@@ -33,10 +33,9 @@ export function rgba(t, alpha) {
 // shows its own pitch count, so the color can be checked against raw data
 // directly instead of trusting an opaque continuous field.
 // ============================================================================
-// Zone geometry now lives in statsUtils.js (canonical source, shared with the
-// season aggregation pipeline). Local aliases keep the rendering code unchanged.
-const SZ   = ZONE_SZ;
-const OUTB = ZONE_OUTB;
+const SZ   = { LEFT:-0.83, RIGHT:0.83, BOT:1.50, TOP:3.50 };         // rulebook zone
+const BAND = 0.40;
+const OUTB = { LEFT:SZ.LEFT-BAND, RIGHT:SZ.RIGHT+BAND, BOT:SZ.BOT-BAND, TOP:SZ.TOP+BAND };
 const EXT  = { LEFT:-2.3, RIGHT:2.3, BOT:-0.4, TOP:4.9 };            // wider canvas field
 
 // Canvas: 480x540, 130px side margins for the silhouette
@@ -49,6 +48,23 @@ function plateRect(x0,x1,y0,y1,mirror) {
   return { x:Math.min(sx0,sx1), y:Math.min(sy0,sy1), w:Math.abs(sx1-sx0), h:Math.abs(sy1-sy0) };
 }
 
+function getZone(side, height) {
+  const s=parseFloat(side), h=parseFloat(height);
+  if (!isFinite(s)||!isFinite(h)) return null;
+  if (s<OUTB.LEFT||s>OUTB.RIGHT||h<OUTB.BOT||h>OUTB.TOP) return null;
+  const inX=s>=SZ.LEFT&&s<=SZ.RIGHT, inY=h>=SZ.BOT&&h<=SZ.TOP;
+  if (inX&&inY) {
+    const COL=(SZ.RIGHT-SZ.LEFT)/3, ROW=(SZ.TOP-SZ.BOT)/3;
+    const col=s<(SZ.LEFT+COL)?0:s<(SZ.LEFT+2*COL)?1:2;
+    const row=h<(SZ.BOT+ROW)?0:h<(SZ.BOT+2*ROW)?1:2;
+    return row*3+col+1;
+  }
+  const left=s<(SZ.LEFT+SZ.RIGHT)/2, bot=h<(SZ.BOT+SZ.TOP)/2;
+  if (left&&!bot) return 11;
+  if (!left&&!bot) return 12;
+  if (left&&bot) return 13;
+  return 14;
+}
 function zoneRows(rows, zone) { return rows.filter(r=>getZone(r.plate_loc_side,r.plate_loc_height)===zone); }
 
 function inCellRect(z, mirror) {
