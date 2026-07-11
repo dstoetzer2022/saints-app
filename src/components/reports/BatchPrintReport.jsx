@@ -19,6 +19,7 @@ import { PitcherPage, HitterPage, REPORT_FONT, INK } from '@/components/reports/
 export default function BatchPrintReport({ open, onClose, players, team, pitches, batterPitches }) {
   const [hitterPool, setHitterPool] = useState(null);
   const [arsenalPool, setArsenalPool] = useState(null);
+  const [leaguePitches, setLeaguePitches] = useState([]);
   const [poolsLoading, setPoolsLoading] = useState(true);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function BatchPrintReport({ open, onClose, players, team, pitches
     setPoolsLoading(true);
     getLeaguePitches().then(leaguePitches => {
       if (cancelled) return;
+      setLeaguePitches(leaguePitches);
       // Same builders PlayerProfile uses for a single player — computed once
       // here and shared across every page in the batch instead of once per
       // player, since the league pool doesn't change player to player.
@@ -59,19 +61,28 @@ export default function BatchPrintReport({ open, onClose, players, team, pitches
   const pageFor = player => {
     const isPitcher = player.role === 'Pitcher';
     const key = canonicalNameKey(player.name);
-    // AUDIT: `pitches` (team pitcher_team scope) is padded with synthetic
-    // PitcherArsenal placeholder rows — see RosterView's `_fromArsenal`
-    // rows — so a pitcher with only season-aggregate arsenal data still
-    // appears in the roster list. Those rows carry pitcher_name/hand/team
-    // ONLY (no pitch_type, no Trackman fields) purely to seed the list;
-    // they are NOT real pitches. Left in, every one of them normalizes to
-    // "Undefined" in the arsenal breakdown, inflating the Undefined bucket
-    // by however many arsenal rows that pitcher has (often 7-15% of the
-    // set). Must be excluded here — the print report needs real per-pitch
-    // rows, not roster-membership markers.
-    const rows = isPitcher
+    const nameField = isPitcher ? 'pitcher_name' : 'batter_name';
+    // AUDIT: `pitches`/`batterPitches` (RosterView) are scoped strictly by
+    // pitcher_team/batter_team — unlike PlayerProfile's single-player fetch,
+    // which queries by pitcher_name AND unions any league-wide row matching
+    // by canonical name key, so a row with a missing/mistagged team code
+    // still surfaces. A team-scoped-only set can silently drop real
+    // pitches (e.g. O'Regan's hardest pitch of the season tagged under a
+    // mismatched team code) — Max FB and every other stat would then read
+    // low with no visible error. Union with leaguePitches by name, same
+    // merge pattern as PlayerProfile, so batch print sees the identical
+    // pitch universe a single-player print would.
+    const teamScoped = isPitcher
       ? pitches.filter(p => canonicalNameKey(p.pitcher_name) === key && !p._fromArsenal)
       : batterPitches.filter(p => canonicalNameKey(p.batter_name) === key);
+    const variantRows = leaguePitches.filter(p => canonicalNameKey(p[nameField]) === key);
+    const seen = new Set();
+    const rows = [...teamScoped, ...variantRows].filter(r => {
+      const id = r.id ?? `${r[nameField]}|${r.game_id}|${r.pitch_no ?? ''}`;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
     const hand = isPitcher ? player.hand : player.hand;
     const commonProps = { player, team, school: player.school, hand, pitches: rows };
     return isPitcher
