@@ -17,6 +17,7 @@ import { base44 } from '@/api/base44Client';
 import { isStrike, isSwing, isWhiff, canonicalNameKey } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
+import { applyArsenalCorrection } from '@/lib/arsenalCorrection';
 
 // ── Name normalization ────────────────────────────────────────────────────────
 function normalizeApostrophe(s) {
@@ -100,8 +101,15 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
 
   if (onProgress) onProgress(`Fetching pitches for ${lastFirstName}…`);
 
-  const rows = await fetchAllPitches(lastFirstName);
-  if (!rows.length) return;
+  const fetched = await fetchAllPitches(lastFirstName);
+  if (!fetched.length) return;
+
+  // Similarity-based arsenal correction (UCLA method, in-memory only):
+  // merges duplicate labels for the same physical pitch before grouping.
+  const { data: rows, changes: relabeled } = applyArsenalCorrection(fetched);
+  if (relabeled && onProgress) {
+    onProgress(`Arsenal correction: relabeled ${relabeled} pitches for ${lastFirstName}…`);
+  }
 
   const total = rows.length;
   const myKey = canonicalNameKey(lastFirstName);
