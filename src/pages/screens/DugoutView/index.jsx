@@ -874,12 +874,20 @@ export default function DugoutView({ setScreen }) {
                 </div>
               </div>
 
-              {/* Pitch metrics board — one row per pitch type: chip, heatmap, stats, hand splits */}
-              <PitchMetricsBoard
-                pitches={seasonArsenal}
-                activePitchType={activePitchType}
-                colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
-              />
+              {/* Pitch metrics board — one row per pitch type: chip, heatmap, stats, hand splits.
+                  flexShrink:0 + maxHeight/overflowY are load-bearing: this board is much taller
+                  than the old ChipFooter/StatFooter strip it replaced, and the 3D canvas + video
+                  panel above it (flex:1, in a parent with overflow:hidden in horizontal mode) MUST
+                  keep their space regardless of how many pitch types a pitcher has. Without this,
+                  a 4-5 pitch arsenal pushes the board tall enough to squeeze the 3D/video row to
+                  zero height — the actual bug this comment is here to prevent regressing again. */}
+              <div style={{ flexShrink: 0, maxHeight: orientation === 'vertical' ? '38vh' : '46vh', overflowY: 'auto' }}>
+                <PitchMetricsBoard
+                  pitches={seasonArsenal}
+                  activePitchType={activePitchType}
+                  colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
+                />
+              </div>
             </div>
             {/* Count splits — full width below, always visible */}
             <CountSplitsPanel arsenal={seasonArsenal} />
