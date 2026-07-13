@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
+import { applyArsenalCorrection, correctMistaggedPitches, buildTypeStats, zDistToType } from '@/lib/arsenalCorrection';
 import PitchPreview3D from './PitchPreview3D';
 
 const FONT = "'Archivo', system-ui, sans-serif";
@@ -9,6 +10,28 @@ const NAVY = '#0e253a';
 const GOLD = '#b8860b';
 
 function trailColorFor(type) { return getPitchColor(type); }
+
+// Flags a curated trail whose frozen physical values (captured at curation
+// time) no longer fit its own label well against the pitcher's CURRENT
+// corrected arsenal — e.g. a trail curated before correction existed, or
+// from a source pitch that's since been reclassified by the mistag pass.
+// Same outlierZ/nearZ thresholds as correctMistaggedPitches, so "stale" here
+// means the same thing "mistagged" means everywhere else in the app.
+function checkTrailStaleness(trail, typeStats) {
+  const ownType = normalizePitch(trail.pitch_type);
+  const ownStats = typeStats[ownType];
+  if (!ownStats) return null; // not enough season data to judge either way
+  const zOwn = zDistToType(trail, ownStats);
+  if (zOwn == null || zOwn < 3.0) return null;
+  let best = null, zBest = Infinity;
+  for (const [t, s] of Object.entries(typeStats)) {
+    if (t === ownType) continue;
+    const z = zDistToType(trail, s);
+    if (z != null && z < zBest) { zBest = z; best = t; }
+  }
+  if (best == null || zBest > 1.5) return null;
+  return { betterFit: best, zOwn, zBest };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function toLastFirst(name) {
@@ -76,13 +99,16 @@ function PitcherSelector({ pitchers, selected, onSelect }) {
 }
 
 // ── Curated trail row ────────────────────────────────────────────────────────
-function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) {
+function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown, checked, onToggleChecked, staleness }) {
   const [confirming, setConfirming] = useState(false);
   const color = trail.trail_color || getPitchColor(trail.pitch_type);
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0, background: '#fff', border: `1px solid ${color}66`, borderRadius: 8, marginBottom: 6 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0, background: '#fff', border: `1px solid ${staleness ? '#c0392b99' : color + '66'}`, borderRadius: 8, marginBottom: 6 }}>
       {/* Color bar on left edge */}
       <div style={{ width: 5, alignSelf: 'stretch', background: color, borderRadius: '8px 0 0 8px', flexShrink: 0 }} />
+      <div style={{ padding: '10px 0 10px 10px', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+        <input type="checkbox" checked={checked} onChange={onToggleChecked} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+      </div>
       <div style={{ flex: '1 1 220px', minWidth: 0, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -95,6 +121,11 @@ function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) 
             {trail.induced_vert_break != null && <> · <span style={{ color: '#1D9E75', fontWeight: 700 }}>{fmt1(trail.induced_vert_break)}&quot; IVB</span></>}
             {trail.horz_break != null && <> · <span style={{ color: '#378ADD', fontWeight: 700 }}>{fmt1(trail.horz_break)}&quot; HB</span></>}
           </div>
+          {staleness && (
+            <div style={{ fontSize: 10.5, color: '#c0392b', fontWeight: 700, marginTop: 4, background: '#fdecea', border: '1px solid #f5c6c0', borderRadius: 5, padding: '3px 7px', display: 'inline-block' }}>
+              ⚠ Looks more like {staleness.betterFit} than {trail.pitch_type} — worth a re-check
+            </div>
+          )}
         </div>
         <span style={{ fontSize: 9, fontWeight: 800, color: color, background: color + '18', border: `1px solid ${color}55`, borderRadius: 4, padding: '2px 6px', flexShrink: 0, letterSpacing: 0.5 }}>LOCKED</span>
       </div>
@@ -113,6 +144,30 @@ function CuratedRow({ trail, isFirst, isLast, onRemove, onMoveUp, onMoveDown }) 
           <button onClick={() => setConfirming(true)} style={{ background: 'none', border: `1px solid #ddd`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: '#c0392b' }}><Trash2 size={14} /></button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Bulk delete bar — appears above the list once anything is checked ────────
+function BulkDeleteBar({ count, onDelete, onCancel }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fdecea', border: '1px solid #f5c6c0', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', fontFamily: FONT }}>{count} trail{count !== 1 ? 's' : ''} selected</span>
+      {confirming ? (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#c0392b', fontFamily: FONT }}>Delete {count}?</span>
+          <button onClick={() => { setConfirming(false); onDelete(); }} style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 5, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>Yes, delete</button>
+          <button onClick={() => setConfirming(false)} style={{ background: '#eee', color: NAVY, border: 'none', borderRadius: 5, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>Cancel</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: '#888', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: FONT }}>Clear selection</button>
+          <button onClick={() => setConfirming(true)} style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Trash2 size={13} /> Delete Selected
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -201,9 +256,11 @@ export default function TrailCuration({ setScreen }) {
   const [selected, setSelected] = useState(null);
   const [curated, setCurated] = useState([]);
   const [pitchGroups, setPitchGroups] = useState({});
+  const [typeStats, setTypeStats] = useState({});
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(null);
   const [toast, setToast] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   // Load all distinct pitcher+team combos from TrackmanPitch
   useEffect(() => {
@@ -230,8 +287,10 @@ export default function TrailCuration({ setScreen }) {
     setLoading(true);
     setCurated([]);
     setPitchGroups({});
+    setTypeStats({});
+    setSelectedIds(new Set());
     try {
-      const [curatedRows, pitchRows] = await Promise.all([
+      const [curatedRows, pitchRowsRaw] = await Promise.all([
         base44.entities.CuratedDugoutTrail.filter(
           { pitcher_name: p.name, pitcher_team: p.team }, 'display_order', 50
         ).catch(() => []),
@@ -240,15 +299,30 @@ export default function TrailCuration({ setScreen }) {
         ).catch(() => []),
       ]);
       setCurated(curatedRows || []);
-      // Group by canonical pitch type (normalizePitch collapses Fastball/
-      // FourSeamFastBall/Four-Seam/FF into one "Four-Seam" bucket)
+
+      // Same two-pass correction (type-merge, then per-pitch mistag) used
+      // everywhere else in the app — without this, the candidate list below
+      // would show pitches grouped by their RAW tagged_pitch_type, meaning a
+      // coach curating "the best ChangeUp" could be picking from a candidate
+      // pool contaminated with mistagged pitches, or missing good candidates
+      // that were mislabeled into the wrong bucket.
+      const merged = applyArsenalCorrection(pitchRowsRaw || []);
+      const { data: pitchRows } = correctMistaggedPitches(merged.data);
+
       const groups = {};
-      for (const r of (pitchRows || [])) {
+      for (const r of pitchRows) {
         const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
         if (!groups[pt]) groups[pt] = [];
         groups[pt].push({ ...r, source_game_id_short: (r.game_id || '').slice(-6) });
       }
       setPitchGroups(groups);
+
+      // Stats built from the CORRECTED candidate pool — used only to flag
+      // curated trails (below) whose frozen physical values no longer fit
+      // their label, e.g. a trail curated before correction existed, or from
+      // a pitch that's since been reclassified. Purely informational: never
+      // auto-changes a trail, just surfaces "you may want to review this."
+      setTypeStats(buildTypeStats(pitchRows));
     } finally {
       setLoading(false);
     }
@@ -262,6 +336,28 @@ export default function TrailCuration({ setScreen }) {
   const handleRemove = async (trail) => {
     await base44.entities.CuratedDugoutTrail.delete(trail.id).catch(() => {});
     setCurated(prev => prev.filter(t => t.id !== trail.id));
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(trail.id); return next; });
+  };
+
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.size === curated.length ? new Set() : new Set(curated.map(t => t.id)));
+  };
+
+  const handleDeleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    await Promise.all(ids.map(id => base44.entities.CuratedDugoutTrail.delete(id).catch(() => {})));
+    setCurated(prev => prev.filter(t => !selectedIds.has(t.id)));
+    setSelectedIds(new Set());
+    setToast(`Removed ${ids.length} trail${ids.length !== 1 ? 's' : ''}`);
   };
 
   const handleRemoveType = async (pitchType) => {
@@ -361,9 +457,20 @@ export default function TrailCuration({ setScreen }) {
 
             {/* Left: Curated trails */}
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: GOLD, marginBottom: 10 }}>
-                Curated Trails ({curated.length})
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: GOLD }}>
+                  Curated Trails ({curated.length})
+                </div>
+                {curated.length > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#888', fontWeight: 600, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={selectedIds.size === curated.length} onChange={toggleSelectAll} style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                    Select all
+                  </label>
+                )}
               </div>
+              {selectedIds.size > 0 && (
+                <BulkDeleteBar count={selectedIds.size} onDelete={handleDeleteSelected} onCancel={() => setSelectedIds(new Set())} />
+              )}
               {curated.length === 0 && (
                 <div style={{ background: '#fff', border: `1px dashed ${GOLD}55`, borderRadius: 8, padding: '24px 16px', textAlign: 'center', color: '#aaa', fontSize: 13, fontStyle: 'italic' }}>
                   No curated trails yet — add from available pitches →
@@ -378,6 +485,9 @@ export default function TrailCuration({ setScreen }) {
                   onRemove={() => handleRemove(trail)}
                   onMoveUp={() => handleMoveUp(idx)}
                   onMoveDown={() => handleMoveDown(idx)}
+                  checked={selectedIds.has(trail.id)}
+                  onToggleChecked={() => toggleSelected(trail.id)}
+                  staleness={checkTrailStaleness(trail, typeStats)}
                 />
               ))}
               {curated.length > 0 && (

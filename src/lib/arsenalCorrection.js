@@ -177,11 +177,13 @@ const medianOf = arr => {
   return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 };
 
-export function correctMistaggedPitches(rows, opts = {}) {
+// Per-type robust stats (median, floored scaled-MAD) for a set of a single
+// pitcher's rows. Exported so callers outside the correction pass itself
+// (e.g. flagging a curated trail whose frozen physical values no longer fit
+// its label) can reuse the EXACT same stats the mistag pass reasons from,
+// instead of a parallel reimplementation that could quietly drift from it.
+export function buildTypeStats(rows, opts = {}) {
   const o = { ...MISTAG_DEFAULTS, ...opts };
-  if (!rows || !rows.length) return { data: rows || [], changes: 0, details: [] };
-
-  // Per-type robust stats (median, floored scaled-MAD) on season data
   const byType = {};
   for (const r of rows) {
     const pt = canonPitchType(r.tagged_pitch_type || r.pitch_type);
@@ -200,8 +202,6 @@ export function correctMistaggedPitches(rows, opts = {}) {
       const mad = medianOf(v.map(x => Math.abs(x - med))) * 1.4826;
       s[k] = { center: med, spread: Math.max(mad, o.stdFloors[k]) };
     }
-    // Spin: robust stats kept separately — not part of the distance metric,
-    // used only as a reassignment veto (null-tolerant for no-spin venues).
     const sv = rs.map(r => num(r.spin_rate)).filter(x => x != null);
     if (ok && sv.length >= o.minTypeCount) {
       const med = medianOf(sv);
@@ -210,18 +210,32 @@ export function correctMistaggedPitches(rows, opts = {}) {
     }
     if (ok) stats[pt] = s;
   }
+  return stats;
+}
+
+// RMS z-distance of one pitch (any object with rel_speed/induced_vert_break/
+// horz_break) from a single type's stats, as built by buildTypeStats. Returns
+// null if the probe is missing any of the three metrics.
+export function zDistToType(probe, typeStats) {
+  if (!typeStats) return null;
+  let sum = 0;
+  for (const [k, get] of METRICS) {
+    const v = get(probe);
+    if (v == null) return null;
+    sum += ((v - typeStats[k].center) / typeStats[k].spread) ** 2;
+  }
+  return Math.sqrt(sum / METRICS.length);
+}
+
+export function correctMistaggedPitches(rows, opts = {}) {
+  const o = { ...MISTAG_DEFAULTS, ...opts };
+  if (!rows || !rows.length) return { data: rows || [], changes: 0, details: [] };
+
+  const stats = buildTypeStats(rows, o);
   const types = Object.keys(stats);
   if (types.length < 2) return { data: rows, changes: 0, details: [] };
 
-  const zDist = (r, s) => {
-    let sum = 0;
-    for (const [k, get] of METRICS) {
-      const v = get(r);
-      if (v == null) return null;
-      sum += ((v - s[k].center) / s[k].spread) ** 2;
-    }
-    return Math.sqrt(sum / METRICS.length);
-  };
+  const zDist = (r, s) => zDistToType(r, s);
 
   let changes = 0;
   const details = [];
