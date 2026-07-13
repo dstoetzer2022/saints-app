@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import * as THREE from 'three';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import {
@@ -14,6 +15,7 @@ import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType, canonicalNam
 import { C, FONT } from '@/lib/darkTheme';
 import { base44 } from '@/api/base44Client';
 import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
+import { buildScene, buildPitcherForScene, makeCycle } from '@/lib/pitch3dEngine';
 import MovementScatterCircular from '@/components/charts/MovementScatterCircular';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
@@ -170,38 +172,104 @@ function usePitcherClips(pitches) {
   return videoByType;
 }
 
-function ClipModal({ videoUrl, pitchType, onClose }) {
+// ── 3D flight panel — mounts a Three.js scene for exactly one pitch type,
+// reusing the SAME engine (pitch3dEngine.js) and cycle helper DugoutView
+// uses. Built from the pitcher's real raw pitches (trackmanRows path), which
+// PitcherProfileOverview already has in memory — no extra fetch, and higher
+// fidelity than DugoutView's pre-aggregated-arsenal path (that tradeoff
+// exists there for TV load speed; this page already paid the pitch-level
+// fetch cost, so there's no reason to settle for the aggregate version).
+function Flight3DPanel({ pitches, pitchType }) {
+  const mountRef = useRef(null);
+  const sceneRef = useRef(null);
+  const cycleRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const rows = pitches.filter(p => normalizePitch(p.tagged_pitch_type || p.pitch_type) === normalizePitch(pitchType));
+    const pitcher = buildPitcherForScene(pitchType, null, [], rows);
+    if (!pitcher || !pitcher.pitches.length) return;
+    const scene3d = buildScene(THREE, mount, pitcher, { mode: 'avg' });
+    scene3d.setCam('catcher');
+    sceneRef.current = scene3d;
+    cycleRef.current = makeCycle(scene3d, pitcher.pitches.length, null, 3500);
+    return () => {
+      if (cycleRef.current) { cycleRef.current.stop(); cycleRef.current = null; }
+      if (sceneRef.current) { sceneRef.current.dispose(); sceneRef.current = null; }
+    };
+  }, [pitches, pitchType]);
+
+  return <div ref={mountRef} style={{ width: '100%', height: '100%', minHeight: 340, cursor: 'grab', background: '#050d13', borderRadius: 8 }} />;
+}
+
+function PitchDetailModal({ pitches, clip, pitchType, onClose }) {
+  const [tab, setTab] = useState('flight'); // 3D flight is always available; video is the secondary tab, shown only when a clip exists
   const [failed, setFailed] = useState(false);
-  const src = failed ? videoUrl : dugoutVideoUrl(videoUrl, 'horizontal');
+  const hasVideo = !!clip?.video_url;
+  const src = failed ? clip?.video_url : dugoutVideoUrl(clip?.video_url, 'horizontal');
+
   return (
     <div
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 720 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 760 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>{pitchType}</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>{pitchType}</span>
+            <div style={{ display: 'flex', gap: 4, marginLeft: 10 }}>
+              <button
+                onClick={() => setTab('flight')}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', ...FONT_STYLE,
+                  background: tab === 'flight' ? C.gold : 'transparent', color: tab === 'flight' ? '#1a1400' : C.muted,
+                  border: `1px solid ${tab === 'flight' ? C.gold : C.rim}`,
+                }}
+              >
+                3D Flight
+              </button>
+              <button
+                onClick={() => hasVideo && setTab('video')}
+                disabled={!hasVideo}
+                title={hasVideo ? '' : 'No clip attached for this pitch type'}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, ...FONT_STYLE,
+                  cursor: hasVideo ? 'pointer' : 'not-allowed',
+                  background: tab === 'video' ? C.gold : 'transparent',
+                  color: !hasVideo ? C.faint : (tab === 'video' ? '#1a1400' : C.muted),
+                  border: `1px solid ${tab === 'video' ? C.gold : C.rim}`,
+                }}
+              >
+                Video
+              </button>
+            </div>
+          </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4 }} aria-label="Close">×</button>
         </div>
-        <video
-          src={src}
-          controls autoPlay playsInline
-          onError={() => { if (!failed) setFailed(true); }}
-          style={{ width: '100%', borderRadius: 8, background: '#000', display: 'block' }}
-        />
+
+        {tab === 'flight' ? (
+          <Flight3DPanel pitches={pitches} pitchType={pitchType} />
+        ) : (
+          <video
+            src={src}
+            controls autoPlay playsInline
+            onError={() => { if (!failed) setFailed(true); }}
+            style={{ width: '100%', borderRadius: 8, background: '#000', display: 'block' }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function ClipPlayButton({ clip, pitchType }) {
+function PitchDetailButton({ pitches, clip, pitchType }) {
   const [open, setOpen] = useState(false);
-  if (!clip?.video_url) return <span style={{ display: 'inline-block', width: 22 }} />;
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title={`Play ${pitchType} clip`}
+        title={`View ${pitchType} — 3D flight${clip?.video_url ? ' & video' : ''}`}
         style={{
           width: 20, height: 20, borderRadius: '50%', border: 'none', cursor: 'pointer',
           background: 'rgba(200,146,12,0.18)', color: C.gold, display: 'inline-flex',
@@ -210,7 +278,7 @@ function ClipPlayButton({ clip, pitchType }) {
       >
         ▶
       </button>
-      {open && <ClipModal videoUrl={clip.video_url} pitchType={pitchType} onClose={() => setOpen(false)} />}
+      {open && <PitchDetailModal pitches={pitches} clip={clip} pitchType={pitchType} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -301,7 +369,7 @@ function ArsenalTable({ pitches, videoByType }) {
                 onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
               >
                 <td style={{ ...td, textAlign: 'left', padding: '7px 4px 7px 8px' }}>
-                  <ClipPlayButton clip={videoByType?.[normalizePitch(d.pt)]} pitchType={d.pt} />
+                  <PitchDetailButton pitches={pitches} clip={videoByType?.[normalizePitch(d.pt)]} pitchType={d.pt} />
                 </td>
                 <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 6 }} />

@@ -9,8 +9,6 @@ import { getLeaguePitches } from '@/lib/leagueCache';
 import { buildScene } from '@/lib/pitch3dEngine';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
-import { lazy, Suspense } from 'react';
-const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
 import PrintProfileReport from '@/components/reports/PrintProfileReport';
@@ -623,8 +621,8 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
     });
   }, [normalizedName, trackmanName, isPitcher]);
 
-  const tabs = isPitcher ? ['overview', '3dflight', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
-  const tabLabels = { overview: 'Overview', '3dflight': '3D Flight', trailcuration: 'Trail Curation', gamelog: 'Game Log', compare: 'Compare' };
+  const tabs = isPitcher ? ['overview', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
+  const tabLabels = { overview: 'Overview', trailcuration: 'Trail Curation', gamelog: 'Game Log', compare: 'Compare' };
 
   // Eyebrow
   const eyebrow = `${team.name} · ${isPitcher ? 'Pitcher' : 'Hitter'}`;
@@ -697,7 +695,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       </div>
 
       {/* Content */}
-      <div data-print-root style={{ flex: 1, overflowY: (tab === '3dflight' || tab === 'trailcuration') ? 'hidden' : 'auto', padding: (tab === '3dflight' || tab === 'trailcuration') ? 0 : '28px 32px 80px', display: (tab === '3dflight' || tab === 'trailcuration') ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
+      <div data-print-root style={{ flex: 1, overflowY: tab === 'trailcuration' ? 'hidden' : 'auto', padding: tab === 'trailcuration' ? 0 : '28px 32px 80px', display: tab === 'trailcuration' ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
             <div style={{ width: 26, height: 26, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -709,11 +707,6 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
             )}
             {tab === 'overview' && !isPitcher && (
               <BatterProfileOverview pitches={pitches} runnerObs={runnerObs} catcherObs={catcherObs} hitterPool={hitterPool} />
-            )}
-            {tab === '3dflight' && isPitcher && (
-              <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#888' }}>Loading 3D engine…</div>}>
-                <Pitch3DTab pitcherName={trackmanName} />
-              </Suspense>
             )}
             {tab === 'trailcuration' && isPitcher && (
               <PasswordGate>

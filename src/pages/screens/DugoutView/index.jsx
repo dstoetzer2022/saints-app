@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
-import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine';
+import { buildScene, buildPitcherForScene, colorFor, makeCycle } from '@/lib/pitch3dEngine';
 import { normalizePitch } from '@/lib/ds';
 import { isStrike, isSwing as isSwingRow, isWhiff, normHand, buildZoneCounts } from '@/lib/statsUtils';
 import { fetchAllFiltered } from '@/lib/fetchAll';
@@ -40,28 +40,6 @@ function TeamLogo({ logoUrl, teamName, size = 54 }) {
 }
 
 // ── Cycle controller ──────────────────────────────────────────
-function makeCycle(scene3d, pitchCount, onCycle, holdMs = 3000) {
-  let idx = 0, timer = null, stopped = false;
-  const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
-  function show(i) {
-    if (stopped) return;
-    idx = ((i % pitchCount) + pitchCount) % pitchCount;
-    scene3d.activeIdx = idx;
-    scene3d.select(idx);
-    scene3d.setVisible(new Array(pitchCount).fill(true));
-    scene3d.play();
-    if (onCycle) onCycle(idx);
-  }
-  scene3d.onDone = () => {
-    if (stopped) return;
-    clearTimer();
-    timer = setTimeout(() => { if (!stopped) show(idx + 1); }, Math.max(0, holdMs - 600));
-  };
-  scene3d.activeIdx = 0;
-  show(0);
-  return { stop() { stopped = true; clearTimer(); scene3d.onDone = null; } };
-}
-
 // ── Build pitcher from curated trails ─────────────────────────
 function buildPitcherFromCurated(pitcherName, pitcherHand, trails) {
   const pitches = trails.map(t => {

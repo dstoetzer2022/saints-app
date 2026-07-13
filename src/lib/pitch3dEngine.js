@@ -407,6 +407,32 @@ export function buildPitcherForScene(displayName, throws_, arsenalRows, trackman
 }
 
 // ── startPitchCycle ───────────────────────────────────────────────────────────
+// Animation-completion-driven cycle (waits for the flight animation to
+// finish via scene3d.onDone, rather than a fixed interval) — used by
+// DugoutView and the pitcher-profile pitch detail modal. For a single pitch
+// (pitchCount === 1) this just auto-replays the same flight on a loop.
+export function makeCycle(scene3d, pitchCount, onCycle, holdMs = 3000) {
+  let idx = 0, timer = null, stopped = false;
+  const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  function show(i) {
+    if (stopped) return;
+    idx = ((i % pitchCount) + pitchCount) % pitchCount;
+    scene3d.activeIdx = idx;
+    scene3d.select(idx);
+    scene3d.setVisible(new Array(pitchCount).fill(true));
+    scene3d.play();
+    if (onCycle) onCycle(idx);
+  }
+  scene3d.onDone = () => {
+    if (stopped) return;
+    clearTimer();
+    timer = setTimeout(() => { if (!stopped) show(idx + 1); }, Math.max(0, holdMs - 600));
+  };
+  scene3d.activeIdx = 0;
+  show(0);
+  return { stop() { stopped = true; clearTimer(); scene3d.onDone = null; } };
+}
+
 // Cycles through pitches in the scene, calling onIndexChange(i) each time.
 // Returns { stop } to clean up.
 export function startPitchCycle(scene3d, pitchCount, onIndexChange, intervalMs = 3000) {
