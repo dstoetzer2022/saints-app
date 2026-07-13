@@ -5,6 +5,7 @@ import { buildScene, buildPitcherForScene, colorFor } from '@/lib/pitch3dEngine'
 import { normalizePitch } from '@/lib/ds';
 import { isStrike, isSwing as isSwingRow, isWhiff } from '@/lib/statsUtils';
 import { fetchAllFiltered } from '@/lib/fetchAll';
+import { applyArsenalCorrection, correctMistaggedPitches } from '@/lib/arsenalCorrection';
 import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
 import HitterDugoutPanel from '@/components/dugout/HitterDugoutPanel';
 import { colorAt } from '@/components/dugout/HitterViz';
@@ -524,10 +525,19 @@ export default function DugoutView({ setScreen }) {
       ]);
       const allRows = [...(tp1||[]), ...(tp2||[])].filter((r,i,a) => a.findIndex(x=>x.id===r.id)===i);
 
-      if (allRows.length) {
-        const total = allRows.length;
+      // This fallback only fires when PitcherArsenal has no season rows for
+      // this pitcher yet (aggregation hasn't run), which means it's reading
+      // raw tagged_pitch_type directly — the same correction rebuildPitcherSeason
+      // applies before building those rows needs to happen here too, or a
+      // pitcher who's missed a rebuild would show his RAW mistagged arsenal
+      // on the dugout TV instead of a corrected one. In-memory only.
+      const { data: mergedRows } = applyArsenalCorrection(allRows);
+      const { data: correctedRows } = correctMistaggedPitches(mergedRows);
+
+      if (correctedRows.length) {
+        const total = correctedRows.length;
         const groups = {};
-        for (const r of allRows) {
+        for (const r of correctedRows) {
           const pt = normalizePitch(r.tagged_pitch_type || r.pitch_type || 'Unknown');
           (groups[pt] = groups[pt] || []).push(r);
         }
