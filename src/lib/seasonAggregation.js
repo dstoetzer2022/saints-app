@@ -14,7 +14,7 @@
 //    (curly apostrophes, "First Last") no longer leave orphan season rows.
 
 import { base44 } from '@/api/base44Client';
-import { isStrike, isSwing, isWhiff, canonicalNameKey } from '@/lib/statsUtils';
+import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts, getZone9 } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { applyArsenalCorrection, correctMistaggedPitches } from '@/lib/arsenalCorrection';
@@ -151,14 +151,32 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
     const strikeCount = rs.filter(isStrike).length; // shared classifier — fixes BallinDirt bug
     const strike_pct = rs.length > 0 ? (strikeCount / rs.length) * 100 : null;
 
-    let ahead_count = 0, even_count = 0, behind_count = 0, first_pitch_count = 0;
+    let ahead_count = 0, even_count = 0, behind_count = 0, first_pitch_count = 0, two_strike_count = 0;
+    let lhh_count = 0, lhh_strike_count = 0, rhh_count = 0, rhh_strike_count = 0;
     for (const r of rs) {
       const b = r.balls ?? 0, s = r.strikes ?? 0;
       if (s > b) ahead_count++;
       else if (b > s) behind_count++;
       else even_count++;
       if (b === 0 && s === 0) first_pitch_count++;
+      if (s === 2) two_strike_count++;
+
+      const hand = normHand(r.batter_hand);
+      if (hand === 'L') { lhh_count++; if (isStrike(r)) lhh_strike_count++; }
+      else if (hand === 'R') { rhh_count++; if (isStrike(r)) rhh_strike_count++; }
+      // Switch-hitters (normHand 'S') aren't counted in either split — the
+      // side they actually batted from isn't in this row, only their
+      // switch-hitter status, so guessing would misattribute the pitch.
     }
+
+    // Per-type whiff% and zone% — these previously only existed as OVERALL
+    // PitcherSeasonRates fields, never broken out by pitch type, even though
+    // PitcherArsenal has always had whiff_pct/zone_pct columns for it.
+    const typeSwings = rs.filter(isSwing);
+    const typeWhiffs = rs.filter(isWhiff);
+    const typeLocated = rs.filter(hasLoc);
+    const whiff_pct = typeSwings.length ? (typeWhiffs.length / typeSwings.length) * 100 : null;
+    const zone_pct = typeLocated.length ? (typeLocated.filter(inZone).length / typeLocated.length) * 100 : null;
 
     const record = {
       pitcher_name: lastFirstName,
@@ -181,6 +199,14 @@ export async function rebuildPitcherSeason(lastFirstName, teamTrackmanCode, team
       even_count,
       behind_count,
       first_pitch_count,
+      two_strike_count,
+      lhh_count,
+      lhh_strike_count,
+      rhh_count,
+      rhh_strike_count,
+      whiff_pct,
+      zone_pct,
+      zone_counts: buildZoneCounts(rs),
     };
     record.strike_pct = strike_pct; // explicit assignment (known silent-drop failure mode)
     return record;

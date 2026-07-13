@@ -267,6 +267,47 @@ export function percentile(value, pool) {
   return Math.round((count / sorted.length) * 100);
 }
 
+// 13-zone location map: zones 1-9 are the in-zone 3x3 grid (row 0 = bottom,
+// col 0 = left, zone = row*3+col+1), zones 11-14 are the four shadow-zone
+// quadrants just outside the rulebook zone. Matches PitcherArsenal.zone_counts'
+// intended convention (see schema description) and the zone math already used
+// for hitter location plots in HitterViz.jsx — same rulebook zone bounds
+// (matches the inZone check used elsewhere in the app: 1.5-3.5 ft height,
+// ±0.83 ft side) and the same 0.40 ft shadow band, so a pitcher's zone_counts
+// and a hitter's zone-based plots agree on what "zone 5" means.
+const SZ9 = { LEFT: -0.83, RIGHT: 0.83, BOT: 1.50, TOP: 3.50 };
+const SHADOW_BAND = 0.40;
+const OUTB9 = { LEFT: SZ9.LEFT - SHADOW_BAND, RIGHT: SZ9.RIGHT + SHADOW_BAND, BOT: SZ9.BOT - SHADOW_BAND, TOP: SZ9.TOP + SHADOW_BAND };
+
+export function getZone9(side, height) {
+  const s = parseFloat(side), h = parseFloat(height);
+  if (!Number.isFinite(s) || !Number.isFinite(h)) return null;
+  if (s < OUTB9.LEFT || s > OUTB9.RIGHT || h < OUTB9.BOT || h > OUTB9.TOP) return null;
+  const inX = s >= SZ9.LEFT && s <= SZ9.RIGHT, inY = h >= SZ9.BOT && h <= SZ9.TOP;
+  if (inX && inY) {
+    const COL = (SZ9.RIGHT - SZ9.LEFT) / 3, ROW = (SZ9.TOP - SZ9.BOT) / 3;
+    const col = s < (SZ9.LEFT + COL) ? 0 : s < (SZ9.LEFT + 2 * COL) ? 1 : 2;
+    const row = h < (SZ9.BOT + ROW) ? 0 : h < (SZ9.BOT + 2 * ROW) ? 1 : 2;
+    return row * 3 + col + 1;
+  }
+  const left = s < (SZ9.LEFT + SZ9.RIGHT) / 2, bot = h < (SZ9.BOT + SZ9.TOP) / 2;
+  if (left && !bot) return 11;
+  if (!left && !bot) return 12;
+  if (left && bot) return 13;
+  return 14;
+}
+
+// Builds a {zoneId: count} map for a set of pitches, matching PitcherArsenal.zone_counts.
+export function buildZoneCounts(rows) {
+  const counts = {};
+  for (const r of rows) {
+    const z = getZone9(r.plate_loc_side, r.plate_loc_height);
+    if (z == null) continue;
+    counts[z] = (counts[z] || 0) + 1;
+  }
+  return counts;
+}
+
 export function getCountCategory(balls, strikes) {
   if (balls > strikes) return "behind";
   if (balls < strikes) return "ahead";
