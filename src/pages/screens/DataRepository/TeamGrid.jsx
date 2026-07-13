@@ -72,7 +72,7 @@ function TeamCard({ team, onClick }) {
   );
 }
 
-export default function TeamGrid({ onSelectTeam, onHome }) {
+export default function TeamGrid({ onSelectTeam, onHome, onLeaderboard }) {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -93,12 +93,22 @@ export default function TeamGrid({ onSelectTeam, onHome }) {
   return (
     <div style={{ minHeight: '100vh', background: '#07111c', padding: '40px 24px 80px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ width: '100%', maxWidth: 900 }}>
-        <button
-          onClick={onHome}
-          style={{ background: 'none', border: '1px solid rgba(198,181,131,0.3)', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, color: GOLD, cursor: 'pointer', marginBottom: 32 }}
-        >
-          ← Home
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, gap: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={onHome}
+            style={{ background: 'none', border: '1px solid rgba(198,181,131,0.3)', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, color: GOLD, cursor: 'pointer' }}
+          >
+            ← Home
+          </button>
+          {onLeaderboard && (
+            <button
+              onClick={onLeaderboard}
+              style={{ background: 'rgba(198,181,131,0.12)', border: '1px solid rgba(198,181,131,0.4)', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 700, color: GOLD, cursor: 'pointer' }}
+            >
+              🏆 League Leaderboard
+            </button>
+          )}
+        </div>
 
         <div style={{ marginBottom: 40, textAlign: 'center' }}>
           <h1 style={{ fontFamily: "'Archivo', sans-serif", fontWeight: 800, fontSize: 28, color: '#f0ece0', letterSpacing: '-0.5px', margin: 0 }}>

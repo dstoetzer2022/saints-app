@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import {
@@ -10,8 +10,10 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
   CartesianGrid, ResponsiveContainer, ScatterChart, Scatter, ZAxis, Legend
 } from 'recharts';
-import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType } from '@/lib/statsUtils';
+import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType, canonicalNameKey } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
+import { base44 } from '@/api/base44Client';
+import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
 import MovementScatterCircular from '@/components/charts/MovementScatterCircular';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
@@ -136,8 +138,85 @@ function PitcherPercentiles({ pitches, allPitches, pitcherPool }) {
   );
 }
 
+// ── Pitcher clips: one clip per pitch type, same source/lookup as DugoutView ──
+// PitcherVideoClip is deliberately its own entity (not PitcherArsenal.video_url)
+// so a Trackman resync that wipes/regenerates season arsenal rows can't take
+// attached clips down with it. Exact match on the row's own Trackman name
+// first; falls back to a broader canonicalNameKey scan (nickname/spelling
+// variants) exactly like DugoutView does, so "Joe" vs "Joseph" O'Regan still
+// finds his clips.
+function usePitcherClips(pitches) {
+  const [videoByType, setVideoByType] = useState({});
+  const trackmanName = pitches?.[0]?.pitcher_name || null;
+
+  useEffect(() => {
+    if (!trackmanName) { setVideoByType({}); return; }
+    let live = true;
+    (async () => {
+      let clips = await base44.entities.PitcherVideoClip.filter({ pitcher_name: trackmanName }, null, 50).catch(() => []);
+      if (!clips?.length) {
+        const key = canonicalNameKey(trackmanName);
+        const broader = await base44.entities.PitcherVideoClip.list(null, 500).catch(() => []);
+        clips = (broader || []).filter(c => canonicalNameKey(c.pitcher_name) === key);
+      }
+      if (!live) return;
+      const map = {};
+      for (const c of clips || []) map[normalizePitch(c.pitch_type)] = c;
+      setVideoByType(map);
+    })();
+    return () => { live = false; };
+  }, [trackmanName]);
+
+  return videoByType;
+}
+
+function ClipModal({ videoUrl, pitchType, onClose }) {
+  const [failed, setFailed] = useState(false);
+  const src = failed ? videoUrl : dugoutVideoUrl(videoUrl, 'horizontal');
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 720 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>{pitchType}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4 }} aria-label="Close">×</button>
+        </div>
+        <video
+          src={src}
+          controls autoPlay playsInline
+          onError={() => { if (!failed) setFailed(true); }}
+          style={{ width: '100%', borderRadius: 8, background: '#000', display: 'block' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ClipPlayButton({ clip, pitchType }) {
+  const [open, setOpen] = useState(false);
+  if (!clip?.video_url) return <span style={{ display: 'inline-block', width: 22 }} />;
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title={`Play ${pitchType} clip`}
+        style={{
+          width: 20, height: 20, borderRadius: '50%', border: 'none', cursor: 'pointer',
+          background: 'rgba(200,146,12,0.18)', color: C.gold, display: 'inline-flex',
+          alignItems: 'center', justifyContent: 'center', fontSize: 9, flexShrink: 0,
+        }}
+      >
+        ▶
+      </button>
+      {open && <ClipModal videoUrl={clip.video_url} pitchType={pitchType} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 // ── Arsenal detail table ───────────────────────────────────────
-function ArsenalTable({ pitches }) {
+function ArsenalTable({ pitches, videoByType }) {
   const total = pitches.length;
   const { seasonMean: seasonExt, byType: extByType } = useMemo(() => extensionBreakdown(pitches), [pitches]);
   const extMap = useMemo(() => Object.fromEntries((extByType || []).map(t => [t.type, t.mean])), [extByType]);
@@ -205,11 +284,11 @@ function ArsenalTable({ pitches }) {
           <thead>
             <tr>
               {[
-                'Pitch', 'Use%',
+                '', 'Pitch', 'Use%',
                 ...(hasHandSplit ? ['vs R', 'vs L'] : []),
                 'Velo', 'Max', 'Spin', 'Ext', 'Str%', 'Whiff%', 'Zone%', 'Z-Sw%', 'Z-Wh%', 'Chase%', 'EV',
               ].map((h, i) => (
-                <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
+                <th key={h || 'video'} style={{ ...th, textAlign: i <= 1 ? 'left' : 'right', width: i === 0 ? 24 : undefined }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -221,6 +300,9 @@ function ArsenalTable({ pitches }) {
                 onMouseEnter={e => { e.currentTarget.style.background = C.raised; }}
                 onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)'; }}
               >
+                <td style={{ ...td, textAlign: 'left', padding: '7px 4px 7px 8px' }}>
+                  <ClipPlayButton clip={videoByType?.[normalizePitch(d.pt)]} pitchType={d.pt} />
+                </td>
                 <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 6 }} />
                   {d.pt}
@@ -647,6 +729,7 @@ function RollingTrendSection({ pitches }) {
 
 // ── Main export ───────────────────────────────────────────────
 export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPool, leaguePitches }) {
+  const videoByType = usePitcherClips(pitches);
   const filteredPitches = useMemo(() => {
     const total = pitches.length;
     if (!total) return pitches;
@@ -720,7 +803,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           </div>
           <Card style={{ marginBottom: 18, overflow: 'hidden', padding: '14px 0' }}>
             <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
-            <ArsenalTable pitches={filteredPitches} />
+            <ArsenalTable pitches={filteredPitches} videoByType={videoByType} />
           </Card>
         </>
       )}

@@ -15,10 +15,19 @@ const REST_DATA_URL = 'https://raw.githubusercontent.com/dstoetzer2022/ccl-pitch
 const WORKLOAD_PITCH_LIMIT = 55;
 const WORKLOAD_WINDOW_DAYS = 2;
 
-function restClass(d) { return d <= 1 ? 'low' : d <= 3 ? 'mid' : 'high'; }
-function restColor(d) { return d <= 1 ? C.red : d <= 3 ? C.amber : C.green; }
-function restLabel(d) { return d === 0 ? 'Today' : d === 1 ? '1 day' : `${d} days`; }
-function availLabel(d) { return d <= 1 ? 'Unavailable' : d <= 3 ? 'Maybe' : 'Available'; }
+// ── Availability tier (unchanged logic, just the single source of truth
+// the 3-column board groups by) ──────────────────────────────────────────
+function tierFor(daysRest, overworked) {
+  if (overworked) return 'unavailable';
+  if (daysRest <= 1) return 'unavailable';
+  if (daysRest <= 3) return 'maybe';
+  return 'available';
+}
+const TIER_META = {
+  available: { title: 'Available', color: C.green, bg: 'rgba(33,197,93,0.16)' },
+  maybe: { title: 'Maybe', color: C.amber, bg: 'rgba(232,168,0,0.16)' },
+  unavailable: { title: 'Unavailable', color: C.red, bg: 'rgba(232,64,64,0.16)' },
+};
 
 // Sums pitches thrown across recent outings within the trailing window (in days,
 // counted back from today). recentOutings is capped at 5 by the scraper, which
@@ -33,46 +42,15 @@ function recentWorkload(outings, windowDays) {
   }, 0);
 }
 
-function RestChip({ days, overworked, workloadPitches }) {
-  const tier = overworked ? 'low' : restClass(days);
-  const color = overworked ? C.red : restColor(days);
-  const label = overworked ? 'Unavailable' : availLabel(days);
+function RolePill({ role }) {
+  const isSP = role === 'SP';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span style={{
-        display: 'inline-flex', alignItems: 'baseline', gap: 4, padding: '5px 12px',
-        borderRadius: 14, fontWeight: 800, fontFamily: FONT, lineHeight: 1,
-        background: `${color}2e`, color,
-      }}>
-        <span style={{ fontSize: 22 }}>{days}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85 }}>{days === 1 ? 'day' : 'days'}</span>
-      </span>
-      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color, marginTop: 2 }}>
-        {label}
-      </span>
-      {overworked && (
-        <span style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{workloadPitches}p / {WORKLOAD_WINDOW_DAYS}d</span>
-      )}
-    </div>
-  );
-}
-
-function RolePills({ starts, relief }) {
-  return (
-    <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
-      {starts > 0 && (
-        <span style={{
-          display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
-          fontFamily: FONT, letterSpacing: 0.3, background: 'rgba(200,146,12,0.16)', color: C.gold,
-        }}>SP</span>
-      )}
-      {relief > 0 && (
-        <span style={{
-          display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
-          fontFamily: FONT, letterSpacing: 0.3, background: 'rgba(90,112,128,0.18)', color: C.muted,
-        }}>RP</span>
-      )}
-    </div>
+    <span style={{
+      padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: FONT, letterSpacing: 0.3,
+      background: isSP ? 'rgba(200,146,12,0.16)' : 'rgba(90,112,128,0.18)', color: isSP ? C.gold : C.muted,
+    }}>
+      {role}
+    </span>
   );
 }
 
@@ -80,83 +58,79 @@ function FlagBadge({ flag }) {
   if (!flag) return null;
   const isBlowup = flag === 'blowup';
   return (
-    <span style={{
-      display: 'inline-block', marginLeft: 6, padding: '3px 9px', borderRadius: 4,
-      fontSize: 11.5, fontWeight: 700, fontFamily: FONT,
-      background: isBlowup ? 'rgba(232,64,64,0.16)' : 'rgba(232,168,0,0.16)',
+    <div style={{
+      fontSize: 10, fontWeight: 700, fontFamily: FONT, marginTop: 4,
       color: isBlowup ? '#f08a8a' : C.amber,
     }}>
-      ⚠ {isBlowup ? 'Blowup' : 'Rough outing'}
-    </span>
-  );
-}
-
-function MiniSparkline({ outings }) {
-  const vals = outings.map(o => o.pitches || 0);
-  const max = Math.max(...vals, 1);
-  return (
-    <div style={{ textAlign: 'right' }}>
-      <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, color: C.muted, marginBottom: 3 }}>Last 5</div>
-      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 20, borderBottom: `1px solid ${C.edge}`, paddingBottom: 2 }}>
-        {vals.map((v, i) => (
-          <div key={i} style={{
-            width: 6, borderRadius: '2px 2px 0 0',
-            height: v ? Math.max(4, (v / max) * 18) : 2,
-            background: v ? C.gold : C.faint,
-            opacity: v ? 1 : 0.4,
-          }} />
-        ))}
-      </div>
+      ⚠ {isBlowup ? 'Blowup last time out' : 'Rough outing last time out'}
     </div>
   );
 }
 
-function PitcherCard({ p, jersey }) {
-  const workloadPitches = recentWorkload(p.recentOutings, WORKLOAD_WINDOW_DAYS);
-  const overworked = workloadPitches >= WORKLOAD_PITCH_LIMIT;
-  const tier = overworked ? 'low' : restClass(p.daysRest);
-  const tierColor = { low: C.red, mid: C.amber, high: C.green }[tier];
-
+function MiniSparkline({ outings }) {
+  const vals = (outings || []).map(o => o.pitches || 0);
+  if (!vals.length) return null;
+  const max = Math.max(...vals, 1);
   return (
-    <div style={{ background: C.surface, borderRadius: 10, padding: '16px 18px', borderLeft: `6px solid ${tierColor}` }}>
+    <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 14, marginTop: 6 }}>
+      {vals.map((v, i) => (
+        <div key={i} style={{
+          width: 4, borderRadius: '1px 1px 0 0',
+          height: v ? Math.max(3, (v / max) * 14) : 2,
+          background: v ? C.gold : C.faint,
+          opacity: v ? 0.85 : 0.4,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+function PitcherCard({ p, jersey, tier, workloadPitches, overworked }) {
+  const meta = TIER_META[tier];
+  return (
+    <div style={{ background: C.raised, borderRadius: 8, padding: '10px 12px', borderLeft: `3px solid ${meta.color}`, opacity: tier === 'unavailable' && !overworked ? 0.85 : 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 14, fontWeight: 800, color: C.white }}>
+          {jersey && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginRight: 5, fontVariantNumeric: 'tabular-nums' }}>#{jersey}</span>}
+          {p.pitcher}
+        </span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums' }}>
+          {p.daysRest}d
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {p.starts > 0 && <RolePill role="SP" />}
+        {p.relief > 0 && <RolePill role="RP" />}
+        <span>{p.starts}GS &middot; {p.relief}RP &middot; avg {p.avgPitches ?? '—'}p</span>
+      </div>
+      {p.lastOpponent && (
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>vs {p.lastOpponent}</div>
+      )}
+      <FlagBadge flag={p.lastOutingFlag} />
       {overworked && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(232,64,64,0.14)', color: '#ff8f8f',
-          fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 6, marginBottom: 10, fontFamily: FONT,
-        }}>
-          ⚠ {workloadPitches} pitches in last {WORKLOAD_WINDOW_DAYS} days — unavailable
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#ff8f8f', marginTop: 4 }}>
+          ⚠ {workloadPitches}p in last {WORKLOAD_WINDOW_DAYS}d — overworked overrides rest tier
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            {jersey && (
-              <span style={{ fontSize: 14, fontWeight: 800, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>#{jersey}</span>
-            )}
-            <span style={{ fontSize: 19, fontWeight: 800, color: C.white, lineHeight: 1.2 }}>{p.pitcher}</span>
-          </div>
-          <RolePills starts={p.starts} relief={p.relief} />
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 5 }}>{p.starts}GS &middot; {p.relief}RP</div>
-        </div>
-        <RestChip days={p.daysRest} overworked={overworked} workloadPitches={workloadPitches} />
+      <MiniSparkline outings={p.recentOutings} />
+    </div>
+  );
+}
+
+function TierColumn({ tier, pitchers, jerseyByName }) {
+  const meta = TIER_META[tier];
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ padding: '11px 14px', borderTop: `3px solid ${meta.color}`, borderBottom: `1px solid ${C.edge}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: meta.color, fontFamily: FONT }}>{meta.title}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 10, background: meta.bg, color: meta.color, fontFamily: FONT }}>{pitchers.length}</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, paddingTop: 12, borderTop: `1px solid ${C.edge}` }}>
-        <div>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: C.muted, marginBottom: 3 }}>Pitches</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.cream, fontVariantNumeric: 'tabular-nums' }}>{p.avgPitches ?? '—'}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: C.muted, marginBottom: 3 }}>Last IP</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.cream, fontVariantNumeric: 'tabular-nums' }}>{p.lastIp ?? '—'}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: C.muted, marginBottom: 3 }}>Avg rest</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.cream, fontVariantNumeric: 'tabular-nums' }}>{p.avgRestDays != null ? `${p.avgRestDays}d` : '—'}</div>
-        </div>
-      </div>
-      <div style={{ marginTop: 10, fontSize: 12.5, color: C.muted, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <span>{p.lastOpponent || '—'}<FlagBadge flag={p.lastOutingFlag} /></span>
-        <MiniSparkline outings={p.recentOutings || []} />
+      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: 'calc(100vh - 210px)' }}>
+        {pitchers.length === 0 ? (
+          <div style={{ color: C.muted, fontSize: 12, textAlign: 'center', padding: '20px 0' }}>None</div>
+        ) : pitchers.map(({ p, workloadPitches, overworked }) => (
+          <PitcherCard key={p.pitcher} p={p} jersey={jerseyByName[normalizeName(p.pitcher)]} tier={tier} workloadPitches={workloadPitches} overworked={overworked} />
+        ))}
       </div>
     </div>
   );
@@ -167,6 +141,7 @@ export default function PitcherRestTracker({ team, onBack }) {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState('rest');
+  const [roleFilter, setRoleFilter] = useState('all'); // 'all' | 'sp' | 'rp'
   const [jerseyByName, setJerseyByName] = useState({});
 
   useEffect(() => {
@@ -193,16 +168,39 @@ export default function PitcherRestTracker({ team, onBack }) {
       .catch(() => setJerseyByName({}));
   }, [team.name]);
 
-  const pitchers = useMemo(() => {
+  // Enrich once (workload + tier), THEN filter by role, THEN split into
+  // columns, THEN sort within each column — sort is per-column so e.g.
+  // "Workload" ranks the Unavailable column by pitch count (most overworked
+  // first) while Available still ranks by days rest.
+  const enriched = useMemo(() => {
     if (!data?.pitchers) return [];
-    const rows = data.pitchers.filter(p => p.team === team.name);
+    return data.pitchers
+      .filter(p => p.team === team.name)
+      .map(p => {
+        const workloadPitches = recentWorkload(p.recentOutings, WORKLOAD_WINDOW_DAYS);
+        const overworked = workloadPitches >= WORKLOAD_PITCH_LIMIT;
+        return { p, workloadPitches, overworked, tier: tierFor(p.daysRest, overworked) };
+      })
+      .filter(row => roleFilter === 'all'
+        || (roleFilter === 'sp' && row.p.starts > 0)
+        || (roleFilter === 'rp' && row.p.relief > 0));
+  }, [data, team.name, roleFilter]);
+
+  const columns = useMemo(() => {
     const sorters = {
-      rest: (a, b) => a.daysRest - b.daysRest,
-      pitches: (a, b) => (b.avgPitches || 0) - (a.avgPitches || 0),
-      name: (a, b) => a.pitcher.localeCompare(b.pitcher),
+      rest: (a, b) => a.p.daysRest - b.p.daysRest,
+      workload: (a, b) => b.workloadPitches - a.workloadPitches,
+      role: (a, b) => (b.p.starts > 0) - (a.p.starts > 0) || a.p.pitcher.localeCompare(b.p.pitcher),
+      name: (a, b) => a.p.pitcher.localeCompare(b.p.pitcher),
     };
-    return [...rows].sort(sorters[sort] || sorters.rest);
-  }, [data, team.name, sort]);
+    const sorter = sorters[sort] || sorters.rest;
+    const byTier = { available: [], maybe: [], unavailable: [] };
+    enriched.forEach(row => byTier[row.tier].push(row));
+    Object.values(byTier).forEach(rows => rows.sort(sorter));
+    return byTier;
+  }, [enriched, sort]);
+
+  const totalPitchers = enriched.length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.base, fontFamily: FONT, overflow: 'hidden' }}>
@@ -219,20 +217,37 @@ export default function PitcherRestTracker({ team, onBack }) {
             {data?.generatedAt ? `Updated ${new Date(data.generatedAt).toLocaleDateString()}` : 'League-wide, auto-scraped from CCL box scores'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[['rest', 'Days rest'], ['pitches', 'Avg pitches'], ['name', 'Name']].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setSort(key)}
-              style={{
-                background: sort === key ? C.gold : 'none', border: `1px solid ${sort === key ? C.gold : C.rim}`,
-                color: sort === key ? C.base : C.muted, borderRadius: 20, padding: '6px 12px',
-                fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT,
-              }}
-            >
-              {label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['all', 'All'], ['sp', 'SP'], ['rp', 'RP']].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setRoleFilter(key)}
+                style={{
+                  background: roleFilter === key ? C.rim : 'none', border: `1px solid ${C.rim}`,
+                  color: roleFilter === key ? C.cream : C.muted, borderRadius: 20, padding: '5px 11px',
+                  fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: FONT,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[['rest', 'Days rest'], ['workload', 'Workload'], ['role', 'Role'], ['name', 'Name']].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setSort(key)}
+                style={{
+                  background: sort === key ? C.gold : 'none', border: `1px solid ${sort === key ? C.gold : C.rim}`,
+                  color: sort === key ? C.base : C.muted, borderRadius: 20, padding: '6px 12px',
+                  fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -246,15 +261,15 @@ export default function PitcherRestTracker({ team, onBack }) {
             Couldn't load <code style={{ color: C.gold }}>{REST_DATA_URL}</code>.<br />
             Make sure the CCL scraper's <code style={{ color: C.gold }}>data/pitcher-rest.json</code> is deployed into this app's <code style={{ color: C.gold }}>public/data/</code> folder.
           </div>
-        ) : pitchers.length === 0 ? (
+        ) : totalPitchers === 0 ? (
           <div style={{ textAlign: 'center', color: C.muted, padding: 60, fontSize: 13 }}>
             No logged outings yet for {team.name}.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-            {pitchers.map(p => (
-              <PitcherCard key={p.pitcher} p={p} jersey={jerseyByName[normalizeName(p.pitcher)]} />
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(260px, 1fr))', gap: 16 }}>
+            <TierColumn tier="available" pitchers={columns.available} jerseyByName={jerseyByName} />
+            <TierColumn tier="maybe" pitchers={columns.maybe} jerseyByName={jerseyByName} />
+            <TierColumn tier="unavailable" pitchers={columns.unavailable} jerseyByName={jerseyByName} />
           </div>
         )}
       </div>

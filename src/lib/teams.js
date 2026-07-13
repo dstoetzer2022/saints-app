@@ -32,6 +32,12 @@ export function getTeamByCode(code) {
   return TEAMS.find(t => t.code === code);
 }
 
+// TrackmanPitch.pitcher_team / batter_team store the FULL team name string
+// (e.g. "Arroyo Seco Saints"), not the code — this is the lookup for that.
+export function getTeamByName(name) {
+  return TEAMS.find(t => t.name === name);
+}
+
 export function getTeamName(code) {
   const team = getTeamByCode(code);
   return team ? team.name : code;

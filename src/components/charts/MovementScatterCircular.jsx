@@ -9,7 +9,7 @@ import { C, FONT } from '@/lib/darkTheme';
 // leagueAvg (from profileStats.leagueMovementProfile, keyed by same hand) is
 // optional; without it the ellipses are simply omitted.
 export default function MovementScatterCircular({ pitches, leagueAvg }) {
-  const W = 460, H = 460, cx0 = W / 2, cy0 = H / 2, SCALE = 9, R = 200;
+  const W = 460, H = 460, cx0 = W / 2, cy0 = H / 2, R = 200;
 
   const byType = useMemo(() => {
     const map = {};
@@ -25,10 +25,37 @@ export default function MovementScatterCircular({ pitches, leagueAvg }) {
   const total = byType.reduce((s, [, rows]) => s + rows.length, 0);
   if (!total) return <div style={{ color: C.muted, fontSize: 12 }}>No movement data (horz_break / induced_vert_break) for these pitches.</div>;
 
+  // Dynamic scale: size the axis to the pitcher's actual data (plus league-avg
+  // ellipses) so no point ever falls outside the circular clip boundary.
+  // Rings are drawn at even fractions of this domain rather than a fixed
+  // 5/10/15/20" — a pitcher with unusually big movement gets bigger rings
+  // instead of losing points off the edge.
   const isLHP = pitches.some(p => p.pitcher_hand === 'Left');
-  const armLabel = isLHP ? 'GLOVE' : 'ARM';
-  const gloveLabel = isLHP ? 'ARM' : 'GLOVE';
   const handKey = isLHP ? 'Left' : 'Right';
+
+  const maxDataR = useMemo(() => {
+    let m = 0;
+    for (const [, rows] of byType) for (const r of rows) {
+      m = Math.max(m, Math.hypot(r.hb, r.ivb));
+    }
+    for (const [pt] of byType) {
+      const la = leagueAvg?.[handKey]?.[pt];
+      if (la) m = Math.max(m, Math.hypot(la.hbMean, la.ivbMean) + Math.max(la.hbSd, la.ivbSd) * 0.9);
+    }
+    return m;
+  }, [byType, leagueAvg, handKey]);
+
+  const DOMAIN = Math.max(20, Math.ceil((maxDataR * 1.08) / 5) * 5); // 8% pad, snapped to 5"
+  const SCALE = R / DOMAIN;
+  const ringStep = DOMAIN / 4;
+  const rings = [4, 3, 2, 1].map(i => Math.round(ringStep * i));
+
+  // horz_break: positive = arm side, negative = glove side (see
+  // PitcherCanvas3D.jsx rel_side convention). Arm-side points plot to the
+  // RIGHT (x = cx0 + hb*SCALE grows with positive hb), so the ARM label
+  // belongs on the right and GLOVE on the left.
+  const rightLabel = isLHP ? 'GLOVE' : 'ARM';
+  const leftLabel = isLHP ? 'ARM' : 'GLOVE';
 
   const clipId = 'moveClip';
 
@@ -48,11 +75,11 @@ export default function MovementScatterCircular({ pitches, leagueAvg }) {
           <clipPath id={clipId}><circle cx={cx0} cy={cy0} r={R} /></clipPath>
         </defs>
 
-        {[20, 15, 10, 5].map(v => {
+        {rings.map(v => {
           const rad = v * SCALE;
           return (
             <g key={v}>
-              <circle cx={cx0} cy={cy0} r={rad} fill="none" stroke={v === 5 ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.09)'} strokeWidth={1} strokeDasharray={v === 20 ? '' : '3 3'} />
+              <circle cx={cx0} cy={cy0} r={rad} fill="none" stroke={v === rings[rings.length - 1] ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.09)'} strokeWidth={1} strokeDasharray={v === rings[0] ? '' : '3 3'} />
               <text x={cx0 + 3} y={cy0 - rad - 3} fontSize={8} fill={C.muted}>{v}"</text>
             </g>
           );
@@ -63,8 +90,8 @@ export default function MovementScatterCircular({ pitches, leagueAvg }) {
 
         <text x={cx0} y={cy0 - R - 8} textAnchor="middle" fontSize={9} fontWeight={700} fill={C.muted}>RISE</text>
         <text x={cx0} y={cy0 + R + 16} textAnchor="middle" fontSize={9} fontWeight={700} fill={C.muted}>DROP</text>
-        <text x={cx0 - R - 10} y={cy0 + 4} textAnchor="end" fontSize={9} fill={C.muted}>{armLabel}</text>
-        <text x={cx0 + R + 10} y={cy0 + 4} fontSize={9} fill={C.muted}>{gloveLabel}</text>
+        <text x={cx0 - R - 10} y={cy0 + 4} textAnchor="end" fontSize={9} fill={C.muted}>{leftLabel}</text>
+        <text x={cx0 + R + 10} y={cy0 + 4} fontSize={9} fill={C.muted}>{rightLabel}</text>
 
         <g clipPath={`url(#${clipId})`}>
           {byType.map(([pt]) => {

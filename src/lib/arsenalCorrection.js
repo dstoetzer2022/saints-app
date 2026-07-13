@@ -143,3 +143,95 @@ export function applyArsenalCorrection(rows, opts = {}) {
   });
   return { data, changes, merges };
 }
+
+// ── Pass 2: per-pitch mistag correction ──────────────────────────────────────
+// Catches individually mistagged pitches (fat-fingered tags, Trackman
+// auto-class errors) via conservative nearest-centroid reassignment.
+// A pitch is relabeled ONLY when BOTH are true:
+//   1. It is a clear outlier vs its own tagged type (RMS z >= outlierZ), and
+//   2. It fits another established type tightly (RMS z <= nearZ).
+// Cluster stats are ROBUST (median + scaled MAD, not mean/std): mistagged
+// pitches inside a cluster would inflate a std dev enough to hide themselves
+// (e.g. fastballs tagged as sliders widen the "slider" spread), but they
+// cannot drag a median. MAD * 1.4826 estimates sigma for normal data.
+// Types need >= minTypeCount pitches to participate (stable centroids),
+// spreads are floored so tight clusters can't inflate z-scores, and pitches
+// missing velo/IVB/HB are skipped. Run AFTER applyArsenalCorrection.
+export const MISTAG_DEFAULTS = {
+  outlierZ: 3.0,       // must be at least this far from own type
+  nearZ: 1.5,          // and at least this close to the target type
+  minTypeCount: 10,    // both source and target types need this many pitches
+  stdFloors: { velo: 1.5, ivb: 2.0, hb: 2.0 },
+};
+
+const METRICS = [
+  ['velo', r => num(r.rel_speed)],
+  ['ivb', r => num(r.induced_vert_break)],
+  ['hb', r => num(r.horz_break)],
+];
+
+const medianOf = arr => {
+  const s = [...arr].sort((a, b) => a - b);
+  const n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+};
+
+export function correctMistaggedPitches(rows, opts = {}) {
+  const o = { ...MISTAG_DEFAULTS, ...opts };
+  if (!rows || !rows.length) return { data: rows || [], changes: 0, details: [] };
+
+  // Per-type robust stats (median, floored scaled-MAD) on season data
+  const byType = {};
+  for (const r of rows) {
+    const pt = canonPitchType(r.tagged_pitch_type || r.pitch_type);
+    if (!isCorrectable(pt)) continue;
+    (byType[pt] = byType[pt] || []).push(r);
+  }
+  const stats = {};
+  for (const [pt, rs] of Object.entries(byType)) {
+    if (rs.length < o.minTypeCount) continue;
+    const s = {};
+    let ok = true;
+    for (const [k, get] of METRICS) {
+      const v = rs.map(get).filter(x => x != null);
+      if (v.length < o.minTypeCount) { ok = false; break; }
+      const med = medianOf(v);
+      const mad = medianOf(v.map(x => Math.abs(x - med))) * 1.4826;
+      s[k] = { center: med, spread: Math.max(mad, o.stdFloors[k]) };
+    }
+    if (ok) stats[pt] = s;
+  }
+  const types = Object.keys(stats);
+  if (types.length < 2) return { data: rows, changes: 0, details: [] };
+
+  const zDist = (r, s) => {
+    let sum = 0;
+    for (const [k, get] of METRICS) {
+      const v = get(r);
+      if (v == null) return null;
+      sum += ((v - s[k].center) / s[k].spread) ** 2;
+    }
+    return Math.sqrt(sum / METRICS.length);
+  };
+
+  let changes = 0;
+  const details = [];
+  const data = rows.map(r => {
+    const own = canonPitchType(r.tagged_pitch_type || r.pitch_type);
+    if (!stats[own]) return r;
+    const dOwn = zDist(r, stats[own]);
+    if (dOwn == null || dOwn < o.outlierZ) return r;
+    let best = null, dBest = Infinity;
+    for (const t of types) {
+      if (t === own) continue;
+      const d = zDist(r, stats[t]);
+      if (d != null && d < dBest) { dBest = d; best = t; }
+    }
+    if (best == null || dBest > o.nearZ) return r; // outlier, but fits nothing: leave it
+    changes++;
+    details.push({ from: own, to: best, zOwn: +dOwn.toFixed(2), zNew: +dBest.toFixed(2),
+      velo: num(r.rel_speed), ivb: num(r.induced_vert_break), hb: num(r.horz_break) });
+    return { ...r, tagged_pitch_type: best };
+  });
+  return { data, changes, details };
+}

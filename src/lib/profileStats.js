@@ -1118,3 +1118,133 @@ export function maxFastballVelo(rows) {
     .filter(v => v != null && v > 0);
   return velos.length ? Math.max(...velos) : null;
 }
+
+// ── buildLeaderboardRows: one row per qualified player with every metric ───
+// tracked on that player's profile page. Unlike buildPitcherPool/
+// buildHitterPool (which discard identity and only keep flat arrays for
+// percentile ranking), this keeps name/team/N alongside every raw value so
+// the League Leaderboard can display and sort by any of them. Metric keys
+// and qualification thresholds are the SAME as the pool builders and the
+// profile percentile cards (PitcherProfileOverview / BatterProfileOverview)
+// — if you add a stat there, add it here too so the leaderboard stays in
+// sync with what a person actually sees on a profile.
+export function buildLeaderboardRows(allPitches, role) {
+  const byPlayer = {};
+  const nameField = role === 'pitcher' ? 'pitcher_name' : 'batter_name';
+  const teamField = role === 'pitcher' ? 'pitcher_team' : 'batter_team';
+  allPitches.forEach(p => {
+    if (!p[nameField]) return;
+    const k = canonicalNameKey(p[nameField]);
+    if (!byPlayer[k]) byPlayer[k] = [];
+    byPlayer[k].push(p);
+  });
+
+  const grid = buildXStatsGrid(allPitches);
+  const leagueWoba = leagueAvgWoba(allPitches);
+  const rows = [];
+
+  Object.values(byPlayer).forEach(prs => {
+    // Most-common team name across this player's rows — handles the rare
+    // mid-season team-code correction without splitting one player in two.
+    const teamCounts = {};
+    prs.forEach(r => { const t = r[teamField]; if (t) teamCounts[t] = (teamCounts[t] || 0) + 1; });
+    const team = Object.entries(teamCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    const displayName = prs[0][nameField];
+
+    if (role === 'pitcher') {
+      if (prs.length < 20) return; // same qualification as buildPitcherPool
+      const prof = pitcherProfile(prs);
+      if (!prof) return;
+      const rv = runValue(prs, leagueWoba, { invert: true });
+      const xe = xERA(prs, grid, leagueWoba);
+      const xs = xStatsForRows(prs, grid);
+      rows.push({
+        name: displayName, team, role: 'Pitcher', n: prs.length,
+        runValue: rv, xERA: xe, xBA: xs?.xBA ?? null, xwOBA: xs?.xwOBA ?? null, xSLG: xs?.xSLG ?? null,
+        babip: prof.babip ?? null,
+        fbVelo: prof.fb?.avgVelo ?? null, maxVelo: maxFastballVelo(prs), fbSpin: prof.fb?.avgSpin ?? null,
+        bbSpin: prof.bb?.avgSpin ?? null, putawayPct: prof.putawayPct ?? null, extension: prof.extensionMean ?? null,
+        strikePct: prof.strikePct ?? null, fpsPct: prof.fpsPct ?? null, kPct: prof.kPct ?? null,
+        bbPct: prof.bbPct ?? null, whiffPct: prof.whiffPct ?? null, chasePct: prof.chasePct ?? null,
+        avgEVAgainst: prof.avgEVAgainst ?? null, avgLaunchAgainst: prof.avgLaunchAgainst ?? null,
+        gbPct: prof.gbPct ?? null, fbPct: prof.fbPct ?? null, softPct: prof.softPct ?? null, hardPct: prof.hardPct ?? null,
+      });
+    } else {
+      const prof = hitterTrackmanProfile(prs);
+      if (!prof) return; // hitterTrackmanProfile enforces its own 10-BIP qualification
+      const rv = runValue(prs, leagueWoba, { invert: false });
+      const xs = xStatsForRows(prs, grid);
+      rows.push({
+        name: displayName, team, role: 'Hitter', n: prs.length,
+        runValue: rv, xBA: xs?.xBA ?? null, xwOBA: xs?.xwOBA ?? null, xSLG: xs?.xSLG ?? null,
+        iso: prof.iso ?? null, babip: prof.babip ?? null,
+        avgEV: prof.avgEV ?? null, ev90: prof.ev90 ?? null, maxEV: prof.maxEV ?? null,
+        barrelPct: prof.barrelPct ?? null, hardPct: prof.hardPct ?? null, softPct: prof.softPct ?? null,
+        launchAngle: prof.avgLaunchAngle ?? null, laAtEv90: prof.laAtEv90 ?? null,
+        airPullPct: prof.airPullPct ?? null, fbPct: prof.fbPct ?? null, ldPct: prof.ldPct ?? null, gbPct: prof.gbPct ?? null,
+        contactPct: prof.contactPct ?? null, twoKContactPct: prof.twoKContactPct ?? null,
+        swingPct: prof.swingPct ?? null, fpSwPct: prof.fpSwPct ?? null, kPct: prof.kPct ?? null, bbPct: prof.bbPct ?? null,
+      });
+    }
+  });
+
+  return rows;
+}
+
+// Metric catalogue shared by the leaderboard table and column picker.
+// `invert` = true means LOWER raw values are better (colors/sorts accordingly
+// when "best first" sorting is requested) — mirrors the same flag on the
+// profile percentile-bar rowDefs.
+export const PITCHER_LEADERBOARD_METRICS = [
+  { key: 'runValue', label: 'Run Value', category: 'Run Prevention', decimals: 1, invert: false, signed: true },
+  { key: 'xERA', label: 'xERA', category: 'Run Prevention', decimals: 2, invert: true },
+  { key: 'xBA', label: 'xBA', category: 'Run Prevention', decimals: 3, invert: true, stat: true },
+  { key: 'xwOBA', label: 'xwOBA', category: 'Run Prevention', decimals: 3, invert: true, stat: true },
+  { key: 'xSLG', label: 'xSLG', category: 'Run Prevention', decimals: 3, invert: true, stat: true },
+  { key: 'babip', label: 'BABIP', category: 'Run Prevention', decimals: 3, invert: true, stat: true },
+  { key: 'fbVelo', label: 'Avg FB', category: 'Stuff', decimals: 1, invert: false, unit: ' mph' },
+  { key: 'maxVelo', label: 'Max FB', category: 'Stuff', decimals: 1, invert: false, unit: ' mph' },
+  { key: 'fbSpin', label: 'FB Spin', category: 'Stuff', decimals: 0, invert: false, unit: ' rpm' },
+  { key: 'bbSpin', label: 'BB Spin', category: 'Stuff', decimals: 0, invert: false, unit: ' rpm' },
+  { key: 'putawayPct', label: 'Putaway%', category: 'Stuff', decimals: 0, invert: false, pct: true },
+  { key: 'extension', label: 'Extension', category: 'Stuff', decimals: 1, invert: false, unit: ' ft' },
+  { key: 'strikePct', label: 'Strike%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'fpsPct', label: 'FPS%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'kPct', label: 'K%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'bbPct', label: 'Free Pass%', category: 'Plate Discipline', decimals: 0, invert: true, pct: true },
+  { key: 'whiffPct', label: 'Whiff%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'chasePct', label: 'Chase%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'avgEVAgainst', label: 'Avg EV against', category: 'Contact Quality', decimals: 1, invert: true, unit: ' mph' },
+  { key: 'avgLaunchAgainst', label: 'Avg LA against', category: 'Contact Quality', decimals: 1, invert: true, unit: '°' },
+  { key: 'gbPct', label: 'GB%', category: 'Contact Quality', decimals: 0, invert: false, pct: true },
+  { key: 'fbPct', label: 'FB%', category: 'Contact Quality', decimals: 0, invert: true, pct: true },
+  { key: 'softPct', label: 'Soft%', category: 'Contact Quality', decimals: 0, invert: false, pct: true },
+  { key: 'hardPct', label: 'Hard%', category: 'Contact Quality', decimals: 0, invert: true, pct: true },
+];
+
+export const HITTER_LEADERBOARD_METRICS = [
+  { key: 'runValue', label: 'Run Value', category: 'Expected Outcomes', decimals: 1, invert: false, signed: true },
+  { key: 'xBA', label: 'xBA', category: 'Expected Outcomes', decimals: 3, invert: false, stat: true },
+  { key: 'xwOBA', label: 'xwOBA', category: 'Expected Outcomes', decimals: 3, invert: false, stat: true },
+  { key: 'xSLG', label: 'xSLG', category: 'Expected Outcomes', decimals: 3, invert: false, stat: true },
+  { key: 'iso', label: 'ISO', category: 'Expected Outcomes', decimals: 3, invert: false, stat: true },
+  { key: 'babip', label: 'BABIP', category: 'Expected Outcomes', decimals: 3, invert: false, stat: true },
+  { key: 'avgEV', label: 'Avg EV', category: 'Contact Quality', decimals: 1, invert: false, unit: ' mph' },
+  { key: 'ev90', label: 'EV90', category: 'Contact Quality', decimals: 1, invert: false, unit: ' mph' },
+  { key: 'maxEV', label: 'Max EV', category: 'Contact Quality', decimals: 1, invert: false, unit: ' mph' },
+  { key: 'barrelPct', label: 'Barrel%', category: 'Contact Quality', decimals: 0, invert: false, pct: true },
+  { key: 'hardPct', label: 'Hard%', category: 'Contact Quality', decimals: 0, invert: false, pct: true },
+  { key: 'softPct', label: 'Soft%', category: 'Contact Quality', decimals: 0, invert: true, pct: true },
+  { key: 'launchAngle', label: 'Avg LA', category: 'Batted Ball Profile', decimals: 1, invert: false, unit: '°' },
+  { key: 'laAtEv90', label: 'LA @ EV90', category: 'Batted Ball Profile', decimals: 1, invert: false, unit: '°' },
+  { key: 'airPullPct', label: 'AirPull%', category: 'Batted Ball Profile', decimals: 0, invert: false, pct: true },
+  { key: 'fbPct', label: 'FlyBall%', category: 'Batted Ball Profile', decimals: 0, invert: false, pct: true },
+  { key: 'ldPct', label: 'Line Drive%', category: 'Batted Ball Profile', decimals: 0, invert: false, pct: true },
+  { key: 'gbPct', label: 'GroundBall%', category: 'Batted Ball Profile', decimals: 0, invert: true, pct: true },
+  { key: 'contactPct', label: 'Contact%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'twoKContactPct', label: '2KContact%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'swingPct', label: 'Swing%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'fpSwPct', label: 'FPSw%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+  { key: 'kPct', label: 'K%', category: 'Plate Discipline', decimals: 0, invert: true, pct: true },
+  { key: 'bbPct', label: 'BB%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
+];
