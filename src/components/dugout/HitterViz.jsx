@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { isSwing, isWhiff, isValidBattedBall, sprayDistribution } from '@/lib/statsUtils';
+import { fenceArcPath } from '@/lib/profileStats';
 
 const FONT = "\'Archivo\', system-ui, sans-serif";
 const NAVY = '#0e253a';
@@ -243,7 +244,7 @@ function wedgeFillColor(pct, maxPct) {
   return rgba(t, 0.18 + t*0.62);
 }
 
-export function SprayChart({ rows, hand, dugout=false }) {
+export function SprayChart({ rows, hand, dugout=false, isHome=true }) {
   const [mode,   setMode]   = useState('dots');
   const [filter, setFilter] = useState('all');
   const activeMode   = dugout ? 'mixed' : mode;
@@ -266,6 +267,20 @@ export function SprayChart({ rows, hand, dugout=false }) {
   </>);
   const infD = 95*scale;
   const infield = <path d={`M${homeX} ${homeY} L${homeX+infD} ${homeY-infD} L${homeX} ${homeY-infD*1.414} L${homeX-infD} ${homeY-infD} Z`} fill="rgba(198,181,131,0.04)" stroke="rgba(36,68,95,0.55)" strokeWidth={1} />;
+  // Park fence overlay (per audit): Brookside is always the reference park —
+  // solid when the Saints are hosting (it IS the venue), dashed when they're
+  // on the road (a fixed reference so distances read consistently trip to
+  // trip, rather than showing the road park's actual, unfamiliar shape).
+  const fencePath = useMemo(() => fenceArcPath('ARR_SEC', (bearing, dist) => {
+    const rad = bearing * Math.PI / 180;
+    return { x: homeX + Math.sin(rad) * dist * scale, y: homeY - Math.cos(rad) * dist * scale };
+  }), [homeX, homeY, scale]);
+  const fence = fencePath && (
+    <path d={fencePath} fill="none"
+      stroke={isHome ? 'rgba(200,146,12,.6)' : 'rgba(200,146,12,.4)'}
+      strokeWidth={1.5}
+      strokeDasharray={isHome ? undefined : '5 3'} />
+  );
   const lfx = homeX-Math.sin(flRad)*MAXD*scale, rfx = homeX+Math.sin(flRad)*MAXD*scale;
   const sideLabels = (<>
     <text x={lfx+9} y={homeY-10} fontSize={9} fill="rgba(159,178,196,0.5)" fontFamily={FONT}>LF</text>
@@ -305,7 +320,7 @@ export function SprayChart({ rows, hand, dugout=false }) {
       <path d={wedgeD(-45,-15)} fill={wedgeFillColor(lfData.pct,maxPct)}  stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
       <path d={wedgeD(-15, 15)} fill={wedgeFillColor(midData.pct,maxPct)} stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
       <path d={wedgeD( 15, 45)} fill={wedgeFillColor(rfData.pct,maxPct)}  stroke="rgba(36,68,95,0.3)" strokeWidth={0.5} />
-      {[150,250,350,MAXD].map(arc)}{infield}{foul}{dots}
+      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}{dots}
       {wLbl(lfData,-30)}{wLbl(midData,0)}{wLbl(rfData,30)}
       {sideLabels}
     </>);
@@ -325,7 +340,7 @@ export function SprayChart({ rows, hand, dugout=false }) {
       <path d={wedgeD(-45,-15)} fill={wedgeFillColor(lfData.pct,maxPct)}  stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
       <path d={wedgeD(-15, 15)} fill={wedgeFillColor(midData.pct,maxPct)} stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
       <path d={wedgeD( 15, 45)} fill={wedgeFillColor(rfData.pct,maxPct)}  stroke="rgba(36,68,95,0.4)" strokeWidth={0.75} />
-      {[150,250,350,MAXD].map(arc)}{infield}{foul}
+      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}
       {lbl(lfData,lblPos(-30))}{lbl(midData,lblPos(0))}{lbl(rfData,lblPos(30))}
       {sideLabels}
     </>);
@@ -334,7 +349,7 @@ export function SprayChart({ rows, hand, dugout=false }) {
       activeFilter==='hits' ? isHit(r.play_result) : activeFilter==='outs' ? !isHit(r.play_result) : true
     );
     body = (<>
-      {[150,250,350,MAXD].map(arc)}{infield}{foul}
+      {[150,250,350,MAXD].map(arc)}{fence}{infield}{foul}
       {valid.map((r,i) => {
         const rad=parseFloat(r.bearing)*Math.PI/180, d=parseFloat(r.hit_distance);
         return <circle key={i} cx={(homeX+Math.sin(rad)*d*scale).toFixed(1)} cy={(homeY-Math.cos(rad)*d*scale).toFixed(1)} r={evRadius(r.exit_speed).toFixed(1)} fill={resultColor(r.play_result)} fillOpacity={0.85} stroke="rgba(14,37,58,0.8)" strokeWidth={0.8} />;

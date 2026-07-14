@@ -340,12 +340,19 @@ function NextBatterCard({ label, hitter, contactPct, slg, speedRating }) {
   );
 }
 
-export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }) {
+export default function HitterDugoutPanel({ gameId, orientation = 'horizontal', homeTeamCode = null }) {
   const [currentBatter, setCurrentBatter] = useState(null);
   const [batterRows,    setBatterRows]     = useState([]);
   const [runners,       setRunners]        = useState([]);
   const [lineup,        setLineup]         = useState([]);  // full HitterObservation lineup for this game
   const [speedByName,   setSpeedByName]    = useState({});  // canonicalNameKey -> speed_rating (from BaserunnerObservation scouting)
+  // Park fence overlay (per audit): home_team_code (passed down from
+  // DugoutView's own already-fetched live Game record — no extra fetch
+  // needed here) decides whether the spray chart's Brookside fence is the
+  // real venue (solid) or a road-game reference (dashed). Defaults to home
+  // (true) when unknown so a mid-load flash doesn't show a "road game"
+  // dashed line for what's usually a home broadcast.
+  const isHomeGame = homeTeamCode == null || homeTeamCode === 'ARR_SEC';
   const pollRef = useRef(null);
 
   const poll = useCallback(() => {
@@ -606,7 +613,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
             {hasData ? (
               <div style={{ maxWidth: orientation === 'vertical' ? 440 : 380, maxHeight:'100%', width:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <SprayChart rows={batterRows} hand={hand} dugout={true} />
+                <SprayChart rows={batterRows} hand={hand} dugout={true} isHome={isHomeGame} />
               </div>
             ) : (
               <div style={{ color:TEXTF, fontSize:13, fontStyle:'italic', textAlign:'center' }}>

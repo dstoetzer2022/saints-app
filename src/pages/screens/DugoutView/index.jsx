@@ -283,11 +283,11 @@ function pctBar(hex, count, denom) {
   return Math.round((count / denom) * 100);
 }
 
-function PitchHeatmap({ zoneCounts, colorHex }) {
+function PitchHeatmap({ zoneCounts, colorHex, size = 62 }) {
   const counts = ZONE_GRID_ORDER.map(z => (zoneCounts && zoneCounts[z]) || 0);
   const max = Math.max(...counts, 1);
   return (
-    <div style={{ width: 62, flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(3, 1fr)', gap: 2, padding: 6, background: 'rgba(255,255,255,.03)', borderRadius: 6 }}>
+    <div style={{ width: size, height: size, flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(3, 1fr)', gap: 2, padding: size < 40 ? 3 : 6, background: 'rgba(255,255,255,.03)', borderRadius: 6 }}>
       {counts.map((c, i) => (
         <div key={i} style={{ borderRadius: 2, background: `${colorHex}${Math.round((c / max) * 0.85 * 255 + (c ? 25 : 0)).toString(16).padStart(2, '0')}` }} />
       ))}
@@ -361,6 +361,80 @@ function PitchMetricsBoard({ pitches, activePitchType, colorOverrides }) {
         const colorHex = (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
         const isActive = normalizePitch(p.pitch_type) === normalizePitch(activePitchType);
         return <PitchMetricsRow key={p.pitch_type + i} pitch={p} isActive={isActive} colorHex={colorHex} />;
+      })}
+    </div>
+  );
+}
+
+// ── Compact arsenal card (vertical-orientation layout, mockup-approved) ──
+// PitchMetricsRow is a wide single row (130px chip + 62px heatmap + 4 stat
+// cells + 168px hand-split ≈ 740px minimum) — it can't fit next to the 3D
+// canvas in portrait mode. This stacks the same data (chip/usage, mini
+// heatmap + stats, hand-split bars) vertically in a much smaller footprint
+// instead of trying to shrink a horizontal row past its floor width.
+function CompactHandSplitBars({ pitch }) {
+  const rhhPct = pctBar(null, pitch?.rhh_count, pitch?.rhh_count + pitch?.lhh_count) ?? pctBar(null, pitch?.rhh_count, pitch?.count);
+  const lhhPct = pctBar(null, pitch?.lhh_count, pitch?.rhh_count + pitch?.lhh_count) ?? pctBar(null, pitch?.lhh_count, pitch?.count);
+  const hasData = (pitch?.rhh_count || 0) + (pitch?.lhh_count || 0) > 0;
+  const row = (label, pct, color) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 8, fontWeight: 700 }}>
+      <span style={{ width: 22, color: '#eae5d8', fontWeight: 800 }}>{label}</span>
+      <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,.06)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 3, width: `${hasData ? pct : 0}%`, background: color }} />
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {row('RHH', rhhPct, '#93c5fd')}
+      {row('LHH', lhhPct, '#a78bfa')}
+    </div>
+  );
+}
+
+function CompactArsenalCard({ pitch, isActive, colorHex }) {
+  const usagePct = pitch.usage_pct == null ? null : (pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100);
+  const cells = [
+    { label: 'Velo', value: pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—' },
+    { label: 'IVB', value: sign(pitch.vert_break_mean) },
+    { label: 'Strk', value: pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—' },
+    { label: 'Whf', value: pitch.whiff_pct != null ? Number(pitch.whiff_pct).toFixed(0) + '%' : '—' },
+  ];
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 5, borderRadius: 8, padding: '7px 8px',
+      background: `${colorHex}12`, border: `1px solid ${isActive ? colorHex : colorHex + '55'}`,
+      boxShadow: isActive ? `0 0 0 1px ${colorHex}55` : 'none',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 15, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.3px', color: colorHex, fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#c6b583', marginLeft: 'auto', fontFamily: FONT }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+        <PitchHeatmap zoneCounts={pitch.zone_counts} colorHex={colorHex} size={26} />
+        <div style={{ flex: 1, display: 'flex', gap: 3, minWidth: 0 }}>
+          {cells.map(c => (
+            <div key={c.label} style={{ flex: 1, textAlign: 'center', padding: '2px 1px', borderRadius: 4, background: 'rgba(198,146,12,.08)', border: '1px solid rgba(198,146,12,.22)' }}>
+              <div style={{ fontSize: 11, fontWeight: 900, lineHeight: 1.05, color: '#f0d68a', fontFamily: FONT }}>{c.value}</div>
+              <div style={{ fontSize: 6, fontWeight: 700, color: '#c6b583', textTransform: 'uppercase', letterSpacing: 0.3 }}>{c.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <CompactHandSplitBars pitch={pitch} />
+    </div>
+  );
+}
+
+function CompactArsenalBoard({ pitches, activePitchType, colorOverrides }) {
+  if (!pitches.length) return null;
+  const sorted = [...pitches].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0));
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
+      {sorted.map((p, i) => {
+        const colorHex = (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
+        const isActive = normalizePitch(p.pitch_type) === normalizePitch(activePitchType);
+        return <CompactArsenalCard key={p.pitch_type + i} pitch={p} isActive={isActive} colorHex={colorHex} />;
       })}
     </div>
   );
@@ -487,6 +561,10 @@ export default function DugoutView({ setScreen }) {
   const [seasonRates, setSeasonRates] = useState(null);
   const [curatedTrails, setCuratedTrails] = useState([]);
   const [liveGameId, setLiveGameId] = useState(null);
+  // Park fence overlay (per audit): the live game's home_team_code, passed
+  // down to HitterDugoutPanel so its spray chart knows whether the Saints
+  // are hosting (real Brookside fence) or on the road (dashed reference).
+  const [homeTeamCode, setHomeTeamCode] = useState(null);
   const [dugoutMode, setDugoutMode] = useState('pitcher'); // 'pitcher' | 'hitter' — controlled remotely
   const [orientation, setOrientation] = useState('horizontal'); // 'horizontal' | 'vertical' — controlled remotely
   const [activeArsenalIdx, setActiveArsenalIdx] = useState(0);
@@ -673,6 +751,7 @@ export default function DugoutView({ setScreen }) {
     ]);
     const gameId = liveGames?.[0]?.id || null;
     setLiveGameId(gameId);
+    setHomeTeamCode(liveGames?.[0]?.home_team_code || null);
     // Display mode is controlled REMOTELY (e.g. Live Scout writes Game.dugout_display_mode).
     // The TV only reads it. Default to 'pitcher' when unset. Never error the view on a missing field.
     const mode = liveGames?.[0]?.dugout_display_mode;
@@ -822,17 +901,64 @@ export default function DugoutView({ setScreen }) {
             )}
           </div>
 
-          {/* Body: 3D + video — side-by-side (horizontal) or stacked (vertical, for portrait monitors) */}
+          {/* Body: horizontal (landscape) keeps the original 3D+video side-by-side
+              layout with PitchMetricsBoard full-width below, unchanged.
+              Vertical (portrait) uses the rearranged layout below, per your
+              spec: video full-width on top, then 3D + compact arsenal cards
+              side by side, then count splits — mockup-approved. */}
+          {orientation === 'vertical' ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+              {/* Video — full width, own row, top */}
+              <div style={{ flexShrink: 0, padding: '10px 16px 7px' }}>
+                <div style={{ aspectRatio: '16 / 8.2', display: 'flex' }}>
+                  <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} orientation={orientation} />
+                </div>
+              </div>
+
+              {/* 3D flight | compact arsenal cards — side by side */}
+              <div style={{ flex: 1, display: 'flex', gap: 10, padding: '0 16px 8px', minHeight: 0 }}>
+                <div style={{
+                  flex: '0 0 42%', minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
+                  border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)',
+                }}>
+                  {pitcherObs && (curatedTrails.length > 0 || seasonArsenal.length > 0) ? (
+                    <>
+                      <DugoutPitch3D
+                        key={pitcherDisplayName + ':' + (curatedTrails.length > 0 ? 'curated' + curatedTrails.length : 'season')}
+                        arsenal={seasonArsenal}
+                        pitcherName={pitcherDisplayName}
+                        pitcherHand={pitcherHand}
+                        curatedTrails={curatedTrails}
+                        onActiveIdx={setActiveArsenalIdx}
+                      />
+                      <ModeBadge isCurated={curatedTrails.length > 0} />
+                    </>
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.2)', fontSize: 12, fontFamily: FONT, fontStyle: 'italic', textAlign: 'center', padding: 16 }}>
+                      {!pitcherObs ? 'Waiting for active pitcher…' : 'No season data — set pitcher active in Live Scout'}
+                    </div>
+                  )}
+                </div>
+                <CompactArsenalBoard
+                  pitches={seasonArsenal}
+                  activePitchType={activePitchType}
+                  colorOverrides={curatedTrails.length > 0 ? curatedTrails.reduce((m, t) => { m[t.display_label || t.pitch_type] = t.trail_color; return m; }, {}) : null}
+                />
+              </div>
+
+              {/* Count splits — full width, bottom */}
+              <CountSplitsPanel arsenal={seasonArsenal} />
+            </div>
+          ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: orientation === 'vertical' ? 'auto' : 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px 10px', minHeight: 0, overflow: 'hidden' }}>
               {/* AUDIT (mockup-approved): the 3D/video row now fills whatever
                   space remains on the monitor via flex-grow instead of sizing
                   to fixed 220px/340px — viewport-relative, not device-specific. */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: orientation === 'vertical' ? 'column' : 'row', gap: 12, minHeight: 0 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'row', gap: 12, minHeight: 0 }}>
                 {/* 3D canvas */}
                 <div style={{
-                  flex: orientation === 'vertical' ? '1 1 140px' : '1 1 0',
-                  order: orientation === 'vertical' ? 2 : 0,
+                  flex: '1 1 0',
                   minWidth: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
                   border: '1px solid rgba(198,181,131,.15)', background: 'linear-gradient(160deg, #06121a 0%, #0a1e2c 100%)',
                 }}>
@@ -855,11 +981,7 @@ export default function DugoutView({ setScreen }) {
                   )}
                 </div>
                 {/* Video */}
-                <div style={{
-                  flex: orientation === 'vertical' ? '1.3 1 160px' : '1 1 0',
-                  order: orientation === 'vertical' ? 1 : 0,
-                  minWidth: 0, display: 'flex',
-                }}>
+                <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex' }}>
                   <VideoPanel videoUrl={activeVideoUrl} pitchType={activePitchType} orientation={orientation} />
                 </div>
               </div>
@@ -871,7 +993,7 @@ export default function DugoutView({ setScreen }) {
                   keep their space regardless of how many pitch types a pitcher has. Without this,
                   a 4-5 pitch arsenal pushes the board tall enough to squeeze the 3D/video row to
                   zero height — the actual bug this comment is here to prevent regressing again. */}
-              <div style={{ flexShrink: 0, maxHeight: orientation === 'vertical' ? '38vh' : '46vh', overflowY: 'auto' }}>
+              <div style={{ flexShrink: 0, maxHeight: '46vh', overflowY: 'auto' }}>
                 <PitchMetricsBoard
                   pitches={seasonArsenal}
                   activePitchType={activePitchType}
@@ -882,13 +1004,14 @@ export default function DugoutView({ setScreen }) {
             {/* Count splits — full width below, always visible */}
             <CountSplitsPanel arsenal={seasonArsenal} />
           </div>
+          )}
         </div>
       )}
 
       {/* HITTER TAB — controlled remotely via Game.dugout_display_mode */}
       {dugoutMode === 'hitter' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <HitterDugoutPanel gameId={liveGameId} orientation={orientation} />
+          <HitterDugoutPanel gameId={liveGameId} orientation={orientation} homeTeamCode={homeTeamCode} />
         </div>
       )}
     </div>

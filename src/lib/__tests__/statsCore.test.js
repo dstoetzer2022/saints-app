@@ -347,3 +347,32 @@ describe('isSecondBasePop', () => {
     expect(isSecondBasePop({ time_to_base: null })).toBe(true);
   });
 });
+
+// ── Park fence overlay (per audit) ────────────────────────────────────────
+import { fenceArcPath, fenceDistanceAt, CCL_PARK_DIMENSIONS } from '@/lib/profileStats';
+
+describe('fenceDistanceAt / fenceArcPath', () => {
+  const brookside = CCL_PARK_DIMENSIONS.ARR_SEC;
+  it('interpolates distance between known angle/distance points', () => {
+    expect(fenceDistanceAt(brookside, 0)).toBe(brookside.cf); // dead center
+    expect(fenceDistanceAt(brookside, -45)).toBe(brookside.lf); // left foul line
+    expect(fenceDistanceAt(brookside, 45)).toBe(brookside.rf); // right foul line
+  });
+  it('clamps out-of-range bearings to the nearest foul line', () => {
+    expect(fenceDistanceAt(brookside, -90)).toBe(brookside.lf);
+    expect(fenceDistanceAt(brookside, 90)).toBe(brookside.rf);
+  });
+  it('returns null for an unknown/road-only park with no fixed dimensions', () => {
+    expect(fenceDistanceAt(null, 0)).toBeNull();
+  });
+  it('fenceArcPath builds a valid SVG path string for a real park', () => {
+    const toXY = (bearing, dist) => ({ x: dist * Math.sin(bearing * Math.PI / 180), y: -dist * Math.cos(bearing * Math.PI / 180) });
+    const path = fenceArcPath('ARR_SEC', toXY);
+    expect(path).toMatch(/^M/);
+    expect(path.split(' L').length).toBeGreaterThan(10); // multiple sample points
+  });
+  it('fenceArcPath returns null for a park code with no CCL_PARK_DIMENSIONS entry', () => {
+    const toXY = (b, d) => ({ x: d, y: d });
+    expect(fenceArcPath('NOT_A_REAL_PARK', toXY)).toBeNull();
+  });
+});

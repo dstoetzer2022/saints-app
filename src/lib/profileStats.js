@@ -728,7 +728,7 @@ export const CCL_PARK_DIMENSIONS = {
   PHI_BAS: null, ALA_MER: null, SAN_DIE25: null, SAN_DIE_24: null, SAN_MAR6: null,
 };
 
-function fenceDistanceAt(park, bearingDeg) {
+export function fenceDistanceAt(park, bearingDeg) {
   if (!park) return null;
   const pts = [];
   if (park.lf != null) pts.push([-45, park.lf]);
@@ -746,6 +746,28 @@ function fenceDistanceAt(park, bearingDeg) {
     }
   }
   return b < pts[0][0] ? pts[0][1] : pts[pts.length - 1][1];
+}
+
+// ── Park fence overlay (per audit) ────────────────────────────────────────
+// Builds an SVG path tracing the TRUE fence shape for a given park across
+// bearings -45..45deg, using fenceDistanceAt at each sample point — replaces
+// the generic uniform-radius "wall" arcs spray charts previously drew (which
+// implied every CCL park is a perfect circle; none are). `toXY(bearing,
+// dist) => {x,y}` is supplied by the caller so this stays chart-geometry
+// agnostic (each of the three spray chart implementations scales/orients
+// its SVG slightly differently).
+export function fenceArcPath(parkCode, toXY, steps = 24) {
+  const park = CCL_PARK_DIMENSIONS[parkCode];
+  if (!park) return null;
+  let d = '';
+  for (let i = 0; i <= steps; i++) {
+    const bearing = -45 + (90 * i) / steps;
+    const dist = fenceDistanceAt(park, bearing);
+    if (dist == null) return null;
+    const { x, y } = toXY(bearing, dist);
+    d += `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)} `;
+  }
+  return d.trim();
 }
 
 // Returns { clearedIn, ofParks, parkNames } for one batted ball, or null if

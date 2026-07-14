@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import {
   pitcherProfile, hitterTrackmanProfile, slashLine, spinDirectionByType, maxFastballVelo,
-  platoonSplitRows, xStatsForRows, percentileRank,
+  platoonSplitRows, xStatsForRows, percentileRank, fenceArcPath,
 } from '@/lib/profileStats';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import { isSwing, isWhiff, sprayDistribution, normHand } from '@/lib/statsUtils';
@@ -90,6 +90,9 @@ function PrintSprayChart({ pitches, hand }) {
     const shape = la == null ? 'circle' : la < 10 ? 'square' : la < 25 ? 'diamond' : la < 50 ? 'circle' : 'triangle';
     return { ...toXY(p.bearing, p.hit_distance), color, shape };
   });
+  // Park fence overlay (per audit) — same Brookside reference convention as
+  // the on-screen profile spray chart; see that file for the full rationale.
+  const fencePath = fenceArcPath('ARR_SEC', toXY);
   const dot = (p, i) => {
     const r = 3.2;
     if (p.shape === 'square') return <rect key={i} x={p.x - r} y={p.y - r} width={r * 2} height={r * 2} fill={p.color} fillOpacity="0.85" stroke="rgba(0,0,0,.3)" strokeWidth="0.5" />;
@@ -110,7 +113,9 @@ function PrintSprayChart({ pitches, hand }) {
         </>)}
         <line x1={CX} y1={CY} x2={lf.x} y2={lf.y} stroke="#b9b4a6" strokeWidth="1" />
         <line x1={CX} y1={CY} x2={rf.x} y2={rf.y} stroke="#b9b4a6" strokeWidth="1" />
-        <path d={arc(MAX)} fill="none" stroke="#8a8577" strokeWidth="1.5" />
+        {fencePath
+          ? <path d={fencePath} fill="none" stroke="#8a6508" strokeWidth="1.4" strokeDasharray="4 2.5" />
+          : <path d={arc(MAX)} fill="none" stroke="#8a8577" strokeWidth="1.5" />}
         {[200, 300, 370].map(d => <path key={d} d={arc(d)} fill="none" stroke="#d5d0c2" strokeWidth="1" strokeDasharray="4 3" />)}
         {[200, 300, 370].map(d => {
           const { x, y } = toXY(0, d);
@@ -127,6 +132,7 @@ function PrintSprayChart({ pitches, hand }) {
       </svg>
       <div style={{ fontSize: 8, color: FAINT, marginTop: 2 }}>
         <span style={{ color: '#E24B4A' }}>●</span> 95+ <span style={{ color: '#EF9F27' }}>●</span> 80–94 <span style={{ color: '#1D9E75' }}>●</span> &lt;80 mph · ■ GB ◆ LD ● FB ▲ PU · n = {bip.length}
+        {fencePath && ' · dashed line = Brookside fence (ref)'}
       </div>
     </div>
   );

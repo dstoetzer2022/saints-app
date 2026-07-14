@@ -1,5 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { C, FONT } from '@/lib/darkTheme';
+import { fenceArcPath } from '@/lib/profileStats';
+
+// Park fence overlay (per audit): profile spray charts aggregate a whole
+// season across every venue played, so there's no single "the game's park"
+// to draw. Brookside (the Saints' own park) is used as a fixed reference —
+// same convention as the dugout's road-game behavior — so distances read
+// consistently regardless of where any individual ball was actually hit.
+const REFERENCE_PARK = 'ARR_SEC';
 
 // Canonical field geometry constants
 const W = 400, H = 380;
@@ -100,6 +108,8 @@ export default function SprayChart({ pitches }) {
     return { points, stats: { hard, med, soft, total: filtered.length }, totalBip: bip.length };
   }, [pitches, resultFilter, hitType, evBin]);
 
+  const fencePath = useMemo(() => fenceArcPath(REFERENCE_PARK, toXY), []);
+
   const controls = (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 10 }}>
       <select value={resultFilter} onChange={e => setResultFilter(e.target.value)} style={selectStyle}>
@@ -168,9 +178,17 @@ export default function SprayChart({ pitches }) {
         {/* Foul lines */}
         <line x1={CX} y1={CY} x2={lfWall.x} y2={lfWall.y} stroke="rgba(255,255,255,.25)" strokeWidth={1} />
         <line x1={CX} y1={CY} x2={rfWall.x} y2={rfWall.y} stroke="rgba(255,255,255,.25)" strokeWidth={1} />
-        {/* Outfield wall arc */}
-        <path d={`M ${lfWall.x} ${lfWall.y} A ${H-60} ${H-60} 0 0 1 ${rfWall.x} ${rfWall.y}`}
-          fill="none" stroke="rgba(255,255,255,.3)" strokeWidth={1.5} />
+        {/* Outfield wall — real Brookside (Saints home park) fence shape,
+            per audit. Shown as a reference line (dashed) since a season's
+            worth of balls were hit across many different venues; a solid
+            uniform-radius arc here previously implied every CCL park is a
+            perfect circle at 420ft, which none are. */}
+        {fencePath ? (
+          <path d={fencePath} fill="none" stroke="rgba(200,146,12,.45)" strokeWidth={1.5} strokeDasharray="5 3" />
+        ) : (
+          <path d={`M ${lfWall.x} ${lfWall.y} A ${H-60} ${H-60} 0 0 1 ${rfWall.x} ${rfWall.y}`}
+            fill="none" stroke="rgba(255,255,255,.3)" strokeWidth={1.5} />
+        )}
         {/* Distance arcs */}
         {[200, 300, 370].map(d => (
           <path key={d} d={arcPath(d)} fill="none"
@@ -218,6 +236,12 @@ export default function SprayChart({ pitches }) {
         <span>■ GB</span>
         <span>◆ LD</span>
         <span>▲ PU</span>
+        {fencePath && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 12, height: 0, borderTop: '1.5px dashed rgba(200,146,12,.6)', display: 'inline-block' }} />
+            Brookside fence (ref)
+          </span>
+        )}
         <span style={{ color: C.cream }}>n={stats.total} of {totalBip}</span>
       </div>
     </div>
