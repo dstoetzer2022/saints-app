@@ -1,0 +1,101 @@
+{
+  "name": "HitterObservation",
+  "type": "object",
+  "properties": {
+    "game_id": {
+      "type": "string",
+      "description": "Reference to Game record"
+    },
+    "hitter_name": {
+      "type": "string"
+    },
+    "hitter_team": {
+      "type": "string"
+    },
+    "hitter_hand": {
+      "type": "string",
+      "enum": [
+        "R",
+        "L",
+        "S"
+      ]
+    },
+    "lineup_position": {
+      "type": "number",
+      "description": "Batting order position 1-9"
+    },
+    "is_current_batter": {
+      "type": "boolean",
+      "default": false
+    },
+    "ab_count": {
+      "type": "number",
+      "description": "At-bats observed"
+    },
+    "xbh_count": {
+      "type": "number",
+      "description": "Extra-base hits"
+    },
+    "ab_per_xbh": {
+      "type": "number",
+      "description": "AB per extra-base hit ratio"
+    },
+    "pull_pct": {
+      "type": "number",
+      "description": "Pull rate 0-1"
+    },
+    "hard_hit_pct": {
+      "type": "number",
+      "description": "Hard hit rate 0-1"
+    },
+    "slug_pct": {
+      "type": "number",
+      "description": "Slugging percentage"
+    },
+    "approach": {
+      "type": "string",
+      "enum": [
+        "chase",
+        "disciplined",
+        "average"
+      ]
+    },
+    "bat_speed_grade": {
+      "type": "string",
+      "enum": [
+        "plus_plus",
+        "plus",
+        "average",
+        "below",
+        "well_below"
+      ]
+    },
+    "contact_grade": {
+      "type": "string",
+      "enum": [
+        "plus_plus",
+        "plus",
+        "average",
+        "below",
+        "well_below"
+      ]
+    },
+    "power_grade": {
+      "type": "string",
+      "enum": [
+        "plus_plus",
+        "plus",
+        "average",
+        "below",
+        "well_below"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "hitter_name",
+    "hitter_team"
+  ]
+}

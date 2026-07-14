@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap'); /* AUDIT: 900 was used but never loaded (faux-black); JetBrains Mono added for tabular stats */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --paper: #f4f2ec;
+    --navy: #0e253a;
+    --gold: #c6b583;
+    --ink: #1a1a1a;
+    --border-base: #cdc8bd;
+    --row-divider: #eeeeee;
+    --bg-tint: #faf9f5;
+
+    /* shadcn compat */
+    --background: 40 20% 93%;
+    --foreground: 210 50% 14%;
+    --card: 40 20% 93%;
+    --card-foreground: 210 50% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 50% 14%;
+    --primary: 210 63% 15%;
+    --primary-foreground: 42 42% 64%;
+    --secondary: 40 15% 88%;
+    --secondary-foreground: 210 50% 14%;
+    --muted: 40 15% 88%;
+    --muted-foreground: 210 10% 50%;
+    --accent: 42 42% 64%;
+    --accent-foreground: 210 63% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 12% 78%;
+    --input: 0 0% 100%;
+    --ring: 42 42% 64%;
+    --radius: 0.375rem;
+  }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: 'Archivo', sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select, textarea, button {
+    font-family: 'Archivo', sans-serif;
+  }
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--paper); }
+::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 3px; }
+
+*:focus-visible {
+  outline: 2px solid var(--gold) !important;
+  outline-offset: 1px !important;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Coach-handout print report: on screen it's a gray preview desk with a
+   white letter "page"; in print, everything except the page itself is hidden
+   (including the whole app under #root — the report portals onto body). The
+   old flatten-everything [data-print-root] rules are gone: they produced a
+   dark-theme dump with unreadable heatmaps, superseded by the dedicated
+   light-palette PrintProfileReport component. */
+.print-report-page {
+  width: 7.7in;
+  min-height: 10in;
+  margin: 0 auto 24px;
+  background: #ffffff;
+  padding: 0.4in;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+@media print {
+  @page { size: letter portrait; margin: 0.4in; }
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  body.print-report-open #root { display: none !important; }
+  .print-report-overlay {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .print-report-page {
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  /* Force exact colors so zone-grid fills and pitch-type dots survive the
+     browser's default ink-saver background stripping. */
+  .print-report-page * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Batch print (BatchPrintReport): multiple .print-report-page elements
+     stack in one portal. Break to a new physical page between players —
+     harmless no-op for the single-player report, which only ever renders
+     one .print-report-page. */
+  .print-report-page:not(:last-of-type) {
+    page-break-after: always;
+    break-after: page;
+  }
+}

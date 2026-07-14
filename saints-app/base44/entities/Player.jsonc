@@ -1,0 +1,53 @@
+{
+  "name": "Player",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Player full name matching Trackman format Last, First"
+    },
+    "trackman_id": {
+      "type": "string",
+      "description": "Trackman pitcher_id_trackman or batter_id_trackman"
+    },
+    "team": {
+      "type": "string",
+      "description": "Current CCL team name"
+    },
+    "school": {
+      "type": "string",
+      "description": "College or university the player attends"
+    },
+    "jersey_number": {
+      "type": "string"
+    },
+    "position": {
+      "type": "string"
+    },
+    "bats": {
+      "type": "string",
+      "enum": [
+        "R",
+        "L",
+        "S"
+      ]
+    },
+    "throws": {
+      "type": "string",
+      "enum": [
+        "R",
+        "L"
+      ]
+    },
+    "year": {
+      "type": "string",
+      "description": "Academic year e.g. Fr, So, Jr, Sr"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
