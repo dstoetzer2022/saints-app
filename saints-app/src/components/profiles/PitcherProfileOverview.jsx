@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
-import PercentileBar from '@/components/shared/PercentileBar';
+import PercentileBar, { markerColor } from '@/components/shared/PercentileBar';
+import CoachNoteBox from '@/components/profiles/CoachNoteBox';
 import {
   pitcherProfile, percentileRank, fmtStat,
   cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend, maxFastballVelo,
@@ -796,8 +797,152 @@ function RollingTrendSection({ pitches }) {
 }
 
 // ── Main export ───────────────────────────────────────────────
-export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPool, leaguePitches }) {
+// ── Pitch fusion cards (mockup v3, item 5) ─────────────────────
+// One card per pitch type pairing traits (velo, movement vector, usage)
+// with results (Whiff / CSW chips colored on the PercentileBar scale vs
+// the per-pitch-type league arsenal pool when available).
+function MiniMovementVector({ hb, ivb, color }) {
+  const x = 45 + (hb || 0) * 1.7;
+  const y = 45 - (ivb || 0) * 1.7;
+  return (
+    <svg width="84" height="84" viewBox="0 0 90 90" style={{ flexShrink: 0 }}>
+      <line x1="45" y1="4" x2="45" y2="86" stroke={C.faint} strokeWidth="1" />
+      <line x1="4" y1="45" x2="86" y2="45" stroke={C.faint} strokeWidth="1" />
+      <circle cx="45" cy="45" r="26" fill="none" stroke={C.edge} strokeWidth="1" />
+      <line x1="45" y1="45" x2={x} y2={y} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx={x} cy={y} r="5.5" fill={color} />
+    </svg>
+  );
+}
+
+function ResultChip({ label, value, pctile }) {
+  const c = pctile != null ? markerColor(pctile) : C.muted;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{
+        fontSize: 10, fontWeight: 900, padding: '3px 7px', borderRadius: 4, fontVariantNumeric: 'tabular-nums',
+        background: pctile != null ? `${c}26` : C.raised, color: pctile != null ? c : C.cream,
+        border: `1px solid ${pctile != null ? c + '44' : C.edge}`,
+      }}>{value}</span>
+      <span style={{ fontSize: 8.5, fontWeight: 800, color: C.muted, letterSpacing: 0.4 }}>{label}</span>
+    </span>
+  );
+}
+
+function PitchFusionCards({ pitches, arsenalPool, videoByType }) {
+  const cards = useMemo(() => {
+    const total = pitches.length;
+    if (!total) return [];
+    const byType = {};
+    pitches.forEach(p => {
+      const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+      (byType[pt] = byType[pt] || []).push(p);
+    });
+    return Object.entries(byType)
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([pt, rows]) => {
+        const velos = rows.map(r => r.rel_speed).filter(v => v != null && v > 0);
+        const spins = rows.map(r => r.spin_rate).filter(v => v != null);
+        const ivbs = rows.map(r => r.induced_vert_break).filter(v => v != null);
+        const hbs = rows.map(r => r.horz_break).filter(v => v != null);
+        const swings = rows.filter(isSwing).length;
+        const whiffs = rows.filter(isWhiff).length;
+        const csw = rows.filter(r => r.pitch_call === 'StrikeCalled' || isWhiff(r)).length;
+        const whiffPct = swings ? whiffs / swings : null;
+        const cswPct = rows.length ? csw / rows.length : null;
+        const pool = arsenalPool?.[pt];
+        return {
+          pt, color: pColor(pt),
+          usage: rows.length / total, n: rows.length,
+          avgVelo: mean(velos), maxVelo: velos.length ? Math.max(...velos) : null,
+          avgSpin: mean(spins), ivb: mean(ivbs), hb: mean(hbs),
+          whiffPct, cswPct,
+          whiffPr: whiffPct != null && pool?.whiff?.length ? percentileRank(pool.whiff, whiffPct) : null,
+        };
+      });
+  }, [pitches, arsenalPool]);
+
+  if (!cards.length) return null;
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+      {cards.map(cd => (
+        <div key={cd.pt} style={{ background: C.surface, border: `1px solid ${C.edge}`, borderRadius: 11, overflow: 'hidden' }}>
+          <div style={{ height: 3, background: cd.color }} />
+          <div style={{ padding: '11px 13px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 900, color: cd.color }}>{cd.pt}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                {(cd.usage * 100).toFixed(0)}% · {cd.n}
+              </span>
+            </div>
+            <div style={{ height: 4, background: C.faint, borderRadius: 2, margin: '7px 0 10px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.min(100, cd.usage * 160)}%`, background: cd.color, borderRadius: 2 }} />
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: C.white, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  {n1(cd.avgVelo)}
+                  {cd.maxVelo != null && <span style={{ fontSize: 11, fontWeight: 700, color: C.muted }}> / {n1(cd.maxVelo)} mph</span>}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginTop: 5, fontVariantNumeric: 'tabular-nums' }}>
+                  {cd.ivb != null ? `${cd.ivb > 0 ? '+' : ''}${cd.ivb.toFixed(1)}" iVB` : '—'} · {cd.hb != null ? `${cd.hb > 0 ? '+' : ''}${cd.hb.toFixed(1)}" HB` : '—'} · {n0(cd.avgSpin)} rpm
+                </div>
+              </div>
+              <div style={{ marginLeft: 'auto' }}>
+                <MiniMovementVector hb={cd.hb} ivb={cd.ivb} color={cd.color} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <ResultChip label="WHIFF" value={pct(cd.whiffPct)} pctile={cd.whiffPr} />
+              <ResultChip label="CSW" value={pct(cd.cswPct)} pctile={null} />
+              <span style={{ marginLeft: 'auto' }}>
+                <PitchDetailButton pitches={pitches} clip={videoByType?.[normalizePitch(cd.pt)]} pitchType={cd.pt} />
+              </span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Sub-tab bar (mockup v3, item 4) ────────────────────────────
+const PROFILE_PANES = [
+  ['overview', 'Overview'],
+  ['arsenal', 'Arsenal'],
+  ['locations', 'Locations'],
+  ['contact', 'Contact & Splits'],
+  ['trends', 'Trends'],
+  ['notes', 'Notes'],
+];
+
+function SubTabBar({ pane, setPane }) {
+  return (
+    <div className="no-print" style={{ display: 'flex', gap: 7, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
+      {PROFILE_PANES.map(([key, label]) => (
+        <button key={key} onClick={() => setPane(key)} style={{
+          flexShrink: 0, cursor: 'pointer', fontFamily: FONT,
+          border: `1px solid ${pane === key ? C.gold : C.edge}`,
+          background: pane === key ? 'rgba(200,146,12,0.1)' : C.surface,
+          color: pane === key ? C.gold : C.muted,
+          borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '8px 16px',
+        }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const EmptyPane = ({ children }) => (
+  <p style={{ color: C.muted, textAlign: 'center', padding: 40, fontSize: 12, ...FONT_STYLE }}>{children}</p>
+);
+
+export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPool, leaguePitches, arsenalPool, playerNameKey }) {
   const videoByType = usePitcherClips(pitches);
+  const [pane, setPane] = useState('overview');
+  const [trendView, setTrendView] = useState('bygame');
   const filteredPitches = useMemo(() => {
     const total = pitches.length;
     if (!total) return pitches;
@@ -820,127 +965,152 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
 
   return (
     <div style={FONT_STYLE}>
-      {/* Percentiles */}
-      {hasPercentiles && (
+      <SubTabBar pane={pane} setPane={setPane} />
+
+      {/* ── OVERVIEW: percentiles (untouched rendering) + fusion cards ── */}
+      {pane === 'overview' && (
         <>
-          {sHead('Percentiles', 'vs CCL')}
-          <div style={{ marginBottom: 14 }}>
-            <PitcherPercentiles pitches={filteredPitches} allPitches={pitches} pitcherPool={pitcherPool} />
-          </div>
+          {hasPercentiles && (
+            <>
+              {sHead('Percentiles', 'vs CCL')}
+              <div style={{ marginBottom: 14 }}>
+                <PitcherPercentiles pitches={filteredPitches} allPitches={pitches} pitcherPool={pitcherPool} />
+              </div>
+            </>
+          )}
+          {hasData && (
+            <>
+              {sHead('Arsenal at a Glance', 'traits + results per pitch — full detail in Arsenal tab')}
+              <PitchFusionCards pitches={filteredPitches} arsenalPool={arsenalPool} videoByType={videoByType} />
+            </>
+          )}
+          {!hasData && !hasPercentiles && <EmptyPane>Not enough pitch data in this scope.</EmptyPane>}
         </>
       )}
 
-      {/* Savant-parity: Location density contour + spin direction, combined per pitch type */}
-      {hasData && (
-        <>
-          {sHead('Pitch Location · Spin', 'KDE density contour with spin clock, by pitch type')}
-          <Card style={{ marginBottom: 18 }}>
-            <LocationContourPlot groups={
-              (() => {
-                const byType = filteredPitches.reduce((m, p) => {
-                  const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-                  (m[pt] = m[pt] || []).push(p);
-                  return m;
-                }, {});
-                const spinByType = Object.fromEntries(spinDirectionByType(filteredPitches).map(s => [s.type, s]));
-                return Object.entries(byType)
-                  .sort((a, b) => b[1].length - a[1].length)
-                  .map(([label, pitches]) => ({
-                    label, pitches,
-                    axisDeg: spinByType[label]?.axisDeg,
-                    color: spinByType[label]?.color,
-                    spinGated: spinByType[label]?.nullGated,
-                  }));
-              })()
-            } />
-          </Card>
-        </>
-      )}
-
-      {/* Movement + Release Point side by side, arsenal table below */}
-      {hasData && (
-        <>
-          {sHead('Movement · Release Point', `${filteredPitches.length} pitches`)}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-            <Card style={{ flex: '1 1 340px' }}>
-              <MovementScatterCircular pitches={filteredPitches} leagueAvg={leagueAvg} />
+      {/* ── ARSENAL: movement + release + full traits/results table ── */}
+      {pane === 'arsenal' && (
+        hasData ? (
+          <>
+            {sHead('Movement · Release Point', `${filteredPitches.length} pitches`)}
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+              <Card style={{ flex: '1 1 340px' }}>
+                <MovementScatterCircular pitches={filteredPitches} leagueAvg={leagueAvg} />
+              </Card>
+              <Card style={{ flex: '1 1 340px' }}>
+                <ReleasePointPlot pitches={filteredPitches} />
+              </Card>
+            </div>
+            <Card style={{ marginBottom: 18, overflow: 'hidden', padding: '14px 0' }}>
+              <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
+              <ArsenalTable pitches={filteredPitches} videoByType={videoByType} />
             </Card>
-            <Card style={{ flex: '1 1 340px' }}>
-              <ReleasePointPlot pitches={filteredPitches} />
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      )}
+
+      {/* ── LOCATIONS: KDE + spin (format unchanged) + count splits ── */}
+      {pane === 'locations' && (
+        hasData ? (
+          <>
+            {sHead('Pitch Location · Spin', 'KDE density contour with spin clock, by pitch type')}
+            <Card style={{ marginBottom: 18 }}>
+              <LocationContourPlot groups={
+                (() => {
+                  const byType = filteredPitches.reduce((m, p) => {
+                    const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
+                    (m[pt] = m[pt] || []).push(p);
+                    return m;
+                  }, {});
+                  const spinByType = Object.fromEntries(spinDirectionByType(filteredPitches).map(s => [s.type, s]));
+                  return Object.entries(byType)
+                    .sort((a, b) => b[1].length - a[1].length)
+                    .map(([label, pitches]) => ({
+                      label, pitches,
+                      axisDeg: spinByType[label]?.axisDeg,
+                      color: spinByType[label]?.color,
+                      spinGated: spinByType[label]?.nullGated,
+                    }));
+                })()
+              } />
             </Card>
+            {sHead('Count Splits', 'pitch selection by count')}
+            <Card style={{ marginBottom: 18 }}>
+              <CountSplitsTable pitches={filteredPitches} />
+            </Card>
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      )}
+
+      {/* ── CONTACT & SPLITS: batted ball + platoon + xHR ── */}
+      {pane === 'contact' && (
+        hasData ? (
+          <>
+            {sHead('Contact Against', 'batted ball profile & contact quality')}
+            <Card style={{ marginBottom: 18 }}>
+              <ContactSection pitches={filteredPitches} />
+            </Card>
+            {sHead('Platoon Splits', 'results & pitch mix, vs batter handedness')}
+            <Card style={{ marginBottom: 18 }}>
+              <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" pitchMixByLabel={pitchMixByHand(filteredPitches)} />
+            </Card>
+            {sHead('xHR Against by Park', 'approx, distance-only')}
+            <Card style={{ marginBottom: 18 }}>
+              <XHRParkTable rows={filteredPitches} direction="against" />
+            </Card>
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      )}
+
+      {/* ── TRENDS: season trend + approach, merged under a sub-toggle ── */}
+      {pane === 'trends' && (
+        <>
+          <div className="no-print" style={{ display: 'inline-flex', gap: 3, background: C.base, border: `1px solid ${C.edge}`, borderRadius: 7, padding: 3, marginBottom: 14 }}>
+            {[['bygame', 'Season Trend'], ['approach', 'Trends & Approach']].map(([key, label]) => (
+              <button key={key} onClick={() => setTrendView(key)} style={{
+                border: 'none', cursor: 'pointer', borderRadius: 5, padding: '5px 12px',
+                fontSize: 11, fontWeight: 800, fontFamily: FONT,
+                background: trendView === key ? C.gold : 'transparent',
+                color: trendView === key ? '#080f17' : C.muted,
+              }}>
+                {label}
+              </button>
+            ))}
           </div>
-          <Card style={{ marginBottom: 18, overflow: 'hidden', padding: '14px 0' }}>
-            <div style={{ padding: '0 16px 10px', fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>By Pitch Type</div>
-            <ArsenalTable pitches={filteredPitches} videoByType={videoByType} />
-          </Card>
+          {trendView === 'bygame' && (
+            filteredPitches.length >= 30 ? (
+              <>
+                {sHead('Season Trend', 'by game')}
+                <Card style={{ marginBottom: 18 }}>
+                  <RollingTrendSection pitches={filteredPitches} />
+                </Card>
+              </>
+            ) : <EmptyPane>Season trend needs at least 30 pitches in this scope.</EmptyPane>
+          )}
+          {trendView === 'approach' && (
+            filteredPitches.length >= 10 ? (
+              <>
+                {sHead('Trends & Approach')}
+                <Card style={{ marginBottom: 18 }}>
+                  <TrendsSection pitches={filteredPitches} />
+                </Card>
+              </>
+            ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+          )}
         </>
       )}
 
-      {/* Savant-parity: Rolling trend */}
-      {filteredPitches.length >= 30 && (
+      {/* ── NOTES: scout observations + coach annotations ── */}
+      {pane === 'notes' && (
         <>
-          {sHead('Season Trend', 'by game')}
-          <Card style={{ marginBottom: 18 }}>
-            <RollingTrendSection pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Count splits */}
-      {hasData && (
-        <>
-          {sHead('Count Splits', 'pitch selection by count')}
-          <Card style={{ marginBottom: 18 }}>
-            <CountSplitsTable pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Contact against — batted ball profile, contact quality, and spray, combined */}
-      {hasData && (
-        <>
-          {sHead('Contact Against', 'batted ball profile & contact quality')}
-          <Card style={{ marginBottom: 18 }}>
-            <ContactSection pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Savant-parity: Platoon splits, results + pitch mix, by batter handedness */}
-      {hasData && (
-        <>
-          {sHead('Platoon Splits', 'results & pitch mix, vs batter handedness')}
-          <Card style={{ marginBottom: 18 }}>
-            <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" pitchMixByLabel={pitchMixByHand(filteredPitches)} />
-          </Card>
-        </>
-      )}
-
-      {/* xHR: would-be home runs allowed by CCL park (distance-only approximation) */}
-      {hasData && (
-        <>
-          {sHead('xHR Against by Park', 'approx, distance-only')}
-          <Card style={{ marginBottom: 18 }}>
-            <XHRParkTable rows={filteredPitches} direction="against" />
-          </Card>
-        </>
-      )}
-
-      {/* Trends */}
-      {filteredPitches.length >= 10 && (
-        <>
-          {sHead('Trends & Approach')}
-          <Card style={{ marginBottom: 18 }}>
-            <TrendsSection pitches={filteredPitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Scout notes */}
-      {pitcherObs.length > 0 && (
-        <>
-          {sHead('Scout Notes')}
-          <ScoutNotes pitcherObs={pitcherObs} />
+          {pitcherObs.length > 0 && (
+            <>
+              {sHead('Scout Notes')}
+              <ScoutNotes pitcherObs={pitcherObs} />
+            </>
+          )}
+          {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
+          {pitcherObs.length === 0 && !playerNameKey && <EmptyPane>No scout notes for this pitcher.</EmptyPane>}
         </>
       )}
     </div>

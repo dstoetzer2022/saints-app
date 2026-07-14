@@ -5,6 +5,8 @@ import { warmLeagueCache } from '@/lib/leagueCache';
 const NAVY_DARK = '#07111c';
 const GOLD = '#c6b583';
 
+import { cldImg } from '@/lib/cloudinaryImg';
+
 const SAINTS_LOGO = 'https://res.cloudinary.com/dpsbfigoq/image/upload/v1781817534/av99z9xmev36zy31_qm53uc.png';
 const CCL_LOGO = 'https://res.cloudinary.com/dpsbfigoq/image/upload/v1781817535/Primary_Logo_CCL_-1-_mbfr9k.png';
 
@@ -55,7 +57,7 @@ function NavCard({ logoUrl, title, onClick }) {
   return (
     <div className="home-glass-card" onClick={onClick} style={{ alignItems: 'center' }}>
       <div style={{ width: 52, height: 52, marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <img src={logoUrl} alt={title} style={{ maxWidth: 52, maxHeight: 52, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))' }} />
+        <img src={cldImg(logoUrl, 120)} alt={title} style={{ maxWidth: 52, maxHeight: 52, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))' }} />
       </div>
       <div style={{ fontFamily: "'Archivo', sans-serif", fontWeight: 800, fontSize: 14.5, color: '#f0ece0', lineHeight: 1.2, textAlign: 'center' }}>
         {title}
@@ -74,7 +76,7 @@ function CarouselCol({ logos, duration, delay }) {
     }}>
       {doubled.map((url, i) => (
         <img
-          key={i} src={url} alt="" draggable={false}
+          key={i} src={cldImg(url, 160)} alt="" draggable={false}
           style={{ width: 78, height: 78, objectFit: 'contain', flexShrink: 0, opacity: 0.19, filter: 'grayscale(40%) brightness(1.4)', userSelect: 'none', pointerEvents: 'none' }}
         />
       ))}
@@ -177,13 +179,13 @@ export default function HomeScreen({ setScreen }) {
           {/* Logos mark */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 30 }}>
             <img
-              src={SAINTS_LOGO} alt="Arroyo Seco Saints"
+              src={cldImg(SAINTS_LOGO, 240)} alt="Arroyo Seco Saints"
               style={{ width: 116, height: 116, objectFit: 'contain', filter: 'drop-shadow(0 0 32px rgba(198,181,131,0.3))' }}
             />
             <div style={{ width: 1, height: 68, background: 'rgba(198,181,131,0.22)', flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(198,181,131,0.5)', letterSpacing: 2, textTransform: 'uppercase' }}>Member of</span>
-              <img src={CCL_LOGO} alt="California Collegiate League" style={{ width: 56, height: 56, objectFit: 'contain', opacity: 0.8 }} />
+              <img src={cldImg(CCL_LOGO, 120)} alt="California Collegiate League" style={{ width: 56, height: 56, objectFit: 'contain', opacity: 0.8 }} />
             </div>
           </div>
 

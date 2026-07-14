@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
+import CoachNoteBox from '@/components/profiles/CoachNoteBox';
 import { hitterTrackmanProfile, percentileRank, fmtStat, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -505,7 +506,40 @@ function HitterKdeZones({ pitches }) {
 }
 
 // ── Main export ───────────────────────────────────────────────
-export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, hitterPool }) {
+// ── Sub-tab bar (parity with PitcherProfileOverview, mockup v3) ──
+const HITTER_PANES = [
+  ['overview', 'Overview'],
+  ['contact', 'Contact'],
+  ['discipline', 'Discipline & Trends'],
+  ['splits', 'Splits'],
+  ['notes', 'Notes'],
+];
+
+function SubTabBar({ pane, setPane }) {
+  return (
+    <div className="no-print" style={{ display: 'flex', gap: 7, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
+      {HITTER_PANES.map(([key, label]) => (
+        <button key={key} onClick={() => setPane(key)} style={{
+          flexShrink: 0, cursor: 'pointer', fontFamily: FONT,
+          border: `1px solid ${pane === key ? C.gold : C.edge}`,
+          background: pane === key ? 'rgba(200,146,12,0.1)' : C.surface,
+          color: pane === key ? C.gold : C.muted,
+          borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '8px 16px',
+        }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const EmptyPane = ({ children }) => (
+  <p style={{ color: C.muted, textAlign: 'center', padding: 40, fontSize: 12, ...FONT_STYLE }}>{children}</p>
+);
+
+export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, hitterPool, playerNameKey }) {
+  const [pane, setPane] = useState('overview');
+
   if (!pitches.length && !runnerObs.length && !catcherObs.length) {
     return <p style={{ color: C.muted, textAlign: 'center', padding: 40, ...FONT_STYLE }}>No data found for this player.</p>;
   }
@@ -515,107 +549,112 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
 
   return (
     <div style={FONT_STYLE}>
-      {/* Percentiles */}
-      {hasPercentiles && (
-        <>
-          {sHead('Percentiles', 'vs CCL')}
-          <div style={{ marginBottom: 14 }}>
-            <HitterPercentiles pitches={pitches} hitterPool={hitterPool} />
-          </div>
-        </>
-      )}
+      <SubTabBar pane={pane} setPane={setPane} />
 
-      {/* KDE location zones by outcome */}
-      {hasTrackman && (
+      {/* ── OVERVIEW: percentiles + location zones ── */}
+      {pane === 'overview' && (
         <>
-          {sHead('Location Zones', 'KDE density by outcome')}
-          <Card style={{ marginBottom: 18 }}>
-            <HitterKdeZones pitches={pitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Contact profile: batted-ball mix, contact quality, EV histogram + spray chart */}
-      {hasTrackman && (
-        <>
-          {sHead('Contact Profile', `${pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0).length} balls in play`)}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
-            <Card style={{ flex: '2 1 280px' }}>
-              <BattedBallContactPanel rows={pitches} />
-            </Card>
-            <Card style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, ...FONT_STYLE }}>Spray chart</div>
-              <SprayChart pitches={pitches} />
-            </Card>
-          </div>
-        </>
-      )}
-
-      {/* Plate discipline (combines Plate Discipline, Trends, and Season Trend) */}
-      {hasTrackman && (
-        <>
-          {sHead('Plate Discipline & Trends', `${pitches.length} pitches seen`)}
-          <Card style={{ marginBottom: 18 }}>
-            <PlateDiscipline pitches={pitches} />
-
-            {pitches.length >= 8 && (
-              <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                  <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Contact vs Velo &amp; Two-Strike Approach</span>
-                </div>
-                <HitterTrends pitches={pitches} />
+          {hasPercentiles && (
+            <>
+              {sHead('Percentiles', 'vs CCL')}
+              <div style={{ marginBottom: 14 }}>
+                <HitterPercentiles pitches={pitches} hitterPool={hitterPool} />
               </div>
-            )}
+            </>
+          )}
+          {hasTrackman && (
+            <>
+              {sHead('Location Zones', 'KDE density by outcome')}
+              <Card style={{ marginBottom: 18 }}>
+                <HitterKdeZones pitches={pitches} />
+              </Card>
+            </>
+          )}
+          {!hasTrackman && !hasPercentiles && <EmptyPane>Not enough pitch data in this scope.</EmptyPane>}
+        </>
+      )}
 
-            {pitches.length >= 30 && (
-              <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                  <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Season Trend (by game)</span>
+      {/* ── CONTACT: batted-ball profile + spray + xHR ── */}
+      {pane === 'contact' && (
+        hasTrackman ? (
+          <>
+            {sHead('Contact Profile', `${pitches.filter(p => p.pitch_call === 'InPlay' && p.exit_speed > 0).length} balls in play`)}
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+              <Card style={{ flex: '2 1 280px' }}>
+                <BattedBallContactPanel rows={pitches} />
+              </Card>
+              <Card style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, ...FONT_STYLE }}>Spray chart</div>
+                <SprayChart pitches={pitches} />
+              </Card>
+            </div>
+            {sHead('xHR by Park', 'approx, distance-only')}
+            <Card style={{ marginBottom: 18 }}>
+              <XHRParkTable rows={pitches} direction="for" />
+            </Card>
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      )}
+
+      {/* ── DISCIPLINE & TRENDS: the combined discipline / trends / season-trend card ── */}
+      {pane === 'discipline' && (
+        hasTrackman ? (
+          <>
+            {sHead('Plate Discipline & Trends', `${pitches.length} pitches seen`)}
+            <Card style={{ marginBottom: 18 }}>
+              <PlateDiscipline pitches={pitches} />
+
+              {pitches.length >= 8 && (
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                    <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Contact vs Velo &amp; Two-Strike Approach</span>
+                  </div>
+                  <HitterTrends pitches={pitches} />
                 </div>
-                <HitterRollingTrendSection pitches={pitches} />
-              </div>
-            )}
-          </Card>
-        </>
+              )}
+
+              {pitches.length >= 30 && (
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                    <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Season Trend (by game)</span>
+                  </div>
+                  <HitterRollingTrendSection pitches={pitches} />
+                </div>
+              )}
+            </Card>
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* Platoon splits, vs RHP/LHP */}
-      {hasTrackman && (
-        <>
-          {sHead('Platoon Splits', 'vs pitcher handedness')}
-          <Card style={{ marginBottom: 18 }}>
-            <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
-          </Card>
-        </>
+      {/* ── SPLITS: platoon + vs pitch type ── */}
+      {pane === 'splits' && (
+        hasTrackman ? (
+          <>
+            {sHead('Platoon Splits', 'vs pitcher handedness')}
+            <Card style={{ marginBottom: 18 }}>
+              <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
+            </Card>
+            {sHead('vs Pitch Type')}
+            <Card style={{ marginBottom: 18, padding: '14px 0' }}>
+              <VsPitchType pitches={pitches} />
+            </Card>
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* xHR: would-be home runs by CCL park (distance-only approximation) */}
-      {hasTrackman && (
+      {/* ── NOTES: scout observations + coach annotations ── */}
+      {pane === 'notes' && (
         <>
-          {sHead('xHR by Park', 'approx, distance-only')}
-          <Card style={{ marginBottom: 18 }}>
-            <XHRParkTable rows={pitches} direction="for" />
-          </Card>
-        </>
-      )}
-
-      {/* vs Pitch Type */}
-      {hasTrackman && (
-        <>
-          {sHead('vs Pitch Type')}
-          <Card style={{ marginBottom: 18, padding: '14px 0' }}>
-            <VsPitchType pitches={pitches} />
-          </Card>
-        </>
-      )}
-
-      {/* Scout notes */}
-      {(catcherObs.length > 0 || runnerObs.length > 0) && (
-        <>
-          {sHead('Scout Notes')}
-          <ScoutNotes catcherObs={catcherObs} runnerObs={runnerObs} />
+          {(catcherObs.length > 0 || runnerObs.length > 0) && (
+            <>
+              {sHead('Scout Notes')}
+              <ScoutNotes catcherObs={catcherObs} runnerObs={runnerObs} />
+            </>
+          )}
+          {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
+          {catcherObs.length === 0 && runnerObs.length === 0 && !playerNameKey && <EmptyPane>No scout notes for this player.</EmptyPane>}
         </>
       )}
     </div>

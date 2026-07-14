@@ -5,7 +5,7 @@ const VALUE = '#edeae0';
 const MUTED = '#4a6070';
 const FONT = "'Archivo', system-ui, sans-serif";
 
-function markerColor(pct) {
+export function markerColor(pct) {
   if (pct <= 50) {
     const t = pct / 50;
     const r = Math.round(80 + (160 - 80) * t);

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { cldImg } from '@/lib/cloudinaryImg';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
@@ -9,7 +10,8 @@ import { getLeaguePitches } from '@/lib/leagueCache';
 import { buildScene } from '@/lib/pitch3dEngine';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
-import { lazy, Suspense } from 'react';
+import PitcherStatRibbon from '@/components/profiles/PitcherStatRibbon';
+import HitterStatRibbon from '@/components/profiles/HitterStatRibbon';
 const Pitch3DTab = lazy(() => import('@/components/Pitch3DTab'));
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
@@ -103,7 +105,7 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
       >
         <span style={{ fontSize: 12, color: C.muted, minWidth: 88, fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontFamily: FONT }}>{game.date}</span>
         {oppTeam?.logo_url
-          ? <img src={oppTeam.logo_url} alt={opponent} style={{ width: 22, height: 22, objectFit: 'contain' }} />
+          ? <img src={cldImg(oppTeam.logo_url, 48)} alt={opponent} style={{ width: 22, height: 22, objectFit: 'contain' }} />
           : <div style={{ width: 22, height: 22, background: C.faint, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: C.muted }}>{(opponent || '?').slice(0, 3)}</div>
         }
         <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.white, fontFamily: FONT }}>vs {opponent || '—'}</span>
@@ -626,6 +628,34 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const tabs = isPitcher ? ['overview', '3dflight', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
   const tabLabels = { overview: 'Overview', '3dflight': '3D Flight', trailcuration: 'Trail Curation', gamelog: 'Game Log', compare: 'Compare' };
 
+  // ── Global data scope (mockup v3, item 3) ─────────────────────────────
+  // Filters the pitch rows feeding the Overview tab. Season = everything;
+  // Last 3 = three most recent game_ids by row date; vs L / vs R = batter
+  // hand splits. Other tabs (Game Log, Compare, 3D) keep the full season set.
+  const [scope, setScope] = useState('season');
+  const scopedPitches = useMemo(() => {
+    const handField = isPitcher ? 'batter_hand' : 'pitcher_hand';
+    if (scope === 'vsL') return pitches.filter(p => p[handField] === 'Left');
+    if (scope === 'vsR') return pitches.filter(p => p[handField] === 'Right');
+    if (scope === 'last3') {
+      const byGame = {};
+      pitches.forEach(p => {
+        if (p.game_id && p.date && !byGame[p.game_id]) byGame[p.game_id] = p.date;
+      });
+      const recent = Object.entries(byGame)
+        .filter(([, d]) => d)
+        .sort((a, b) => new Date(b[1]) - new Date(a[1]))
+        .slice(0, 3)
+        .map(([id]) => id);
+      const keep = new Set(recent);
+      return pitches.filter(p => keep.has(p.game_id));
+    }
+    return pitches;
+  }, [pitches, scope, isPitcher]);
+  const SCOPES = isPitcher
+    ? [['season', 'Season'], ['last3', 'Last 3'], ['vsL', 'vs LHB'], ['vsR', 'vs RHB']]
+    : [['season', 'Season'], ['last3', 'Last 3'], ['vsL', 'vs LHP'], ['vsR', 'vs RHP']];
+
   // Eyebrow
   const eyebrow = `${team.name} · ${isPitcher ? 'Pitcher' : 'Hitter'}`;
 
@@ -679,8 +709,17 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         </div>
       </div>
 
+      {/* Slim stat ribbon — same header, one thin line (mockup v3 item 2) */}
+      {!loading && tab === 'overview' && (
+        <div className="no-print" style={{ background: '#0e253a', borderBottom: `1px solid ${C.edge}`, paddingBottom: 2, flexShrink: 0 }}>
+          {isPitcher
+            ? <PitcherStatRibbon pitches={scopedPitches} pitcherPool={pitcherPool} />
+            : <HitterStatRibbon pitches={scopedPitches} hitterPool={hitterPool} />}
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="no-print" style={{ display: 'flex', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0, padding: '0 32px' }}>
+      <div className="no-print" style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0, padding: '0 32px' }}>
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             background: 'none', border: 'none', cursor: 'pointer',
@@ -694,6 +733,21 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
             {tabLabels[t]}
           </button>
         ))}
+        {/* Scope selector — filters the Overview tab globally */}
+        {tab === 'overview' && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 3, background: C.base, border: `1px solid ${C.edge}`, borderRadius: 7, padding: 3 }}>
+            {SCOPES.map(([key, label]) => (
+              <button key={key} onClick={() => setScope(key)} style={{
+                border: 'none', cursor: 'pointer', borderRadius: 5,
+                padding: '4px 10px', fontSize: 11, fontWeight: 800, fontFamily: FONT,
+                background: scope === key ? C.gold : 'transparent',
+                color: scope === key ? '#080f17' : C.muted,
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -705,10 +759,10 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         ) : (
           <>
             {tab === 'overview' && isPitcher && (
-              <PitcherProfileOverview pitches={pitches} pitcherObs={pitcherObs} pitcherPool={pitcherPool} leaguePitches={leaguePitches} />
+              <PitcherProfileOverview pitches={scopedPitches} pitcherObs={pitcherObs} pitcherPool={pitcherPool} leaguePitches={leaguePitches} arsenalPool={arsenalPool} playerNameKey={normalizedName} />
             )}
             {tab === 'overview' && !isPitcher && (
-              <BatterProfileOverview pitches={pitches} runnerObs={runnerObs} catcherObs={catcherObs} hitterPool={hitterPool} />
+              <BatterProfileOverview pitches={scopedPitches} runnerObs={runnerObs} catcherObs={catcherObs} hitterPool={hitterPool} playerNameKey={normalizedName} />
             )}
             {tab === '3dflight' && isPitcher && (
               <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#888' }}>Loading 3D engine…</div>}>

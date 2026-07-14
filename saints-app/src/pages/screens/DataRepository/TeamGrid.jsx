@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { cldImg } from '@/lib/cloudinaryImg';
 import { base44 } from '@/api/base44Client';
 
 const NAVY = '#0e253a';
@@ -50,7 +51,7 @@ function TeamCard({ team, onClick }) {
       <div style={{ width: 72, height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {team.logo_url ? (
           <img
-            src={team.logo_url}
+            src={cldImg(team.logo_url, 160)}
             alt={team.name}
             style={{ maxWidth: 72, maxHeight: 72, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))' }}
           />

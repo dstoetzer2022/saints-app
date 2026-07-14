@@ -74,5 +74,5 @@ function correctLeagueRowsFlat(rows) {
 
 // Fire-and-forget warmup — call from HomeScreen on mount. Never throws.
 export function warmLeagueCache() {
-  getLeaguePitches().catch(() => {});
+  getLeaguePitches().catch(err => console.warn('[saints] league cache warm failed:', err));
 }
