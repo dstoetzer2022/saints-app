@@ -77,7 +77,14 @@ export default function BatchPrintReport({ open, onClose, players, team, pitches
       : batterPitches.filter(p => canonicalNameKey(p.batter_name) === key);
     const variantRows = leaguePitches.filter(p => canonicalNameKey(p[nameField]) === key);
     const seen = new Set();
-    const rows = [...teamScoped, ...variantRows].filter(r => {
+    // AUDIT: variantRows (corrected, from getLeaguePitches()) must be spread
+    // FIRST — same requirement as PlayerProfile's merge. This previously
+    // spread teamScoped (raw) first, so the id de-dup kept the UNCORRECTED
+    // row for every pitch that existed in both sets (i.e. nearly every real
+    // pitch), meaning every arsenal table in a batch/roster PDF export
+    // silently showed pre-correction, potentially mistagged pitch labels
+    // while the single-player export was already correct.
+    const rows = [...variantRows, ...teamScoped].filter(r => {
       const id = r.id ?? `${r[nameField]}|${r.game_id}|${r.pitch_no ?? ''}`;
       if (seen.has(id)) return false;
       seen.add(id);

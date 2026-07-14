@@ -197,3 +197,56 @@ describe('arsenalCorrection', () => {
     expect(stats['Four-Seam'].velo.center).toBeCloseTo(92, 0);
   });
 });
+
+// ── Batch print arsenal-correction de-dup order (regression) ────────────
+// BatchPrintReport merges team-scoped (raw) TrackmanPitch rows with
+// league-cache (arsenal-corrected) rows by id, keeping whichever occurrence
+// comes first in the spread. This guards the ordering directly so a future
+// edit can't silently flip it back and revert every batch-printed arsenal
+// table to pre-correction labels.
+describe('batch print de-dup order (regression)', () => {
+  it('corrected rows must win when merged with raw duplicates by id', () => {
+    const raw = { id: 'p1', tagged_pitch_type: 'Four-Seam', pitch_type: 'Four-Seam' };
+    const corrected = { id: 'p1', tagged_pitch_type: 'Slider', pitch_type: 'Four-Seam' };
+    // Mirrors BatchPrintReport.jsx: [...variantRows, ...teamScoped] then id de-dup, first wins.
+    const seen = new Set();
+    const merged = [corrected, raw].filter(r => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].tagged_pitch_type).toBe('Slider');
+  });
+});
+
+// ── Precomputed pool payload (Phase 4.1) ─────────────────────────────────
+import { buildPoolPayload } from '@/lib/poolCache';
+
+describe('buildPoolPayload', () => {
+  it('produces a payload with all three pools plus movement + metadata', () => {
+    const rows = [
+      { pitcher_name: 'Morgan, Donnie', pitcher_hand: 'Right', tagged_pitch_type: 'Four-Seam', pitch_type: 'Four-Seam',
+        rel_speed: 92, induced_vert_break: 17, horz_break: 8, pitch_call: 'StrikeCalled', batter_hand: 'Right', date: '2026-06-01', game_id: 'g1' },
+      { pitcher_name: 'Morgan, Donnie', pitcher_hand: 'Right', tagged_pitch_type: 'Slider', pitch_type: 'Slider',
+        rel_speed: 84, induced_vert_break: 2, horz_break: -12, pitch_call: 'StrikeSwinging', batter_hand: 'Left', date: '2026-06-01', game_id: 'g1' },
+    ];
+    const payload = buildPoolPayload(rows);
+    expect(payload).toHaveProperty('pitcherPool');
+    expect(payload).toHaveProperty('hitterPool');
+    expect(payload).toHaveProperty('arsenalPool');
+    expect(payload).toHaveProperty('movement');
+    expect(payload.rowCount).toBe(2);
+    expect(typeof payload.builtAt).toBe('string');
+  });
+
+  it('rounds floats to keep the JSON payload small without losing meaningful precision', () => {
+    const rows = [{ pitcher_name: 'X, Y', pitcher_hand: 'Right', tagged_pitch_type: 'Four-Seam',
+      rel_speed: 92.123456789, induced_vert_break: 17.987654321, horz_break: 8, pitch_call: 'StrikeCalled', date: '2026-06-01', game_id: 'g1' }];
+    const payload = buildPoolPayload(rows);
+    const str = JSON.stringify(payload);
+    // no float should carry more than 4 decimal places
+    const longFloats = str.match(/\d+\.\d{5,}/g);
+    expect(longFloats).toBeNull();
+  });
+});

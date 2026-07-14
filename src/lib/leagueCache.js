@@ -25,9 +25,12 @@ const LEAGUE_MAX_ROWS = 40000; // safety cap; ~full CCL season of pitch rows
 // contract. Grouped by canonicalNameKey so name-variant rows (e.g. "O'Regan,
 // Joe" vs "O'Regan, Joseph") get corrected together as one arsenal.
 
-export function getLeaguePitches() {
+export function getLeaguePitches(opts = {}) {
   const now = Date.now();
-  if (_leagueCache.rows && now - _leagueCache.at < LEAGUE_TTL_MS) return Promise.resolve(_leagueCache.rows);
+  // force: bypass the TTL — used right after a season rebuild so the pool
+  // snapshot is built from post-rebuild data, not a 10-minute-old cache.
+  if (!opts.force && _leagueCache.rows && now - _leagueCache.at < LEAGUE_TTL_MS) return Promise.resolve(_leagueCache.rows);
+  if (opts.force) _leagueCache = { rows: null, at: 0, promise: null };
   if (_leagueCache.promise) return _leagueCache.promise;
   _leagueCache.promise = fetchAllList(base44.entities.TrackmanPitch, 'created_date', { max: LEAGUE_MAX_ROWS })
     .then(rows => {
@@ -44,6 +47,8 @@ export function getLeaguePitches() {
 // tagged_pitch_type actually changes (same contract as applyArsenalCorrection
 // / correctMistaggedPitches individually) — untouched rows are the same
 // object reference, so this is cheap for the common case.
+export function correctRowsByPitcher(rows) { return correctLeagueRowsFlat(rows); }
+
 function correctLeagueRowsFlat(rows) {
   const byPitcher = new Map();
   const order = []; // pitcher_name key per row, parallel to `rows`, to reassemble in original order

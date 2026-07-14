@@ -14,6 +14,8 @@
 //    (curly apostrophes, "First Last") no longer leave orphan season rows.
 
 import { base44 } from '@/api/base44Client';
+import { getLeaguePitches } from '@/lib/leagueCache';
+import { savePools } from '@/lib/poolCache';
 import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
@@ -397,6 +399,20 @@ export async function rebuildAllPitcherSeasons(allTeams, onProgress) {
     await sleep(200);
   }
 
-  if (onProgress) onProgress(`Done — rebuilt ${done} pitchers.`);
+  if (onProgress) onProgress(`Rebuilt ${done} pitchers — snapshotting league pools…`);
+  // Phase 4.1: force-refresh the league cache (bypassing its 10-min TTL) so
+  // the precomputed pool snapshot reflects the rebuild that just finished,
+  // then persist it. A failed snapshot must never fail the rebuild itself —
+  // savePools() already swallows errors internally and returns false; every
+  // profile falls back to building pools from the live league pull exactly
+  // as before if this step is skipped or the LeaguePool entity isn't set up
+  // yet (schema pending sign-off).
+  try {
+    const freshLeaguePitches = await getLeaguePitches({ force: true });
+    const saved = await savePools(freshLeaguePitches);
+    if (onProgress) onProgress(saved ? `Done — rebuilt ${done} pitchers, pools snapshotted.` : `Done — rebuilt ${done} pitchers (pool snapshot skipped).`);
+  } catch {
+    if (onProgress) onProgress(`Done — rebuilt ${done} pitchers (pool snapshot skipped).`);
+  }
   return done;
 }

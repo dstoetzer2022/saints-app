@@ -6,8 +6,10 @@ import { normalizePitch, getPitchColor } from '@/lib/ds';
 import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool, buildArsenalPool } from '@/lib/profileStats';
 import { fetchAllFiltered } from '@/lib/fetchAll';
-import { getLeaguePitches } from '@/lib/leagueCache';
+import { getLeaguePitches, correctRowsByPitcher } from '@/lib/leagueCache';
+import { loadPools } from '@/lib/poolCache';
 import { buildScene } from '@/lib/pitch3dEngine';
+import reportError from '@/lib/reportError';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
 import PitcherStatRibbon from '@/components/profiles/PitcherStatRibbon';
@@ -542,8 +544,18 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const normalizedName = normalizeName(player.name);
 
   useEffect(() => {
-    // AUDIT: player fetches now paginate (the old 1000/500 caps silently
+    // ── Two-stage load (Phase 4.1) ────────────────────────────────────
+    // Stage A: the player's own rows + games/teams/player record + the
+    // precomputed LeaguePool snapshot. If the snapshot exists, the profile
+    // paints here — percentile bars, ribbon, fusion cards, everything —
+    // without waiting for the ~40k-row league pull.
+    // Stage B: the league pull continues in the background for name-variant
+    // recovery (rows stored under apostrophe/nickname/order variants), the
+    // movement-plot league rings, and the Compare tab. If no snapshot
+    // existed, pools are built here exactly as before.
+    // AUDIT: player fetches paginate (the old 1000/500 caps silently
     // truncated any player past that many pitches).
+    let cancelled = false;
     const playerFetch = isPitcher
       ? [
           fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: trackmanName }, 'date'),
@@ -558,32 +570,80 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
           fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normalizedName }, 'runner_name'),
         ];
 
-    Promise.all([
-      ...playerFetch,
-      base44.entities.Game.list('-date', 200),
-      base44.entities.Team.list('name', 100),
-      getLeaguePitches(),
-      base44.entities.Player.filter({ name: trackmanName }, undefined, 1).catch(() => []),
-    ]).then(([playerPitches, obsA, obsB, obsC, g, teams, leaguePitches, playerRecords]) => {
-      // The exact-match server query (pitcher_name/batter_name = trackmanName) misses
-      // rows stored under name variants (curly apostrophe, nickname, "First Last" order).
-      // Recover them by canonical-key filtering the full league set we already fetched,
-      // then union with the exact-match rows and de-dupe by id.
+    (async () => {
+      const [playerPitches, obsA, obsB, obsC, g, teams, playerRecords, poolPayload] = await Promise.all([
+        ...playerFetch,
+        base44.entities.Game.list('-date', 200),
+        base44.entities.Team.list('name', 100),
+        base44.entities.Player.filter({ name: trackmanName }, undefined, 1).catch(() => []),
+        loadPools(),
+      ]);
+      if (cancelled) return;
+
+      // Run the SAME two-pass arsenal correction the league cache applies,
+      // on just this player's exact-match rows, so stage A never flashes
+      // pre-correction pitch labels that then flick to corrected ones when
+      // the league merge lands. (For hitters this groups the faced pitches
+      // by opposing pitcher, identical to the league-wide path.)
+      const localCorrected = correctRowsByPitcher(playerPitches || []);
+      setPitches(localCorrected);
+
+      if (isPitcher) {
+        setPitcherObs(obsA);
+      } else {
+        setCatcherObs(obsB);
+        setRunnerObs(obsC);
+      }
+      setAllTeams(teams);
+      if (playerRecords && playerRecords[0]?.school) setSchool(playerRecords[0].school);
+      // Manual "bats" override takes precedence over the auto-detected hand
+      // (Trackman can mislabel a hand on a mis-configured session, which
+      // would otherwise falsely show as a switch hitter).
+      if (playerRecords && playerRecords[0]?.bats) setHand(normalizeHandLabel(playerRecords[0].bats));
+
+      const setGamesFor = rows => {
+        const relevantGameIds = new Set(
+          [...rows, ...(obsA || []), ...(obsB || []), ...(obsC || [])]
+            .map(r => r.game_id).filter(Boolean)
+        );
+        setGames(g.filter(gm => relevantGameIds.has(gm.id)));
+      };
+      setGamesFor(localCorrected);
+
+      const havePrecomputedPools = !!poolPayload;
+      if (havePrecomputedPools) {
+        if (isPitcher) {
+          setPitcherPool(poolPayload.pitcherPool);
+          // Print report needs these on pitcher profiles too: splits-allowed
+          // shading percentiles vs the league HITTER pool, and the arsenal
+          // table percentiles vs per-pitch-type league distributions.
+          setHitterPool(poolPayload.hitterPool);
+          setArsenalPool(poolPayload.arsenalPool);
+        } else {
+          setHitterPool(poolPayload.hitterPool);
+        }
+        setLoading(false); // profile paints now; league merge continues below
+      }
+
+      // ── Stage B: league pull (background when pools were precomputed) ──
+      const leaguePitches = await getLeaguePitches();
+      if (cancelled) return;
+
+      // The exact-match server query (pitcher_name/batter_name = trackmanName)
+      // misses rows stored under name variants (curly apostrophe, nickname,
+      // "First Last" order). Recover them by canonical-key filtering the full
+      // league set, then union with the exact-match rows and de-dupe by id.
+      // variantRows come from getLeaguePitches(), which runs the arsenal
+      // correction pipeline centrally — spread FIRST so they win the de-dup;
+      // localCorrected is kept as a fallback for rows too new to be in the
+      // 10-min league cache yet.
       const wantKey = canonicalNameKey(player.name);
       const nameField = isPitcher ? 'pitcher_name' : 'batter_name';
       const variantRows = (leaguePitches || []).filter(
         r => canonicalNameKey(r[nameField]) === wantKey
       );
       const mergedSeen = new Set();
-      // variantRows come from getLeaguePitches(), which now runs the arsenal
-      // correction pipeline centrally — spread those FIRST so they win the
-      // id de-dup below. playerPitches is a fresh uncorrected exact-match
-      // query (kept as a fallback for rows too new to be in the 10-min league
-      // cache yet); without this ordering, corrected rows would lose the
-      // de-dup to their own uncorrected duplicates and every pitch-level view
-      // on this page — movement plot, arsenal table, percentiles — would
-      // silently show the original mistagged labels again.
-      const mergedPitches = [...variantRows, ...(playerPitches || [])].filter(r => {
+      const mergedPitches = [...variantRows, ...localCorrected].filter(r => {
         const id = r.id ?? `${r[nameField]}|${r.game_id}|${r.pitch_no ?? ''}`;
         if (mergedSeen.has(id)) return false;
         mergedSeen.add(id);
@@ -591,37 +651,27 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       });
 
       setPitches(mergedPitches);
+      if (mergedPitches.length !== localCorrected.length) setGamesFor(mergedPitches);
       // AUDIT: setLeaguePitches was only called on the pitcher branch — the
       // compare-tab player picker (and any future hitter feature needing the
       // league set) had nothing to search on hitter profiles.
       setLeaguePitches(leaguePitches);
-      if (isPitcher) {
-        setPitcherObs(obsA);
-        setPitcherPool(buildPitcherPool(leaguePitches));
-        // Print report needs these on pitcher profiles too: splits-allowed
-        // shading percentiles vs the league HITTER pool (an opposing batting
-        // line is a batting line), and the arsenal table percentiles vs
-        // per-pitch-type league distributions.
-        setHitterPool(buildHitterPool(leaguePitches));
-        setArsenalPool(buildArsenalPool(leaguePitches));
-      } else {
-        setCatcherObs(obsB);
-        setRunnerObs(obsC);
-        setHitterPool(buildHitterPool(leaguePitches));
+      if (!havePrecomputedPools) {
+        if (isPitcher) {
+          setPitcherPool(buildPitcherPool(leaguePitches));
+          setHitterPool(buildHitterPool(leaguePitches));
+          setArsenalPool(buildArsenalPool(leaguePitches));
+        } else {
+          setHitterPool(buildHitterPool(leaguePitches));
+        }
       }
-      const relevantGameIds = new Set(
-        [...mergedPitches, ...(obsA || []), ...(obsB || []), ...(obsC || [])]
-          .map(r => r.game_id).filter(Boolean)
-      );
-      setGames(g.filter(gm => relevantGameIds.has(gm.id)));
-      setAllTeams(teams);
-      if (playerRecords && playerRecords[0]?.school) setSchool(playerRecords[0].school);
-      // Manual "bats" override takes precedence over the auto-detected hand
-      // (Trackman can mislabel a hand on a mis-configured session, which
-      // would otherwise falsely show as a switch hitter).
-      if (playerRecords && playerRecords[0]?.bats) setHand(normalizeHandLabel(playerRecords[0].bats));
+      setLoading(false);
+    })().catch(err => {
+      if (cancelled) return;
+      reportError(err, 'Could not load player data');
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [normalizedName, trackmanName, isPitcher]);
 
   const tabs = isPitcher ? ['overview', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
