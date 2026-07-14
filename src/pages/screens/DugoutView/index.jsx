@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { buildScene, buildPitcherForScene, colorFor, makeCycle } from '@/lib/pitch3dEngine';
 import { normalizePitch } from '@/lib/ds';
-import { isStrike, isSwing as isSwingRow, isWhiff, normHand, buildZoneCounts } from '@/lib/statsUtils';
+import { isStrike, isSwing as isSwingRow, isWhiff, normHand, buildZoneCounts, toTrackmanName, canonicalNameKey } from '@/lib/statsUtils';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { applyArsenalCorrection, correctMistaggedPitches } from '@/lib/arsenalCorrection';
 import { dugoutVideoUrl } from '@/lib/cloudinaryVideo';
@@ -12,20 +12,6 @@ import { colorAt } from '@/components/dugout/HitterViz';
 
 const FONT = "'Archivo', system-ui, sans-serif";
 const pitchHex = t => colorFor(t || '');
-
-function toLastFirst(name) {
-  if (!name) return '';
-  if (name.includes(',')) return name.trim();
-  const parts = name.trim().split(/\s+/);
-  if (parts.length < 2) return name.trim();
-  return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(' ')}`;
-}
-function canonicalKey(name) {
-  if (!name) return '';
-  const lf = toLastFirst(name);
-  const [last, first] = lf.split(',').map(s => s.trim().toLowerCase());
-  return `${last || ''}|${first || ''}`;
-}
 
 const sign = v => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(1);
 const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
@@ -576,8 +562,8 @@ export default function DugoutView({ setScreen }) {
   // Load season data for a given pitcher name (as stored in PitcherObservation)
   const loadSeasonData = useCallback(async (pitcherName, teamTrackmanCode, teamFullName) => {
     if (!pitcherName) { setSeasonArsenal([]); setSeasonRates(null); setCuratedTrails([]); return; }
-    const lastFirst = toLastFirst(pitcherName);
-    const key = canonicalKey(pitcherName);
+    const lastFirst = toTrackmanName(pitcherName);
+    const key = canonicalNameKey(pitcherName);
 
     // Curated trails may be stored with full team name OR trackman code — try both
     const [arsenalRaw, ratesRaw, curatedByCode, curatedByName, videoClipsRaw] = await Promise.all([
@@ -612,11 +598,11 @@ export default function DugoutView({ setScreen }) {
     let ratesArr = ratesRaw || [];
     if (!arsenal.length) {
       const broader = await base44.entities.PitcherArsenal.filter({ game_id: 'season' }, '-created_date', 500).catch(() => []);
-      arsenal = broader.filter(r => canonicalKey(r.pitcher_name) === key);
+      arsenal = broader.filter(r => canonicalNameKey(r.pitcher_name) === key);
     }
     if (!ratesArr.length) {
       const broader = await base44.entities.PitcherSeasonRates.list('-updated_date', 200).catch(() => []);
-      ratesArr = broader.filter(r => canonicalKey(r.pitcher_name) === key);
+      ratesArr = broader.filter(r => canonicalNameKey(r.pitcher_name) === key);
     }
 
     // Last resort: compute live from TrackmanPitch if still no arsenal rows
@@ -716,7 +702,7 @@ export default function DugoutView({ setScreen }) {
     let videoClips = videoClipsRaw || [];
     if (!videoClips.length) {
       const broader = await base44.entities.PitcherVideoClip.list(null, 500).catch(() => []);
-      videoClips = broader.filter(r => canonicalKey(r.pitcher_name) === key);
+      videoClips = broader.filter(r => canonicalNameKey(r.pitcher_name) === key);
     }
     const videoByType = {};
     for (const v of videoClips) videoByType[normalizePitch(v.pitch_type)] = v;

@@ -376,3 +376,43 @@ describe('fenceDistanceAt / fenceArcPath', () => {
     expect(fenceArcPath('NOT_A_REAL_PARK', toXY)).toBeNull();
   });
 });
+
+// ── Multi-word surname bug (Jason Del Villar / MLB Academy) ──────────────
+// Real production incident: TrackmanPitch stores "Del Villar, Jason" while
+// live-scouted HitterObservation rows store "Jason Del Villar" — the old
+// canonicalNameKey only treated the FINAL word as the last name, so these
+// produced different keys (delvillar|jason vs villar|jasondel), splitting
+// one player into two roster entries and losing his Trackman data off the
+// profile (toTrackmanName had the identical bug, so the exact-match query
+// built from his HitterObservation-derived name never matched either).
+import { toTrackmanName, splitDisplayName } from '@/lib/statsUtils';
+
+describe('multi-word surname handling (Del Villar incident)', () => {
+  it('canonicalNameKey: "Del Villar, Jason" and "Jason Del Villar" now match', () => {
+    expect(canonicalNameKey('Del Villar, Jason')).toBe(canonicalNameKey('Jason Del Villar'));
+  });
+  it('toTrackmanName: "Jason Del Villar" converts to the real Trackman spelling', () => {
+    expect(toTrackmanName('Jason Del Villar')).toBe('Del Villar, Jason');
+  });
+  it('toTrackmanName: comma-format input passes through unchanged', () => {
+    expect(toTrackmanName('Del Villar, Jason')).toBe('Del Villar, Jason');
+  });
+  it('splitDisplayName: keeps the full two-word surname together', () => {
+    expect(splitDisplayName('Jason Del Villar')).toEqual({ firstName: 'Jason', lastName: 'Del Villar' });
+  });
+  it('generalizes to other common surname particles (Van, De La, Von)', () => {
+    expect(canonicalNameKey('Van Der Berg, Kyle')).toBe(canonicalNameKey('Kyle Van Der Berg'));
+    expect(canonicalNameKey('De La Cruz, Miguel')).toBe(canonicalNameKey('Miguel De La Cruz'));
+    expect(toTrackmanName('Kyle Von Braun')).toBe('Von Braun, Kyle');
+  });
+  it('does not regress ordinary single-word surnames', () => {
+    expect(canonicalNameKey('Morgan, Donnie')).toBe(canonicalNameKey('Donnie Morgan'));
+    expect(toTrackmanName('Donnie Morgan')).toBe('Morgan, Donnie');
+    expect(splitDisplayName('Donnie Morgan')).toEqual({ firstName: 'Donnie', lastName: 'Morgan' });
+  });
+  it('a lone given name matching a particle word (e.g. "Van Smith") is not swallowed', () => {
+    // "Van" as an actual first name, "Smith" as a normal one-word surname —
+    // the particle-absorption guard must not consume the whole name.
+    expect(toTrackmanName('Van Smith')).toBe('Smith, Van');
+  });
+});

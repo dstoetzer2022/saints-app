@@ -16,7 +16,7 @@
 import { base44 } from '@/api/base44Client';
 import { getLeaguePitches } from '@/lib/leagueCache';
 import { savePools } from '@/lib/poolCache';
-import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts } from '@/lib/statsUtils';
+import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts, toTrackmanName } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { applyArsenalCorrection, correctMistaggedPitches } from '@/lib/arsenalCorrection';
@@ -26,16 +26,6 @@ function normalizeApostrophe(s) {
   return s ? s.replace(/[\u2018\u2019\u02BC\u0060\u00B4]/g, "'") : s;
 }
 
-function toLastFirst(name) {
-  if (!name) return '';
-  name = normalizeApostrophe(name.trim());
-  if (name.includes(',')) return name;
-  const parts = name.split(/\s+/);
-  if (parts.length < 2) return name;
-  const last = parts[parts.length - 1];
-  const first = parts.slice(0, parts.length - 1).join(' ');
-  return `${last}, ${first}`;
-}
 
 const isPlaceholder = name =>
   !name || canonicalNameKey(name) === 'last|first' || name.trim() === 'Last, First';
@@ -293,7 +283,7 @@ async function fetchAllDistinctPitchers(nameToCode) {
       seen.add(k);
       const fullTeamName = r.pitcher_team || '';
       const teamCode = nameToCode[fullTeamName] || fullTeamName;
-      pairs.push({ name: toLastFirst(r.pitcher_name), teamCode, teamFullName: fullTeamName });
+      pairs.push({ name: toTrackmanName(r.pitcher_name), teamCode, teamFullName: fullTeamName });
     }
     await sleep(100);
   }
@@ -319,7 +309,7 @@ export async function rebuildPitchersByName(pitcherEntries, allTeams, onProgress
   });
 
   for (const { name, team } of unique) {
-    const lastFirst = toLastFirst(name);
+    const lastFirst = toTrackmanName(name);
     const teamCode = nameToCode[team] || team || '';
     if (onProgress) onProgress(`Rebuilding ${lastFirst} (${done + 1}/${unique.length})…`);
     try {
@@ -358,7 +348,7 @@ export async function snapshotTeamSeasonStats(teamTrackmanCode, allTeams) {
     );
     for (const r of rows) {
       if (!r.pitcher_name || isPlaceholder(r.pitcher_name)) continue;
-      const lastFirst = toLastFirst(r.pitcher_name);
+      const lastFirst = toTrackmanName(r.pitcher_name);
       const k = canonicalNameKey(lastFirst);
       if (seen.has(k)) continue;
       seen.add(k);

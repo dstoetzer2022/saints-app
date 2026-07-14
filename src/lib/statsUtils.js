@@ -63,11 +63,60 @@ const NICKNAME_CANON = {
 // keyed as jr|kengriffey and two suffixed players could collide on "jr".
 const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v', 'jr.', 'sr.']);
 
+// Common surname particles that stay attached to the surname when parsing
+// "First Last" (no-comma) name strings. Without this, a name like "Jason
+// Del Villar" naively splits as first="Jason Del", last="Villar" (only the
+// final word) — a DIFFERENT canonical key than the same player's Trackman
+// "Del Villar, Jason" spelling (which gives the unambiguous last="Del
+// Villar" directly from the comma segment), silently splitting one player
+// into two roster/profile entries with no error anywhere. Covers common
+// Spanish (de, del, de la, de los), Dutch/German (van, von, der, den), and
+// French/Italian (le, la, di, da) surname particles. Add more here as
+// discovered — same pattern as NICKNAME_CANON above.
+const SURNAME_PARTICLES = new Set(['de', 'del', 'des', 'der', 'den', 'di', 'da', 'do', 'dos', 'la', 'le', 'las', 'los', 'van', 'von', 'st', 'san', 'santa']);
 
 function canonFirst(first) {
   if (!first) return '';
   const f = first.toLowerCase();
   return NICKNAME_CANON[f] || f;
+}
+
+// Split a "First [Particle...] Last" string (no comma) into { first, last },
+// absorbing trailing surname particles into the last name. Shared by
+// canonicalNameKey and toTrackmanName so both agree on where a multi-word
+// surname begins — see SURNAME_PARTICLES above for why this matters.
+function splitFirstLastNoComma(parts) {
+  let splitIdx = parts.length - 1;
+  while (splitIdx > 0 && SURNAME_PARTICLES.has((parts[splitIdx - 1] || '').toLowerCase().replace(/\./g, ''))) {
+    splitIdx--;
+  }
+  if (splitIdx < 1) splitIdx = 1; // never consume the whole name as "last" — need a first name left
+  return { first: parts.slice(0, splitIdx).join(' '), last: parts.slice(splitIdx).join(' ') };
+}
+
+// Convert "First Last" → "Last, First" for Trackman-format queries.
+// Comma-format input passes through unchanged (already unambiguous).
+// Particle-aware — see SURNAME_PARTICLES.
+// Split an already-"First Last"-ordered display name into { firstName,
+// lastName } for UI fields (roster cards, sort labels). Particle-aware —
+// see SURNAME_PARTICLES — so "Jason Del Villar" splits as firstName="Jason",
+// lastName="Del Villar" instead of lastName="Villar" alone.
+export function splitDisplayName(name) {
+  if (!name) return { firstName: '', lastName: '' };
+  const parts = normalizeApostrophe(name.trim()).split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { firstName: '', lastName: parts[0] || '' };
+  const { first, last } = splitFirstLastNoComma(parts);
+  return { firstName: first, lastName: last };
+}
+
+export function toTrackmanName(name) {
+  if (!name) return name;
+  const trimmed = normalizeApostrophe(name.trim());
+  if (trimmed.includes(',')) return trimmed;
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return trimmed;
+  const { first, last } = splitFirstLastNoComma(parts);
+  return `${last}, ${first}`;
 }
 
 // Canonical dedup key: collapses "Last, First" vs "First Last", case,
@@ -101,8 +150,7 @@ export function canonicalNameKey(name) {
       // single token — key on it alone
       return scrub(parts[0] || '');
     }
-    last = parts[parts.length - 1];
-    first = parts.slice(0, -1).join(' ');
+    ({ first, last } = splitFirstLastNoComma(parts));
   }
   return `${scrub(last)}|${scrub(canonFirst(first))}`;
 }

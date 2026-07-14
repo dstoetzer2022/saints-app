@@ -4,7 +4,7 @@ import { cldImg } from '@/lib/cloudinaryImg';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { fetchAllFiltered } from '@/lib/fetchAll';
-import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
+import { normalizeName, canonicalNameKey, normalizeHandLabel, splitDisplayName } from '@/lib/statsUtils';
 import PlayerProfile from './PlayerProfile';
 import BaserunnerReport from '@/components/reports/BaserunnerReport';
 import PitcherCatcherReport from '@/components/reports/PitcherCatcherReport';
@@ -360,11 +360,11 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       const key = canonicalNameKey(o.pitcher_name);
       if (!pitcherMap[key]) {
         const norm = normalizeName(o.pitcher_name);
-        const parts = norm.split(' ');
+        const { firstName, lastName } = splitDisplayName(norm);
         pitcherMap[key] = {
           name: norm,
-          firstName: parts.slice(0, -1).join(' '),
-          lastName: parts[parts.length - 1],
+          firstName,
+          lastName,
           role: 'Pitcher',
           jerseyNumber: o.jersey_number || '',
           hand: o.pitcher_hand || '',
@@ -379,12 +379,12 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!p.pitcher_name) return;
       const normalized = normalizeName(p.pitcher_name);
       const key = canonicalNameKey(p.pitcher_name);
-      const parts = normalized.split(' ');
+      const { firstName, lastName } = splitDisplayName(normalized);
       if (!pitcherMap[key]) {
         pitcherMap[key] = {
           name: normalized,
-          firstName: parts.slice(0, -1).join(' '),
-          lastName: parts[parts.length - 1],
+          firstName,
+          lastName,
           role: 'Pitcher',
           jerseyNumber: '',
           hand: p.pitcher_hand || '',
@@ -419,12 +419,12 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       // real two-way roster spot.
       if (!positionsMap[key]) positionsMap[key] = new Set();
       positionsMap[key].add('C');
-      const parts = normalized.split(' ');
+      const { firstName, lastName } = splitDisplayName(normalized);
       if (!hitterMap[key]) {
         hitterMap[key] = {
           name: normalized,
-          firstName: parts.slice(0, -1).join(' '),
-          lastName: parts[parts.length - 1],
+          firstName,
+          lastName,
           role: 'Hitter',
           jerseyNumber: o.jersey_number || '',
           hand: normalizeHandLabel(o.bats),
@@ -442,12 +442,12 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!o.runner_name) return;
       const normalized = normalizeName(o.runner_name);
       const key = canonicalNameKey(o.runner_name);
-      const parts = normalized.split(' ');
+      const { firstName, lastName } = splitDisplayName(normalized);
       if (!hitterMap[key]) {
         hitterMap[key] = {
           name: normalized,
-          firstName: parts.slice(0, -1).join(' '),
-          lastName: parts[parts.length - 1],
+          firstName,
+          lastName,
           role: 'Hitter',
           jerseyNumber: o.jersey_number || '',
           hand: normalizeHandLabel(o.bats),
@@ -465,7 +465,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!p.batter_name) return;
       const normalized = normalizeName(p.batter_name);
       const key = canonicalNameKey(p.batter_name);
-      const parts = normalized.split(' ');
+      const { firstName, lastName } = splitDisplayName(normalized);
       const normalizedHand = normalizeHandLabel(p.batter_hand);
       if (normalizedHand === 'Right' || normalizedHand === 'Left') {
         if (!trackmanHandsSeen[key]) trackmanHandsSeen[key] = new Set();
@@ -474,8 +474,8 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       if (!hitterMap[key]) {
         hitterMap[key] = {
           name: normalized,
-          firstName: parts.slice(0, -1).join(' '),
-          lastName: parts[parts.length - 1],
+          firstName,
+          lastName,
           role: 'Hitter',
           jerseyNumber: '',
           hand: normalizedHand,

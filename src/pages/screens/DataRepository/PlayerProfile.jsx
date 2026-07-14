@@ -3,7 +3,7 @@ import { cldImg } from '@/lib/cloudinaryImg';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
-import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
+import { normalizeName, canonicalNameKey, normalizeHandLabel, toTrackmanName } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool, buildArsenalPool } from '@/lib/profileStats';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { getLeaguePitches, correctRowsByPitcher } from '@/lib/leagueCache';
@@ -23,18 +23,6 @@ import { C, FONT } from '@/lib/darkTheme';
 
 // League pitch cache now lives in @/lib/leagueCache so HomeScreen can warm it
 // on app mount (see warmLeagueCache) instead of only on first profile open.
-
-// Convert "First Last" → "Last, First" for Trackman queries
-function toTrackmanName(name) {
-  if (!name) return name;
-  const trimmed = name.trim();
-  if (trimmed.includes(',')) return trimmed;
-  const parts = trimmed.split(' ');
-  if (parts.length < 2) return trimmed;
-  const first = parts.slice(0, -1).join(' ');
-  const last = parts[parts.length - 1];
-  return `${last}, ${first}`;
-}
 
 // BUGFIX (per audit): observation fetches (PitcherObservation/CatcherObservation/
 // BaserunnerObservation) previously queried only the "First Last" name format,
@@ -277,15 +265,9 @@ function FloatingPlayerNav({ player, roster, onNavigate }) {
 // ── Trail Curation Tab ─────────────────────────────────────────
 function fmt1t(v) { return v != null ? Number(v).toFixed(1) : '—'; }
 function fmtIt(v) { return v != null ? Math.round(v) : '—'; }
-function toLastFirst(name) {
-  if (!name || name.includes(',')) return name || '';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length < 2) return name.trim();
-  return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(' ')}`;
-}
 
 function TrailCurationTab({ pitcherName }) {
-  const lfName = toLastFirst(pitcherName);
+  const lfName = toTrackmanName(pitcherName);
   const [pitchGroups, setPitchGroups] = useState({});
   const [curated, setCurated] = useState([]);
   const [loading, setLoading] = useState(true);
