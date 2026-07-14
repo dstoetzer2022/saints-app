@@ -1,4 +1,5 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import GlobalHeader from '@/components/shared/GlobalHeader';
 import PasswordGate from '@/components/shared/PasswordGate';
 import HomeScreen from '@/pages/screens/HomeScreen';
@@ -13,6 +14,27 @@ const DugoutView     = lazy(() => import('@/pages/screens/DugoutView'));
 
 const FULL_SCREEN = new Set(['HOME', 'ADD_DATA', 'IMPORT_CSV', 'VIEW_EXPORT', 'DUGOUT']);
 
+// ── URL-synced screens (Phase 2.1) ─────────────────────────────────────
+// The screen switch is now driven by the URL instead of local state, so
+// every screen is deep-linkable/bookmarkable, browser back works, and a
+// refresh keeps your place. setScreen keeps its old signature — children
+// (HomeScreen, GlobalHeader, DataRepository) are unchanged.
+const SCREEN_PATHS = {
+  HOME: '/',
+  ADD_DATA: '/scout',
+  IMPORT_CSV: '/import',
+  VIEW_EXPORT: '/repo',
+  DUGOUT: '/dugout',
+};
+
+function screenFromPath(pathname) {
+  if (pathname.startsWith('/scout')) return 'ADD_DATA';
+  if (pathname.startsWith('/import')) return 'IMPORT_CSV';
+  if (pathname.startsWith('/repo')) return 'VIEW_EXPORT';
+  if (pathname.startsWith('/dugout')) return 'DUGOUT';
+  return 'HOME';
+}
+
 function ScreenLoader() {
   return (
     <div style={{ minHeight: '100vh', background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -22,7 +44,10 @@ function ScreenLoader() {
 }
 
 export default function MainApp() {
-  const [screen, setScreen] = useState('HOME');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const screen = screenFromPath(location.pathname);
+  const setScreen = s => navigate(SCREEN_PATHS[s] || '/');
 
   return (
     <div style={{ minHeight: '100vh', background: PAPER }}>

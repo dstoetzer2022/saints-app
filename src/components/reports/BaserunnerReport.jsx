@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import reportError from '@/lib/reportError';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
@@ -167,7 +168,7 @@ export default function BaserunnerReport({ team, onClose }) {
         });
         setObs(sorted);
         setLoading(false);
-      }).catch(() => setLoading(false));
+      }).catch(err => { setLoading(false); reportError(err, 'Could not load baserunner report'); });
   }, [team.name]);
 
   const handlePrint = () => {

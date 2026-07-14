@@ -26,6 +26,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'three': ['three'],
+          'recharts': ['recharts'],
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'radix': [
             '@radix-ui/react-dialog',

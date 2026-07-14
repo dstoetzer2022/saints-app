@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { cldImg } from '@/lib/cloudinaryImg';
 import { C, FONT } from '@/lib/darkTheme';
 
 const TABS = [
@@ -90,7 +91,7 @@ export default function TeamHub({ team, onSelectTab, onBack }) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 36 }}>
           {team?.logo_url
-            ? <img src={team.logo_url} alt={team.name} style={{ width: 52, height: 52, objectFit: 'contain', borderRadius: 6, border: `1px solid ${C.rim}`, background: C.raised }} />
+            ? <img src={cldImg(team.logo_url, 120)} alt={team.name} style={{ width: 52, height: 52, objectFit: 'contain', borderRadius: 6, border: `1px solid ${C.rim}`, background: C.raised }} />
             : (
               <div style={{ width: 52, height: 52, borderRadius: 6, background: C.raised, border: `1px solid ${C.rim}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 900, color: C.gold }}>
                 {initials}

@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import reportError from '@/lib/reportError';
+import { cldImg } from '@/lib/cloudinaryImg';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
@@ -280,6 +283,14 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [activePlayer, setActivePlayer] = useState(null);
   const [_scope, _setScope] = useState('season');
   const sidebarTab = initialTab === 'hitters' ? 'hitters' : 'pitchers';
+  // ── ?player= deep link (Phase 2.1) ────────────────────────────────
+  // The URL is the source of truth for the open profile: selecting a
+  // player pushes ?player=<name>, back/forward and shared links restore
+  // it once the roster lists have loaded. QR codes on printed reports
+  // can point straight at a profile.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const playerParam = useMemo(() => new URLSearchParams(location.search).get('player'), [location.search]);
   const [showRunnerReport, setShowRunnerReport] = useState(false);
   const [showPitcherCatcherReport, setShowPitcherCatcherReport] = useState(false);
   const [playerRoster, setPlayerRoster] = useState([]);
@@ -339,7 +350,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
       }))]);
       setBatterPitches(bp);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => { setLoading(false); reportError(err, 'Could not load roster data'); });
   }, [teamName]);
 
   const { pitchers, hitters } = useMemo(() => {
@@ -555,6 +566,14 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
     };
   }, [pitcherObs, catcherObs, runnerObs, pitches, batterPitches, playerRoster]);
 
+  // URL → open profile: resolve ?player= against both lists (covers two-way
+  // players regardless of the active tab). Clears when the param is removed.
+  useEffect(() => {
+    if (!playerParam) { setActivePlayer(null); return; }
+    const found = [...pitchers, ...hitters].find(p => p.name === playerParam);
+    if (found) setActivePlayer(found);
+  }, [playerParam, pitchers, hitters]);
+
   // Total game count (rough) — exclude synthetic arsenal rows
   const gameCount = useMemo(() => {
     const ids = new Set([
@@ -622,9 +641,9 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
         <PlayerProfile
           player={activePlayer}
           team={team}
-          onBack={() => setActivePlayer(null)}
+          onBack={() => navigate(location.pathname)}
           roster={sidebarTab === 'pitchers' ? pitchers : hitters}
-          onNavigate={p => setActivePlayer(p)}
+          onNavigate={p => navigate(`${location.pathname}?player=${encodeURIComponent(p.name)}`, { replace: true })}
         />
       ) : (
         <>
@@ -638,7 +657,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
               ←
             </button>
             {team.logo_url
-              ? <img src={team.logo_url} alt={team.name} title={team.name} style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 5, border: `1px solid ${C.rim}`, background: C.raised }} />
+              ? <img src={cldImg(team.logo_url, 64)} alt={team.name} title={team.name} style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 5, border: `1px solid ${C.rim}`, background: C.raised }} />
               : (
                 <div title={team.name} style={{ width: 32, height: 32, borderRadius: 5, background: C.raised, border: `1px solid ${C.rim}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: C.gold, fontFamily: FONT }}>
                   {initials}
@@ -703,7 +722,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                     pitchers={sidebarTab === 'pitchers' ? pitchers : []}
                     hitters={sidebarTab === 'hitters' ? hitters : []}
                     activePlayer={activePlayer}
-                    onSelect={p => { setActivePlayer(p); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
+                    onSelect={p => { navigate(`${location.pathname}?player=${encodeURIComponent(p.name)}`); if (typeof onSelectPlayer === 'function') onSelectPlayer(p); }}
                     team={team}
                     onSaveJersey={saveJerseyNumber}
                     selected={selectedKeys}

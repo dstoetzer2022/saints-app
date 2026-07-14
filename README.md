@@ -1,39 +1,34 @@
-**Welcome to your Base44 project** 
+# Saints Data Matrix
 
-**About**
+React/Vite web app for the Arroyo Seco Saints (California Collegiate League): live game scouting, Trackman data pipelines, player profiling, and dugout displays. Backend: Base44 (app ID `6a33bb3aaecad5de2f0e0911`). Deployed via Cloudflare Workers at `saints-app.dstoetzer2022.workers.dev`.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Screen map
+- **Home** (`HomeScreen`) — nav hub, warms the league pitch cache on mount
+- **Live Scout** (`LiveScout/*`, password-gated) — in-game observation entry
+- **CSV Import** (`CSVImport/*`, password-gated) — Trackman V3 CSV ingestion
+- **Data Repository** (`DataRepository/*`) — TeamGrid → TeamHub → RosterView → PlayerProfile / Leaderboard / PitcherRestTracker
+- **Dugout View** (`DugoutView/`) — live display, polls `Game` every 10s, controlled remotely via `dugout_display_mode`
 
-This project contains everything you need to run your app locally.
+## Core libraries (`src/lib/`)
+- `statsUtils.js` — name canonicalization (`canonicalNameKey`), pitch-call predicates, percentiles
+- `profileStats.js` — pitcher/hitter profile computation, wOBA/xStats, percentile pools
+- `arsenalCorrection.js` — two-pass UCLA arsenal correction (type merge + median/MAD mistag pass)
+- `seasonAggregation.js` — PitcherArsenal season rebuild (create-then-delete ordering)
+- `fetchAll.js` — paginated pulls with retry/dedupe · `leagueCache.js` — 10-min league pitch cache
+- `pitch3dEngine.js` — Three.js scene builder for 3D pitch flight
 
-**Edit the code in your local development environment**
+## Data conventions
+- Names: Trackman/Base44 store "Last, First"; live scouting uses "First Last" — always match via `canonicalNameKey()`
+- `pitcher_team` on TrackmanPitch = full team name; PitcherArsenal = Trackman code (e.g. `ARR_SEC`) — never join on team
+- Season aggregate rows use `game_id: 'season'`
+- `FoulBallNotFieldable` is the V3 foul call; cutters are excluded from FB velo averages
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
+## Develop
 ```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+npm install
+# .env.local: VITE_GATE_PASSWORD=<gate password>
+npm run dev
 ```
 
-Run the app: `npm run dev`
-
-**Publish your changes**
-
-Open [Base44.com](http://Base44.com) and click on Publish.
-
-**Docs & Support**
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## Deploy
+`npm run build` → `wrangler deploy` (Cloudflare Workers, SPA fallback per `wrangler.jsonc`).

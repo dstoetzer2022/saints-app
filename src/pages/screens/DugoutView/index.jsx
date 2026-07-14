@@ -702,9 +702,21 @@ export default function DugoutView({ setScreen }) {
 
   useEffect(() => {
     if (allTeams.length === 0) return; // wait for teams to resolve
-    poll(); // immediate first poll
-    livePollingRef.current = setInterval(poll, 10000);
-    return () => { if (livePollingRef.current) clearInterval(livePollingRef.current); };
+    // Phase 4.6: pause polling while the tab is hidden — the mounted dugout
+    // iPad keeps burning battery/requests otherwise. Resume with an
+    // immediate poll on visibility so the display catches up instantly.
+    const start = () => {
+      if (livePollingRef.current) return;
+      poll(); // immediate first poll
+      livePollingRef.current = setInterval(poll, 10000);
+    };
+    const stop = () => {
+      if (livePollingRef.current) { clearInterval(livePollingRef.current); livePollingRef.current = null; }
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [poll, allTeams.length]);
 
   // Derived values
