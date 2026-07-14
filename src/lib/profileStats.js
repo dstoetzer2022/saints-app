@@ -200,8 +200,15 @@ function quantile(arr, q) {
   return sorted[idx];
 }
 
+// BUGFIX (per audit): was gated on `hit_distance > 0`, which silently
+// dropped every ball in play with missing Trackman distance from AVG/SLG/
+// ISO/BABIP/EV/hit-type distribution. A ball in play is defined by the
+// pitch_call alone. Distance-dependent uses (xHR-by-park, spray validity)
+// already carry their own explicit hit_distance checks at their own call
+// sites and never routed through this function, so no replacement gate is
+// needed here.
 function isBIP(p) {
-  return p.pitch_call === 'InPlay' && p.hit_distance > 0;
+  return p.pitch_call === 'InPlay';
 }
 
 // AUDIT: delegate to the shared statsUtils classifier (single source of truth).
@@ -218,20 +225,30 @@ function isOutOfZone(p) {
 // ── pitchOutcomes: derive pitcher outcome stats from raw rows ──
 function pitchOutcomes(rows) {
   const bip = rows.filter(isBIP);
-  const bipN = bip.length || 1;
   const evs = bip.map(p => p.exit_speed).filter(v => v != null && v > 0);
   const hardHit = evs.filter(v => v >= 95);
   const softHit = evs.filter(v => v < 80);
 
-  // Derive hit type from launch_angle (tagged_hit_type not stored)
+  // Derive hit type from launch_angle (tagged_hit_type not stored).
+  // BUGFIX (per audit): null launch angle was previously bucketed as
+  // GroundBall by default, inflating GB% with balls that have no actual
+  // trajectory reading. Now excluded from both the bucket counts and the
+  // percentage denominator (knownLaN), which is separate from bipN (still
+  // used for babip/hardPct/softPct — those are EV-based, not LA-based, and
+  // shouldn't shrink just because a launch angle is missing).
   function laToType(la) {
-    if (la == null || la < 10) return 'GroundBall';
+    if (la < 10) return 'GroundBall';
     if (la < 25) return 'LineDrive';
     if (la < 50) return 'FlyBall';
     return 'PopUp';
   }
   const hts = { GroundBall: 0, FlyBall: 0, LineDrive: 0, PopUp: 0 };
-  bip.forEach(p => { const t = laToType(p.launch_angle); hts[t]++; });
+  let knownLaN = 0;
+  bip.forEach(p => {
+    if (p.launch_angle == null) return;
+    hts[laToType(p.launch_angle)]++;
+    knownLaN++;
+  });
 
   // BABIP: hits on BIP excluding HRs / (AB - K - HR + SF), simplified to hits-on-bip/bip
   const hits = bip.filter(p => ['Single', 'Double', 'Triple'].includes(p.play_result)).length;
@@ -262,8 +279,9 @@ function pitchOutcomes(rows) {
   const fStrikes = firstPitches.filter(p => STRIKE_CALLS.includes(p.pitch_call)).length;
   const fpsPct = firstPitches.length ? fStrikes / firstPitches.length : null;
 
-  // Flyball% and avg launch angle against (batted balls)
-  const fbPct = bip.length ? hts.FlyBall / bipN : null;
+  // Flyball% and avg launch angle against (batted balls) — denominator is
+  // knownLaN (balls with an actual launch angle reading), not bipN.
+  const fbPct = knownLaN ? hts.FlyBall / knownLaN : null;
   const lasAgainst = bip.map(p => p.launch_angle).filter(v => v != null && Number.isFinite(v));
   const avgLaunchAgainst = lasAgainst.length ? mean(lasAgainst) : null;
 
@@ -274,7 +292,7 @@ function pitchOutcomes(rows) {
   return {
     hardPct: evs.length ? hardHit.length / evs.length : null,
     softPct: evs.length ? softHit.length / evs.length : null,
-    gbPct: bip.length ? hts.GroundBall / bipN : null,
+    gbPct: knownLaN ? hts.GroundBall / knownLaN : null,
     fbPct,
     whiffPct: swings ? whiffs / swings : null,
     babip,
@@ -360,13 +378,20 @@ export function hitterTrackmanProfile(rows) {
   const evs = bip.map(p => p.exit_speed).filter(v => v != null && v > 0);
   const hardHit = evs.filter(v => v >= 95);
   // Use launch_angle thresholds (matches ContactProfile component — tagged_hit_type unreliable)
+  // BUGFIX (per audit): null launch angle was previously bucketed as
+  // GroundBall by default. Now excluded from both the bucket counts and the
+  // percentage denominator (knownLaN) — bipN is kept separate for BABIP
+  // below, which is EV/outcome-based and shouldn't shrink over a missing LA.
   const hts = { GroundBall: 0, FlyBall: 0, LineDrive: 0, PopUp: 0 };
+  let knownLaN = 0;
   bip.forEach(p => {
     const la = p.launch_angle;
-    if (la == null || la < 10) hts.GroundBall++;
+    if (la == null) return;
+    if (la < 10) hts.GroundBall++;
     else if (la < 25) hts.LineDrive++;
     else if (la < 50) hts.FlyBall++;
     else hts.PopUp++;
+    knownLaN++;
   });
   const bipN = bip.length;
 
@@ -375,12 +400,14 @@ export function hitterTrackmanProfile(rows) {
   // filter was always empty and Air-Pull% was permanently null. Derive from
   // launch angle using the same buckets as the distribution above.
   const airBalls = bip.filter(p => p.launch_angle != null && p.launch_angle >= 10);
-  // Pull: bearing < -15 for RHH, > 15 for LHH — simplified: bearing < -15 as pull direction
-  // Per Trackman convention bearing is signed from center; pull for RHH is negative bearing
-  const batterHand = String(rows[0]?.batter_hand || '').toUpperCase().startsWith('L') ? 'Left' : 'Right';
+  // Pull: bearing < -15 for RHH, > 15 for LHH.
+  // BUGFIX (per audit): previously used rows[0].batter_hand for the ENTIRE
+  // dataset, which misclassified every ball for a switch hitter's minority
+  // side. Each ball is now classified by its OWN row's batter_hand.
   const airPullBalls = airBalls.filter(p => {
     if (p.bearing == null) return false;
-    return batterHand === 'Left' ? p.bearing > 15 : p.bearing < -15;
+    const hand = String(p.batter_hand || '').toUpperCase().startsWith('L') ? 'Left' : 'Right';
+    return hand === 'Left' ? p.bearing > 15 : p.bearing < -15;
   });
   const airPullPct = airBalls.length ? airPullBalls.length / airBalls.length : null;
 
@@ -401,13 +428,17 @@ export function hitterTrackmanProfile(rows) {
   const avg_ = totalAB ? hits / totalAB : null;
   const iso = (slg != null && avg_ != null) ? slg - avg_ : null;
 
-  // OBP: (hits + walks) / (AB + walks + HBP)
-  const walks = rows.filter(r => r.kor_bb === 'Walk').length;
-  const obp = (totalAB + walks) ? (hits + walks) / (totalAB + walks) : null;
-
   // BABIP: hits-on-BIP (excl HRs) / (BIP - HRs)
   const babipDen = bipN - hr;
   const babip = babipDen > 0 ? (hits - hr) / babipDen : null;
+
+  // OBP: (hits + walks + HBP) / (AB + walks + HBP)
+  // BUGFIX (per audit): previously omitted HBP from both numerator and
+  // denominator — ran low in an HBP-heavy league and disagreed with the
+  // dugout's own computeStats, which does include it.
+  const walks = rows.filter(r => r.kor_bb === 'Walk').length;
+  const hbp = rows.filter(r => r.pitch_call === 'HitByPitch').length;
+  const obp = (totalAB + walks + hbp) ? (hits + walks + hbp) / (totalAB + walks + hbp) : null;
 
   // Whiff%, Chase%, O-Swing%, F-Strike%, Z-Contact%, O-Contact%
   const swings = rows.filter(p => isSwing(p.pitch_call)).length;
@@ -439,8 +470,8 @@ export function hitterTrackmanProfile(rows) {
   // Batted-ball mix (fly ball / line drive), soft-hit%, and approx barrel%.
   // Soft/Hard thresholds match the FanGraphs-style EV buckets already used
   // for hardPct (>=95 = hard); soft mirrors that at the low end (<60).
-  const fbPct = bipN ? hts.FlyBall / bipN : null;
-  const ldPct = bipN ? hts.LineDrive / bipN : null;
+  const fbPct = knownLaN ? hts.FlyBall / knownLaN : null;
+  const ldPct = knownLaN ? hts.LineDrive / knownLaN : null;
   const softHit = evs.filter(v => v < 60);
   const softPct = evs.length ? softHit.length / evs.length : null;
   // Barrel% base set intentionally mirrors contactQualityBreakdown's filter
@@ -481,7 +512,7 @@ export function hitterTrackmanProfile(rows) {
     avgEV: mean(evs),
     maxEV: evs.length ? Math.max(...evs) : null,
     hardPct: evs.length ? hardHit.length / evs.length : null,
-    gbPct: bipN ? hts.GroundBall / bipN : null,
+    gbPct: knownLaN ? hts.GroundBall / knownLaN : null,
     airPullPct,
     whiffPct: swings ? whiffCount / swings : null,
     chasePct: ooz.length ? chaseSwings / ooz.length : null,
@@ -990,17 +1021,30 @@ export function contactQualityBreakdown(rows) {
 export function battedBallProfile(rows) {
   const bip = rows.filter(r => r.pitch_call === 'InPlay' && r.exit_speed > 0);
   if (bip.length < MIN_N) return null;
-  let gb = 0, ld = 0, fb = 0, pu = 0;
+  // BUGFIX (per audit): null launch angle was previously bucketed as
+  // GroundBall by default. Now excluded from both the bucket counts and the
+  // percentage denominator (knownLaN, separate from n/bip.length).
+  let gb = 0, ld = 0, fb = 0, pu = 0, knownLaN = 0;
   bip.forEach(r => {
     const la = r.launch_angle;
-    if (la == null || la < 10) gb++; else if (la < 25) ld++; else if (la < 50) fb++; else pu++;
+    if (la == null) return;
+    if (la < 10) gb++; else if (la < 25) ld++; else if (la < 50) fb++; else pu++;
+    knownLaN++;
   });
   const n = bip.length;
-  const hand = normHand(bip.find(r => r.batter_hand)?.batter_hand);
-  const spray = hand ? sprayDistribution(bip, hand) : null;
+  // BUGFIX (per audit): previously derived ONE hand from the first row with
+  // a batter_hand present and applied it to the whole set — wrong for half
+  // of a switch hitter's contact. sprayDistribution now classifies each row
+  // by its own batter_hand internally, so passing a single fallback hand
+  // here only matters for rows that are somehow missing batter_hand.
+  const fallbackHand = normHand(bip.find(r => r.batter_hand)?.batter_hand);
+  const spray = sprayDistribution(bip, fallbackHand);
   return {
     n,
-    gbPct: gb / n, ldPct: ld / n, fbPct: fb / n, puPct: pu / n,
+    gbPct: knownLaN ? gb / knownLaN : null,
+    ldPct: knownLaN ? ld / knownLaN : null,
+    fbPct: knownLaN ? fb / knownLaN : null,
+    puPct: knownLaN ? pu / knownLaN : null,
     pullPct: spray?.pullPct ?? null, straightPct: spray?.midPct ?? null, oppoPct: spray?.oppoPct ?? null,
   };
 }
@@ -1024,9 +1068,10 @@ export function evHistogramBins(rows, binWidth = 3) {
 // Shared by the hitter's own OffenseLine AND pitcher-allowed platoon splits
 // — one implementation of AB/H/TB/BB/K accounting instead of three.
 export function slashLine(rows) {
-  let ab = 0, h = 0, tb = 0, hr = 0, xbh = 0, bb = 0, k = 0;
+  let ab = 0, h = 0, tb = 0, hr = 0, xbh = 0, bb = 0, k = 0, hbp = 0;
   const isTerminal = p => ['Out', 'Single', 'Double', 'Triple', 'HomeRun', 'Error', 'FieldersChoice', 'Sacrifice'].includes(p.play_result);
   rows.forEach(p => {
+    if (p.pitch_call === 'HitByPitch') { hbp++; return; }
     if (p.kor_bb === 'Walk') { bb++; return; }
     if (p.kor_bb === 'Strikeout') { k++; ab++; return; }
     if (isTerminal(p)) {
@@ -1038,16 +1083,21 @@ export function slashLine(rows) {
       else if (p.play_result === 'HomeRun') { h++; tb += 4; hr++; xbh++; }
     }
   });
-  const pa = ab + bb;
+  // BUGFIX (per audit): pa/obp now include HBP (were previously ab+bb only,
+  // ran low in an HBP-heavy league and disagreed with the dugout's own
+  // computeStats). kPct denominator is now PA, not total pitches seen — was
+  // previously `k / rows.length`, which understated displayed K% by roughly
+  // 4-5x since most pitches in an at-bat aren't the PA-ending pitch.
+  const pa = ab + bb + hbp;
   const avg = ab ? h / ab : null;
   const slg = ab ? tb / ab : null;
-  const obp = pa ? (h + bb) / pa : null;
+  const obp = pa ? (h + bb + hbp) / pa : null;
   const iso = (slg != null && avg != null) ? slg - avg : null;
   const ops = (obp != null && slg != null) ? obp + slg : null;
   const swings = rows.filter(isSwingRow).length;
   const whiffs = rows.filter(isWhiff).length;
-  return { pa, ab, h, tb, hr, xbh, bb, k, avg, slg, obp, iso, ops,
-    kPct: rows.length ? k / rows.length : null,
+  return { pa, ab, h, tb, hr, xbh, bb, k, hbp, avg, slg, obp, iso, ops,
+    kPct: pa ? k / pa : null,
     whiffPct: swings ? whiffs / swings : null };
 }
 

@@ -36,6 +36,29 @@ function toTrackmanName(name) {
   return `${last}, ${first}`;
 }
 
+// BUGFIX (per audit): observation fetches (PitcherObservation/CatcherObservation/
+// BaserunnerObservation) previously queried only the "First Last" name format,
+// missing every row stored in Trackman's "Last, First" format entirely — these
+// are hand-entered live-scouting rows, so both formats show up in practice
+// depending on how the scout typed the name that day. Fetches both formats in
+// parallel and unions them, de-duped by id (cheap insurance — a name can't
+// literally satisfy two different filter strings for the same row, but this
+// matches the id-dedupe pattern already used for the pitch merge below).
+async function fetchObsBothFormats(entity, field, sortField, nameA, nameB) {
+  const [a, b] = await Promise.all([
+    fetchAllFiltered(entity, { [field]: nameA }, sortField).catch(() => []),
+    nameB && nameB !== nameA
+      ? fetchAllFiltered(entity, { [field]: nameB }, sortField).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+  const seen = new Set();
+  return [...a, ...b].filter(r => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
+}
+
 // ── Hand chip ─────────────────────────────────────────────────
 function HandChip({ isPitcher, hand }) {
   if (!hand) return null;
@@ -559,15 +582,15 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
     const playerFetch = isPitcher
       ? [
           fetchAllFiltered(base44.entities.TrackmanPitch, { pitcher_name: trackmanName }, 'date'),
-          fetchAllFiltered(base44.entities.PitcherObservation, { pitcher_name: normalizedName }, 'pitcher_name'),
+          fetchObsBothFormats(base44.entities.PitcherObservation, 'pitcher_name', 'pitcher_name', normalizedName, trackmanName),
           Promise.resolve([]),
           Promise.resolve([]),
         ]
       : [
           fetchAllFiltered(base44.entities.TrackmanPitch, { batter_name: trackmanName }, 'date'),
           Promise.resolve([]),
-          fetchAllFiltered(base44.entities.CatcherObservation, { catcher_name: normalizedName }, 'catcher_name'),
-          fetchAllFiltered(base44.entities.BaserunnerObservation, { runner_name: normalizedName }, 'runner_name'),
+          fetchObsBothFormats(base44.entities.CatcherObservation, 'catcher_name', 'catcher_name', normalizedName, trackmanName),
+          fetchObsBothFormats(base44.entities.BaserunnerObservation, 'runner_name', 'runner_name', normalizedName, trackmanName),
         ];
 
     (async () => {

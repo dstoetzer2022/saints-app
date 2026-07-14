@@ -205,13 +205,36 @@ export function sprayThird(bearingVal, hand) {
   return null;
 }
 
-// Pull/middle/oppo distribution over a hitter's VALID batted balls (uses their
-// hand). Percentages exclude 'unknown' (switch/unrated hand or bad bearing).
+// Pull/middle/oppo distribution over a hitter's VALID batted balls. Each row
+// is classified by its OWN batter_hand when present, falling back to the
+// `hand` parameter for rows missing it. This is a no-op for single-hand
+// callers (every row already matches the passed hand) and fixes the
+// switch-hitter case, where a single fixed hand previously misclassified
+// every ball hit from the minority side.
+// BUGFIX (per audit): was previously applying ONE hand (from the caller) to
+// every row regardless of who was actually batting on that pitch.
+// Percentages exclude 'unknown' (switch/unrated hand or bad bearing).
+// Gate a CatcherObservation.trackman_pop_times entry to a genuine 2B throw.
+// (New helper, per audit.) trackman_pop_times has no explicit target-base
+// field, unlike the manually-logged steal_attempts array — so a fast 3B
+// throw can otherwise get counted as an implausibly great 2B pop time.
+// time_to_base is a reliable proxy: 3B is roughly half the throw distance
+// of 2B, so a throw with an unrealistically short flight time is almost
+// certainly a 3B throw, not a fast 2B one. Verified against a real catcher
+// whose 1.68s "best pop" was actually a 3B throw (true 2B times: 2.06/2.10).
+// Rows missing time_to_base are kept (no evidence to exclude them on).
+export function isSecondBasePop(row) {
+  const t = parseFloat(row?.time_to_base);
+  if (!Number.isFinite(t)) return true;
+  return t >= 1.2;
+}
+
 export function sprayDistribution(rows, hand) {
   const valid = (rows || []).filter(isValidBattedBall);
   const t = { pull: 0, middle: 0, oppo: 0, unknown: 0 };
   for (const r of valid) {
-    const z = sprayThird(_bearing(r), hand);
+    const rowHand = normHand(r.batter_hand) || hand;
+    const z = sprayThird(_bearing(r), rowHand);
     if (z) t[z]++; else t.unknown++;
   }
   const total = t.pull + t.middle + t.oppo;

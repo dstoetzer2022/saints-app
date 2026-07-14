@@ -250,3 +250,100 @@ describe('buildPoolPayload', () => {
     expect(longFloats).toBeNull();
   });
 });
+
+// ── profileStats bug fixes (per old-chat audit summary) ──────────────────
+import { slashLine, hitterTrackmanProfile, battedBallProfile } from '@/lib/profileStats';
+import { sprayDistribution } from '@/lib/statsUtils';
+
+describe('slashLine (bug fixes)', () => {
+  it('kPct denominator is PA, not total pitches seen', () => {
+    // 1 PA ending in K, thrown over 5 total pitches (4 foul/ball, 1 final K pitch)
+    const rows = [
+      { pitch_call: 'BallCalled' }, { pitch_call: 'FoulBallNotFieldable' },
+      { pitch_call: 'BallCalled' }, { pitch_call: 'FoulBallNotFieldable' },
+      { pitch_call: 'StrikeSwinging', kor_bb: 'Strikeout' },
+    ];
+    const s = slashLine(rows);
+    expect(s.pa).toBe(1);
+    expect(s.kPct).toBeCloseTo(1, 5); // NOT 1/5
+  });
+  it('OBP includes HBP in both numerator and denominator', () => {
+    const rows = [
+      { pitch_call: 'HitByPitch' },
+      { pitch_call: 'InPlay', play_result: 'Out' },
+      { pitch_call: 'InPlay', play_result: 'Out' },
+    ];
+    const s = slashLine(rows);
+    expect(s.pa).toBe(3);
+    expect(s.obp).toBeCloseTo(1 / 3, 5);
+  });
+});
+
+describe('hitterTrackmanProfile (bug fixes)', () => {
+  const mkBip = (la, ev, hand, bearing) => ({
+    pitch_call: 'InPlay', exit_speed: ev, launch_angle: la, batter_hand: hand, bearing,
+    play_result: 'Out',
+  });
+  it('excludes null launch angle from GB bucket and denominator instead of defaulting to GroundBall', () => {
+    const rows = [
+      ...Array.from({ length: 9 }, () => mkBip(15, 90, 'Right', 0)), // line drives
+      mkBip(null, 90, 'Right', 0), // unknown trajectory — must not count as GB
+    ];
+    const prof = hitterTrackmanProfile(rows);
+    expect(prof.gbPct).toBe(0); // was defaulting the null-LA row into GroundBall
+    expect(prof.ldPct).toBeCloseTo(1, 5); // denominator is knownLaN (9), not bipN (10)
+  });
+  it('classifies Air-Pull% per-row hand, not the first row found', () => {
+    // A switch hitter: 5 balls batting Right (pulled = bearing<-15), 5 batting Left (pulled = bearing>15)
+    const rows = [
+      ...Array.from({ length: 5 }, () => mkBip(20, 90, 'Right', -20)), // pulled RHH
+      ...Array.from({ length: 5 }, () => mkBip(20, 90, 'Left', 20)),   // pulled LHH
+    ];
+    const prof = hitterTrackmanProfile(rows);
+    // Both halves are "pulled" for their own hand — with the old single-hand
+    // bug, the second half (batting Left) would be misjudged using the
+    // first row's Right-handed pull direction and show as opposite/oppo.
+    expect(prof.airPullPct).toBeCloseTo(1, 5);
+  });
+});
+
+describe('battedBallProfile (bug fixes)', () => {
+  it('excludes null launch angle from trajectory buckets', () => {
+    const rows = [
+      ...Array.from({ length: 4 }, () => ({ pitch_call: 'InPlay', exit_speed: 90, launch_angle: 30, batter_hand: 'Right', bearing: 0 })),
+      { pitch_call: 'InPlay', exit_speed: 90, launch_angle: null, batter_hand: 'Right', bearing: 0 },
+    ];
+    const p = battedBallProfile(rows);
+    expect(p.gbPct).toBe(0);
+    expect(p.fbPct).toBeCloseTo(1, 5);
+  });
+});
+
+describe('sprayDistribution (bug fix: per-row hand)', () => {
+  it('classifies each row by its own batter_hand, not a single passed-in hand', () => {
+    const base = { pitch_call: 'InPlay', hit_distance: 250, launch_angle: 20, exit_speed: 90 };
+    const rows = [
+      { ...base, batter_hand: 'Right', bearing: -20 }, // pulled RHH
+      { ...base, batter_hand: 'Left', bearing: 20 },   // pulled LHH
+    ];
+    // Old behavior: passing hand='R' would misclassify the Left-batting row.
+    const dist = sprayDistribution(rows, 'R');
+    expect(dist.pullPct).toBeCloseTo(1, 5); // both rows correctly read as "pull" for their own hand
+  });
+});
+
+// ── isSecondBasePop (new helper, per audit) ──────────────────────────────
+import { isSecondBasePop } from '@/lib/statsUtils';
+
+describe('isSecondBasePop', () => {
+  it('excludes anomalously fast throws (likely 3B, not 2B)', () => {
+    expect(isSecondBasePop({ time_to_base: 0.95 })).toBe(false); // the 1.68s "best pop" case
+  });
+  it('keeps realistic 2B pop times', () => {
+    expect(isSecondBasePop({ time_to_base: 1.35 })).toBe(true); // e.g. true 2.06s/2.10s pops
+  });
+  it('keeps rows with missing time_to_base (no evidence to exclude)', () => {
+    expect(isSecondBasePop({})).toBe(true);
+    expect(isSecondBasePop({ time_to_base: null })).toBe(true);
+  });
+});

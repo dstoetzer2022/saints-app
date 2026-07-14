@@ -2,7 +2,29 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 import { ZoneHeatmap, SprayChart, rgba } from './HitterViz';
+
+// ── Per-team pitch cache (bugfix, per audit) ─────────────────────────────
+// Both the current-batter and next-two-hitters stat fetches below queried
+// the SAME team's TrackmanPitch rows independently, each capped at 1000 —
+// the Saints alone already exceed 1,000 rows as batter_team partway through
+// a season, so stats were silently computed from a shrinking recent-games
+// window rather than the full season. Replaced with one shared, fully
+// paginated fetch per team, cached 60s so switching between the two
+// consumers (or re-rendering on poll) doesn't re-fetch the same team twice.
+const _teamPitchCache = new Map(); // team -> { rows, at }
+const TEAM_CACHE_TTL_MS = 60 * 1000;
+
+function getTeamBatterPitches(team) {
+  const now = Date.now();
+  const cached = _teamPitchCache.get(team);
+  if (cached && now - cached.at < TEAM_CACHE_TTL_MS) return cached.promise;
+  const promise = fetchAllFiltered(base44.entities.TrackmanPitch, { batter_team: team }, '-date')
+    .catch(() => []);
+  _teamPitchCache.set(team, { at: now, promise });
+  return promise;
+}
 
 const FONT   = "'Archivo', system-ui, sans-serif";
 const NAVY   = '#0e253a';
@@ -331,8 +353,14 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     Promise.all([
       base44.entities.HitterObservation.filter({ game_id: gameId, is_current_batter: true }, '-updated_date', 1).catch(() => []),
       base44.entities.BaserunnerObservation.filter({ game_id: gameId, is_on_base: true }, 'runner_name', 20).catch(() => []),
-      // Full lineup — drives the on-deck / in-the-hole row (derived from lineup_position).
-      base44.entities.HitterObservation.filter({ game_id: gameId }, 'lineup_position', 30).catch(() => []),
+      // Full lineup — drives the on-deck / in-the-hole row (derived from
+      // lineup_position). BUGFIX (per audit): was sorted by lineup_position
+      // with a 30-row cap, which could drop the newest edit for a spot on
+      // sub-heavy games (many HitterObservation rows per position across 9
+      // spots easily exceeds 30) — the downstream dedup below picks the
+      // newest row per position by updated_date, so it needs the newest
+      // rows present in the fetch, not just the first 30 by position order.
+      base44.entities.HitterObservation.filter({ game_id: gameId }, '-updated_date', 100).catch(() => []),
       // All scouted runners (not just on-base) — speed_rating is the only observed run-speed
       // in this data, and HitterObservation has no speed field, so on-deck speed comes from here.
       base44.entities.BaserunnerObservation.filter({ game_id: gameId }, 'runner_name', 60).catch(() => []),
@@ -359,8 +387,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     if (!currentBatter?.hitter_name || !currentBatter?.hitter_team) { setBatterRows([]); return; }
     let cancelled = false;
     (async () => {
-      const rows = await base44.entities.TrackmanPitch
-        .filter({ batter_team: currentBatter.hitter_team }, '-date', 1000).catch(() => []);
+      const rows = await getTeamBatterPitches(currentBatter.hitter_team);
       if (cancelled) return;
       const key = canonicalNameKey(currentBatter.hitter_name);
       setBatterRows((rows||[]).filter(r => canonicalNameKey(r.batter_name) === key));
@@ -427,8 +454,7 @@ export default function HitterDugoutPanel({ gameId, orientation = 'horizontal' }
     if (!team || !targets.length) { setNextStats({}); return; }
     let cancelled = false;
     (async () => {
-      const rows = await base44.entities.TrackmanPitch
-        .filter({ batter_team: team }, '-date', 1000).catch(() => []);
+      const rows = await getTeamBatterPitches(team);
       if (cancelled) return;
       const out = {};
       for (const h of targets) {

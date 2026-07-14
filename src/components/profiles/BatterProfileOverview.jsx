@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend, LabelList
 } from 'recharts';
-import { isSwing, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
+import { isSwing, isFastballVeloType, isSwing as sharedIsSwing, isSecondBasePop } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';
@@ -384,11 +384,31 @@ function ScoutNotes({ catcherObs, runnerObs }) {
   const hasRunner = runnerObs.length > 0;
   if (!hasCatcher && !hasRunner) return null;
 
-  // Catcher
-  const popTimes = catcherObs.flatMap(o => [o.warmup_pop_time, ...(o.pop_times || [])].filter(v => v != null));
-  const armGrade = catcherObs.map(o => o.arm).filter(Boolean)[0];
-  const exchange = catcherObs.map(o => o.exchange).filter(Boolean)[0];
-  const stealAttempts = catcherObs.reduce((a, o) => a + (o.steal_attempts || 0), 0);
+  // Catcher — BUGFIX (per audit): previously read fields that don't exist
+  // on CatcherObservation (o.pop_times, o.arm, o.exchange) and did numeric
+  // addition on steal_attempts, which is an array of {pop_time, base,
+  // result} objects, not a number. Rewritten against the real schema:
+  //  - Pop times: warmup_pop_time + steal_attempts entries logged to 2B +
+  //    trackman_pop_times entries gated to 2B via isSecondBasePop().
+  //  - "Arm" now shows average throw velocity (trackman_pop_times.throw_speed),
+  //    the closest real signal to an arm-strength grade in this schema.
+  //  - "Exchange" sourced from trackman_pop_times.exchange_time (previously
+  //    read a nonexistent top-level field).
+  //  - Steal attempts is now a genuine count of logged attempts.
+  const manualPopTimes = catcherObs.flatMap(o =>
+    (o.steal_attempts || []).filter(sa => sa.base === '2B' && sa.pop_time != null).map(sa => sa.pop_time)
+  );
+  const trackmanPopEntries = catcherObs.flatMap(o => (o.trackman_pop_times || []).filter(isSecondBasePop));
+  const popTimes = [
+    ...catcherObs.map(o => o.warmup_pop_time).filter(v => v != null),
+    ...manualPopTimes,
+    ...trackmanPopEntries.map(t => t.pop_time).filter(v => v != null),
+  ];
+  const throwSpeeds = trackmanPopEntries.map(t => t.throw_speed).filter(v => v != null);
+  const exchangeTimes = trackmanPopEntries.map(t => t.exchange_time).filter(v => v != null);
+  const armGrade = throwSpeeds.length ? `${mean(throwSpeeds).toFixed(1)} mph` : null;
+  const exchange = exchangeTimes.length ? `${mean(exchangeTimes).toFixed(2)}s` : null;
+  const stealAttempts = catcherObs.reduce((a, o) => a + (o.steal_attempts?.length || 0), 0);
 
   // Runner
   const speedRating = runnerObs.map(o => o.speed_rating).filter(Boolean)[0];
