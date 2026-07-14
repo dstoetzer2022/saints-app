@@ -23,7 +23,6 @@ export default function MovementScatterCircular({ pitches, leagueAvg }) {
   }, [pitches]);
 
   const total = byType.reduce((s, [, rows]) => s + rows.length, 0);
-  if (!total) return <div style={{ color: C.muted, fontSize: 12 }}>No movement data (horz_break / induced_vert_break) for these pitches.</div>;
 
   // Dynamic scale: size the axis to the pitcher's actual data (plus league-avg
   // ellipses) so no point ever falls outside the circular clip boundary.
@@ -44,6 +43,13 @@ export default function MovementScatterCircular({ pitches, leagueAvg }) {
     }
     return m;
   }, [byType, leagueAvg, handKey]);
+
+  // Bug fix (audit pass): this early return previously sat between the two
+  // useMemo calls above, so the hook count changed across renders whenever
+  // a pitcher had zero valid movement rows — a Rules-of-Hooks violation that
+  // can silently corrupt component state. Both hooks now run unconditionally
+  // before any return.
+  if (!total) return <div style={{ color: C.muted, fontSize: 12 }}>No movement data (horz_break / induced_vert_break) for these pitches.</div>;
 
   const DOMAIN = Math.max(20, Math.ceil((maxDataR * 1.08) / 5) * 5); // 8% pad, snapped to 5"
   const SCALE = R / DOMAIN;

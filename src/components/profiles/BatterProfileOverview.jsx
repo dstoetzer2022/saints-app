@@ -2,12 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import PercentileBar from '@/components/shared/PercentileBar';
 import CoachNoteBox from '@/components/profiles/CoachNoteBox';
-import { hitterTrackmanProfile, percentileRank, fmtStat, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
+import { hitterTrackmanProfile, percentileRank, rollingGameTrend, runValue, xStatsForRows } from '@/lib/profileStats';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend, LabelList
 } from 'recharts';
-import { isSwing, isWhiff, isContact, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
+import { isSwing, isFastballVeloType, isSwing as sharedIsSwing } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';
 import LocationContourPlot from '@/components/charts/LocationContourPlot';
 import SprayChart from '@/components/charts/SprayChart';

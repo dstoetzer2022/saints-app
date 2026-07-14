@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { base44 } from '@/api/base44Client';
 import { canonicalNameKey, normHand, isSwing, isWhiff } from '@/lib/statsUtils';
 import { getPitchColor, normalizePitch } from '@/lib/ds';
-import { fetchAllFiltered } from '@/lib/fetchAll';
 import { ZoneHeatmap, SprayChart, rgba } from './HitterViz';
 
 const FONT   = "'Archivo', system-ui, sans-serif";

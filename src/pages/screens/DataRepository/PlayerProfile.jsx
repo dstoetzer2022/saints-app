@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { cldImg } from '@/lib/cloudinaryImg';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { normalizePitch, getPitchColor } from '@/lib/ds';
 import { normalizeName, canonicalNameKey, normalizeHandLabel } from '@/lib/statsUtils';
 import { buildPitcherPool, buildHitterPool, buildArsenalPool } from '@/lib/profileStats';
-import { fetchAllFiltered, fetchAllList } from '@/lib/fetchAll';
+import { fetchAllFiltered } from '@/lib/fetchAll';
 import { getLeaguePitches } from '@/lib/leagueCache';
 import { buildScene } from '@/lib/pitch3dEngine';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';

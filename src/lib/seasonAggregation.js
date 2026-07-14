@@ -14,7 +14,7 @@
 //    (curly apostrophes, "First Last") no longer leave orphan season rows.
 
 import { base44 } from '@/api/base44Client';
-import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts, getZone9 } from '@/lib/statsUtils';
+import { isStrike, isSwing, isWhiff, canonicalNameKey, normHand, buildZoneCounts } from '@/lib/statsUtils';
 import { canonPitchType } from '@/lib/ds';
 import { fetchAllFiltered } from '@/lib/fetchAll';
 import { applyArsenalCorrection, correctMistaggedPitches } from '@/lib/arsenalCorrection';

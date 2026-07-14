@@ -5,12 +5,12 @@ import PercentileBar, { markerColor } from '@/components/shared/PercentileBar';
 import CoachNoteBox from '@/components/profiles/CoachNoteBox';
 import {
   pitcherProfile, percentileRank, fmtStat,
-  cswKbb, releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend, maxFastballVelo,
+  releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend, maxFastballVelo,
   leagueMovementProfile, runValue, xERA, xStatsForRows,
 } from '@/lib/profileStats';
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
-  CartesianGrid, ResponsiveContainer, ScatterChart, Scatter, ZAxis, Legend
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  CartesianGrid, ResponsiveContainer, ScatterChart, Scatter, Legend
 } from 'recharts';
 import { isSwing, isStrike, isWhiff, isContact, isFastballVeloType, canonicalNameKey } from '@/lib/statsUtils';
 import { C, FONT } from '@/lib/darkTheme';

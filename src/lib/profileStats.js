@@ -4,7 +4,7 @@
  */
 
 import { normalizePitch, getPitchColor } from '@/lib/ds';
-import { canonicalNameKey, isSwing as isSwingRow, isWhiff, isStrike, circularMean, isFastballVeloType, stdDev, sprayDistribution, normHand } from '@/lib/statsUtils';
+import { canonicalNameKey, isSwing as isSwingRow, isWhiff, circularMean, isFastballVeloType, stdDev, sprayDistribution, normHand } from '@/lib/statsUtils';
 
 // ── Savant-parity feature helpers ─────────────────────────────────────────────
 // Shared source for all new profile-page additions (pitcher AND hitter), so
