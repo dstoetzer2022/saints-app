@@ -7,8 +7,8 @@ import { getLeaguePitches } from '@/lib/leagueCache';
 import { C, FONT } from '@/lib/darkTheme';
 import { PitcherPage, HitterPage, REPORT_FONT, INK } from '@/components/reports/PrintProfileReport';
 import TeamStatsSheet from '@/components/reports/TeamStatsSheet';
-import BaserunnerReportTable from '@/components/reports/BaserunnerReportTable';
-import PitcherCatcherReportTable from '@/components/reports/PitcherCatcherReportTable';
+import ComprehensiveTeamReport from '@/components/reports/ComprehensiveTeamReport';
+import { parseOfficialStatsPdf } from '@/lib/officialTeamStatsPdf';
 
 // ── Team Report Builder (Phase 5) ───────────────────────────────────────────
 // One combined PDF: Team Stats Sheet + Baserunner Report + Pitcher/Catcher
@@ -120,13 +120,39 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
   const [pitcherObs, setPitcherObs] = useState([]);
   const [catcherObs, setCatcherObs] = useState([]);
   const [includeStats, setIncludeStats] = useState(true);
-  const [includeRunner, setIncludeRunner] = useState(true);
-  const [includePC, setIncludePC] = useState(true);
+  const [includeComprehensive, setIncludeComprehensive] = useState(true);
   const [excludedKeys, setExcludedKeys] = useState(() => new Set());
   const [generating, setGenerating] = useState(false);
   const [hitterPool, setHitterPool] = useState(null);
   const [arsenalPool, setArsenalPool] = useState(null);
   const [poolsLoading, setPoolsLoading] = useState(true);
+  const [leaguePitches, setLeaguePitches] = useState([]);
+
+  // Official stats PDF — client-side only, nothing persisted to Base44.
+  // Re-upload each time you build a report (per Derek's call: ephemeral,
+  // no new entity/schema needed).
+  const [officialStats, setOfficialStats] = useState(null);
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [pdfError, setPdfError] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handlePdfUpload = async file => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') { setPdfError('Please choose a PDF file.'); return; }
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const data = await parseOfficialStatsPdf(file);
+      setOfficialStats(data);
+      setPdfFileName(file.name);
+    } catch (e) {
+      setPdfError(e?.message || 'Failed to read PDF.');
+      setOfficialStats(null);
+      setPdfFileName('');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -136,6 +162,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
     // shared across every page in this report rather than once per player.
     getLeaguePitches().then(leaguePitches => {
       if (cancelled) return;
+      setLeaguePitches(leaguePitches);
       setHitterPool(buildHitterPool(leaguePitches));
       setArsenalPool(buildArsenalPool(leaguePitches));
       setPoolsLoading(false);
@@ -172,6 +199,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
   const includedPitchers = pitchers.filter(p => !excludedKeys.has(canonicalNameKey(p.name)));
   const includedHitters = hitters.filter(h => !excludedKeys.has(canonicalNameKey(h.name)));
   const selectedCount = includedPitchers.length + includedHitters.length;
+  const teamPageCount = officialStats ? [includeStats, includeComprehensive].filter(Boolean).length : 0;
 
   const toggle = key => setExcludedKeys(prev => {
     const next = new Set(prev);
@@ -186,7 +214,24 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
   if (generating) {
     const pageFor = (player, isPitcher) => {
       const key = canonicalNameKey(player.name);
-      const rows = (isPitcher ? pitches : batterPitches).filter(p => canonicalNameKey(isPitcher ? p.pitcher_name : p.batter_name) === key);
+      const nameField = isPitcher ? 'pitcher_name' : 'batter_name';
+      // Same merge as BatchPrintReport's fix: `pitches`/`batterPitches` here
+      // are raw, team-scoped TrackmanPitch rows (RosterView's fetch) — they
+      // don't carry the two-pass arsenal correction. leaguePitches (from
+      // getLeaguePitches()) does. Spread the corrected rows FIRST so the
+      // id de-dup keeps the corrected tagged_pitch_type for every pitch
+      // that exists in both sets, instead of silently falling back to the
+      // uncorrected label. Team-scoped set stays as a union fallback for
+      // any row missing/mismatched in the league cache.
+      const teamScoped = (isPitcher ? pitches : batterPitches).filter(p => canonicalNameKey(p[nameField]) === key && !p._fromArsenal);
+      const variantRows = leaguePitches.filter(p => canonicalNameKey(p[nameField]) === key);
+      const seen = new Set();
+      const rows = [...variantRows, ...teamScoped].filter(r => {
+        const id = r.id ?? `${r[nameField]}|${r.game_id}|${r.pitch_no ?? ''}`;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
       const commonProps = { player, team, school: player.school, hand: player.hand, pitches: rows };
       return isPitcher
         ? <PitcherPage key={'p-' + key} {...commonProps} hitterPool={hitterPool} arsenalPool={arsenalPool} />
@@ -209,19 +254,14 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
           </div>
         </div>
 
-        {includeStats && (
+        {includeStats && officialStats && (
           <div className="print-report-page">
-            <TeamStatsSheet team={team} pitches={pitches} batterPitches={batterPitches} pitchers={pitchers} hitters={hitters} />
+            <TeamStatsSheet team={team} officialStats={officialStats} />
           </div>
         )}
-        {includeRunner && (
-          <div className="print-report-page">
-            <BaserunnerReportTable team={team} obs={runnerObs} />
-          </div>
-        )}
-        {includePC && (
-          <div className="print-report-page">
-            <PitcherCatcherReportTable team={team} pitchers={pitcherObs} catchers={catcherObs} />
+        {includeComprehensive && officialStats && (
+          <div className="print-report-page print-report-page--landscape">
+            <ComprehensiveTeamReport team={team} officialStats={officialStats} runnerObs={runnerObs} pitcherObs={pitcherObs} catcherObs={catcherObs} />
           </div>
         )}
         {includedPitchers.map(p => pageFor(p, true))}
@@ -261,11 +301,33 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
                 </div>
               </div>
 
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 9 }}>Official Season Stats</div>
+              <div style={{ marginBottom: 20 }}>
+                <div
+                  onClick={() => document.getElementById('officialStatsPdfInput').click()}
+                  style={{
+                    border: `2px dashed ${officialStats ? C.gold : C.edge}`, borderRadius: 8, padding: '16px 14px',
+                    background: C.surface, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
+                  }}
+                >
+                  <span style={{ width: 30, height: 30, borderRadius: 6, background: 'rgba(200,146,12,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.gold, fontSize: 14, flexShrink: 0 }}>↑</span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: C.white, fontFamily: FONT }}>
+                      {pdfLoading ? 'Reading PDF…' : officialStats ? `${officialStats.hitters.length} hitters, ${officialStats.pitchers.length} pitchers loaded` : 'Upload PrestoSports "Print Version" export'}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.muted, fontFamily: FONT, marginTop: 2 }}>
+                      {pdfFileName || 'Parsed client-side — nothing is saved. Required for Team Stats Sheet & Comprehensive Team Report.'}
+                    </div>
+                    {pdfError && <div style={{ fontSize: 10.5, color: '#f87171', fontFamily: FONT, marginTop: 3 }}>{pdfError}</div>}
+                  </div>
+                </div>
+                <input id="officialStatsPdfInput" type="file" accept="application/pdf" style={{ display: 'none' }} onChange={e => handlePdfUpload(e.target.files[0])} />
+              </div>
+
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 9 }}>Team Reports</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-                <SectionToggle icon="◆" title="Team Stats Sheet" desc="Trackman-derived slash lines & xERA — leaders, hitters, pitchers" on={includeStats} onToggle={() => setIncludeStats(v => !v)} />
-                <SectionToggle icon="●" title="Baserunner Report" desc="Speed, aggression, steal attempts — every scouted runner" on={includeRunner} onToggle={() => setIncludeRunner(v => !v)} />
-                <SectionToggle icon="▲" title="Pitcher/Catcher Report" desc="Pop times, pickoff moves, receiving notes" on={includePC} onToggle={() => setIncludePC(v => !v)} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, opacity: officialStats ? 1 : 0.45 }}>
+                <SectionToggle icon="◆" title="Team Stats Sheet" desc="Official box score, full column set — leaders, hitters, pitchers" on={includeStats && !!officialStats} onToggle={() => officialStats && setIncludeStats(v => !v)} />
+                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="Landscape — hitters/pitchers with baserunner, catcher & pickoff scouting merged in" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
               </div>
 
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 2 }}>
@@ -293,16 +355,16 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
 
         <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 24px', background: C.surface, borderTop: `1px solid ${C.edge}` }}>
           <span style={{ fontSize: 12, color: C.muted, fontFamily: FONT }}>
-            Will generate <b style={{ color: C.white }}>{[includeStats, includeRunner, includePC].filter(Boolean).length} team page{[includeStats, includeRunner, includePC].filter(Boolean).length === 1 ? '' : 's'}</b> + <b style={{ color: C.white }}>{selectedCount} player profile{selectedCount === 1 ? '' : 's'}</b>
+            Will generate <b style={{ color: C.white }}>{teamPageCount} team page{teamPageCount === 1 ? '' : 's'}</b> + <b style={{ color: C.white }}>{selectedCount} player profile{selectedCount === 1 ? '' : 's'}</b>
           </span>
           <div style={{ marginLeft: 'auto' }}>
             <button
               onClick={() => setGenerating(true)}
-              disabled={poolsLoading || (selectedCount === 0 && !includeStats && !includeRunner && !includePC)}
+              disabled={poolsLoading || (selectedCount === 0 && teamPageCount === 0)}
               style={{
                 background: poolsLoading ? C.faint : C.gold, color: poolsLoading ? C.muted : '#080f17', border: 'none', borderRadius: 6, padding: '9px 20px',
                 fontSize: 12.5, fontWeight: 800, fontFamily: FONT, cursor: poolsLoading ? 'default' : 'pointer',
-                opacity: (selectedCount === 0 && !includeStats && !includeRunner && !includePC) ? 0.4 : 1,
+                opacity: (selectedCount === 0 && teamPageCount === 0) ? 0.4 : 1,
               }}
             >
               {poolsLoading ? 'Loading league data…' : 'Generate Report →'}

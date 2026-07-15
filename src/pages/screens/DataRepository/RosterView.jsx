@@ -302,6 +302,17 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const [showBatchPrint, setShowBatchPrint] = useState(false);
   const [showTeamReport, setShowTeamReport] = useState(false);
+  // ── ?report=1 deep link ────────────────────────────────────────────
+  // TeamHub's "Team Report" card routes here (pitchers tab, which already
+  // loads everything TeamReportBuilder needs) with ?report=1 instead of
+  // duplicating this screen's roster/pitch data-loading in TeamHub itself.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('report') === '1') {
+      setShowTeamReport(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const teamName = team.name;
   const trackmanCode = team.trackman_code || teamName;
@@ -707,16 +718,6 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                   }}
                 >
                   🖨 {reportLabel}
-                </button>
-                <button
-                  onClick={() => setShowTeamReport(true)}
-                  style={{
-                    flexShrink: 0, background: C.raised, border: `1px solid ${C.edge}`,
-                    borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: C.cream,
-                    fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
-                  }}
-                >
-                  📋 Team Report
                 </button>
               </div>
             </div>

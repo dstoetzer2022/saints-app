@@ -81,6 +81,7 @@ export default function DataRepository({ setScreen }) {
       <TeamHub
         team={team}
         onSelectTab={t => navigate(`/repo/${teamSlug(team)}/${t}`)}
+        onOpenReport={() => navigate(`/repo/${teamSlug(team)}/pitchers?report=1`)}
         onBack={() => navigate('/repo')}
       />
     );

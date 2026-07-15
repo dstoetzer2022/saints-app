@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NAVY, GOLD, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
+import { GOLD, CREAM, LINE, PANEL_HI, FONT, darkInputStyle, darkLabelStyle } from '@/lib/liveScoutTheme';
 import { base44 } from '@/api/base44Client';
 import { normalizeName } from '@/lib/statsUtils';
 
-const btnBase = { fontFamily: "'Archivo', sans-serif", fontWeight: 700, borderRadius: 6, cursor: 'pointer', fontSize: 13 };
-const primaryBtn = { ...btnBase, background: NAVY, color: GOLD, border: 'none', padding: '9px 22px' };
+const btnBase = { fontFamily: FONT, fontWeight: 800, borderRadius: 8, cursor: 'pointer', fontSize: 13, minHeight: 44 };
+const primaryBtn = { ...btnBase, background: GOLD, color: '#07111c', border: 'none', padding: '11px 24px' };
 
 const HAND_COLORS = { L: '#f97316', R: '#3b82f6', S: '#a855f7' };
 
@@ -41,17 +41,17 @@ function NameAutocomplete({ value, onChange, onSelect, knownPlayers, placeholder
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <input value={value} onChange={e => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-        placeholder={placeholder} style={inputStyle} autoComplete="off" />
+        placeholder={placeholder} style={darkInputStyle} autoComplete="off" />
       {open && matches.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: '#0e1f30', border: '1px solid rgba(198,181,131,0.3)', borderRadius: 6, marginTop: 3, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: '#0e1f30', border: `1px solid ${LINE}`, borderRadius: 8, marginTop: 4, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
           {matches.map((p, i) => (
             <button key={i} type="button"
               onMouseDown={e => { e.preventDefault(); onSelect(p); setOpen(false); }}
-              style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: i < matches.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'Archivo', sans-serif" }}
+              style={{ width: '100%', textAlign: 'left', padding: '11px 14px', minHeight: 44, background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: i < matches.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', display: 'flex', alignItems: 'center', gap: 10, fontFamily: FONT }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(198,181,131,0.1)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#f0ece0' }}>{p.name}</span>
-              {p.jersey && <span style={{ fontSize: 11, fontWeight: 600, color: GOLD }}>#{p.jersey}</span>}
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: CREAM }}>{p.name}</span>
+              {p.jersey && <span style={{ fontSize: 11, fontWeight: 700, color: GOLD }}>#{p.jersey}</span>}
               {p.hand && <span style={{ fontSize: 10, fontWeight: 800, color: HAND_COLORS[p.hand] || '#aaa', background: `${HAND_COLORS[p.hand] || '#aaa'}18`, border: `1px solid ${HAND_COLORS[p.hand] || '#aaa'}44`, borderRadius: 3, padding: '1px 5px' }}>{p.hand}</span>}
             </button>
           ))}
@@ -120,27 +120,27 @@ export default function SubstitutionForm({ lineup, currentPitcher, opponentName,
 
   const typeBtn = (val, label) => (
     <button type="button" onClick={() => { setType(val); setHand(''); }}
-      style={{ flex: 1, padding: '8px 0', borderRadius: 5, fontWeight: 700, fontSize: 13, cursor: 'pointer',
-        border: `1.5px solid ${NAVY}`, background: type === val ? NAVY : '#fff', color: type === val ? GOLD : NAVY }}>
+      style={{ flex: 1, padding: '11px 0', minHeight: 44, borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: FONT,
+        border: `1.5px solid ${type === val ? GOLD : LINE}`, background: type === val ? 'rgba(198,181,131,0.18)' : 'rgba(255,255,255,0.04)', color: type === val ? GOLD : 'rgba(255,255,255,0.5)' }}>
       {label}
     </button>
   );
 
   return (
-    <div style={{ background: TINT, border: `2px solid ${GOLD}`, borderRadius: 8, padding: '16px 18px', marginBottom: 16 }}>
-      <div style={{ fontWeight: 800, fontSize: 14, color: NAVY, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+    <div style={{ background: PANEL_HI, border: `1.5px solid ${GOLD}`, borderRadius: 12, padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ fontWeight: 800, fontSize: 14, color: CREAM, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.6, fontFamily: FONT }}>
         Make Substitution
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {typeBtn('hitter', '🔄 Pinch Hitter')}
         {typeBtn('pitcher', '⚾ Relief Pitcher')}
       </div>
 
       {type === 'hitter' && (
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Replacing (lineup slot)</label>
-          <select value={slotIndex} onChange={e => setSlotIndex(Number(e.target.value))} style={inputStyle}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={darkLabelStyle}>Replacing (lineup slot)</label>
+          <select value={slotIndex} onChange={e => setSlotIndex(Number(e.target.value))} style={darkInputStyle}>
             {lineup.map((s, i) => (
               <option key={i} value={i}>#{i + 1} — {s.name || `Slot ${i + 1}`} ({s.position || '—'})</option>
             ))}
@@ -149,14 +149,14 @@ export default function SubstitutionForm({ lineup, currentPitcher, opponentName,
       )}
 
       {type === 'pitcher' && currentPitcher && (
-        <div style={{ fontSize: 12.5, color: '#555', marginBottom: 10 }}>
-          Replacing: <span style={{ fontWeight: 700, color: NAVY }}>{currentPitcher}</span>
+        <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.5)', marginBottom: 12 }}>
+          Replacing: <span style={{ fontWeight: 800, color: CREAM }}>{currentPitcher}</span>
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 70px', gap: 8, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 76px 76px', gap: 10, marginBottom: 16 }}>
         <div>
-          <label style={labelStyle}>Name</label>
+          <label style={darkLabelStyle}>Name</label>
           <NameAutocomplete
             value={name}
             onChange={setName}
@@ -166,12 +166,12 @@ export default function SubstitutionForm({ lineup, currentPitcher, opponentName,
           />
         </div>
         <div>
-          <label style={labelStyle}>Jersey</label>
-          <input value={jersey} onChange={e => setJersey(e.target.value)} style={{ ...inputStyle, textAlign: 'center' }} placeholder="#" />
+          <label style={darkLabelStyle}>Jersey</label>
+          <input value={jersey} onChange={e => setJersey(e.target.value)} style={{ ...darkInputStyle, textAlign: 'center' }} placeholder="#" />
         </div>
         <div>
-          <label style={labelStyle}>{type === 'pitcher' ? 'Throws' : 'Bats'}</label>
-          <select value={hand} onChange={e => setHand(e.target.value)} style={inputStyle}>
+          <label style={darkLabelStyle}>{type === 'pitcher' ? 'Throws' : 'Bats'}</label>
+          <select value={hand} onChange={e => setHand(e.target.value)} style={darkInputStyle}>
             <option value="">—</option>
             <option value="L">L</option>
             <option value="R">R</option>
@@ -180,12 +180,12 @@ export default function SubstitutionForm({ lineup, currentPitcher, opponentName,
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={handleSubmit} disabled={!name.trim() || submitting}
           style={{ ...primaryBtn, opacity: !name.trim() || submitting ? 0.4 : 1 }}>
           {submitting ? 'Creating…' : 'Confirm Sub'}
         </button>
-        <button onClick={onCancel} style={{ ...btnBase, background: 'none', border: `1.5px solid ${BORDER}`, color: NAVY, padding: '9px 16px' }}>
+        <button onClick={onCancel} style={{ ...btnBase, background: 'none', border: `1.5px solid ${LINE}`, color: 'rgba(255,255,255,0.6)', padding: '11px 18px' }}>
           Cancel
         </button>
       </div>

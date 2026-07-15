@@ -80,9 +80,19 @@
   flex-direction: column;
   box-sizing: border-box;
 }
+/* Comprehensive Team Report is the one landscape page in an otherwise
+   portrait document (individual player reports + Team Stats Sheet stay
+   portrait). On screen it's just a wider preview box; in print it switches
+   physical page orientation via a named CSS page (Chrome print-to-PDF
+   supports this — verify in whatever browser actually does the printing
+   if this ever looks wrong, since named-page support varies by engine). */
+.print-report-page--landscape {
+  width: 10.2in;
+}
 
 @media print {
   @page { size: letter portrait; margin: 0.4in; }
+  @page landscape { size: letter landscape; margin: 0.4in; }
   .no-print { display: none !important; }
   body { background: white !important; }
   body.print-report-open #root { display: none !important; }
@@ -98,6 +108,9 @@
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
+  }
+  .print-report-page--landscape {
+    page: landscape;
   }
   /* Force exact colors so zone-grid fills and pitch-type dots survive the
      browser's default ink-saver background stripping. */

@@ -7,15 +7,15 @@ import React from 'react';
 export default function AutosaveTag({ status, pendingCount = 0 }) {
   if (status === 'offline' || pendingCount > 0) {
     return (
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#a15c00', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#a15c00', display: 'inline-block' }} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#facc15', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#facc15', display: 'inline-block' }} />
         Offline — saved locally{pendingCount > 1 ? ` (${pendingCount} pending)` : ''}
       </span>
     );
   }
   if (!status) return null;
   return (
-    <span style={{ fontSize: 11, fontWeight: 600, color: status === 'saving' ? '#888' : '#2c5530', transition: 'opacity 0.2s' }}>
+    <span style={{ fontSize: 11, fontWeight: 600, color: status === 'saving' ? 'rgba(255,255,255,0.4)' : '#4ade80', transition: 'opacity 0.2s' }}>
       {status === 'saving' ? 'Saving…' : 'Saved ✓'}
     </span>
   );

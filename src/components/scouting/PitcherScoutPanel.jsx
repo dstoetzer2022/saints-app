@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { NAVY, GOLD, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
+import { GOLD, CREAM, LINE_SOFT, PANEL_HI, FONT, darkInputStyle, darkLabelStyle, darkSectionBoxStyle, darkSectionHeadStyle } from '@/lib/liveScoutTheme';
 import useOfflineAutosave from '@/hooks/useOfflineAutosave';
 import AutosaveTag from '@/components/scouting/AutosaveTag';
 
@@ -12,11 +12,13 @@ const initArr = (v) => Array.isArray(v) ? v : v != null ? [v] : [];
 // Dashes are their own selectable bins (the zone between two letters)
 const UCLA_BINS = ['U', 'U-C', 'C', 'C-L', 'L', 'L-A', 'A'];
 
-function UCLASelector({ value, onChange, label }) {
+// Exported so LiveScoutingHub's Battery hero can reuse the same widget for
+// both hold rows without duplicating the tap-target styling.
+export function UCLASelector({ value, onChange, label }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+      {label && <label style={darkLabelStyle}>{label}</label>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
         {UCLA_BINS.map(bin => {
           const isDash = bin.includes('-');
           const active = value === bin;
@@ -26,17 +28,18 @@ function UCLASelector({ value, onChange, label }) {
               type="button"
               onClick={() => onChange(active ? '' : bin)}
               style={{
-                height: isDash ? 30 : 38,
-                width: isDash ? 28 : 38,
-                borderRadius: isDash ? 4 : 6,
+                height: isDash ? 32 : 44,
+                width: isDash ? 28 : 44,
+                borderRadius: isDash ? 6 : 8,
                 fontWeight: 800,
-                fontSize: isDash ? 13 : 16,
+                fontSize: isDash ? 12 : 15,
                 cursor: 'pointer',
-                border: `2px solid ${active ? GOLD : BORDER}`,
-                background: active ? NAVY : '#fff',
-                color: active ? GOLD : isDash ? '#aaa' : NAVY,
+                border: `2px solid ${active ? GOLD : 'rgba(198,181,131,0.3)'}`,
+                background: active ? GOLD : 'rgba(255,255,255,0.04)',
+                color: active ? '#07111c' : isDash ? 'rgba(255,255,255,0.3)' : CREAM,
+                boxShadow: active ? '0 0 14px rgba(198,181,131,0.4)' : 'none',
                 transition: 'all 0.12s',
-                fontFamily: "'Archivo', sans-serif",
+                fontFamily: FONT,
                 flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
@@ -46,7 +49,7 @@ function UCLASelector({ value, onChange, label }) {
         })}
       </div>
       {value && (
-        <div style={{ fontSize: 11, color: '#555', marginTop: 4, fontWeight: 600 }}>{value}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 6, fontWeight: 700 }}>{value}</div>
       )}
     </div>
   );
@@ -57,23 +60,23 @@ function ReadingInput({ label, readings, onAdd, onRemove }) {
   function add() { const v = parseFloat(val); if (!isNaN(v)) { onAdd(v); setVal(''); } }
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      <label style={darkLabelStyle}>{label}</label>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <input type="number" step="0.01" value={val} onChange={e => setVal(e.target.value)}
-          placeholder="0.00" style={{ ...inputStyle, flex: 1 }}
+          placeholder="0.00" style={{ ...darkInputStyle, flex: 1 }}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
         <button type="button" onClick={add}
-          style={{ padding: '0 10px', borderRadius: 4, border: `1.5px solid ${NAVY}`, background: '#fff', fontWeight: 700, fontSize: 15, color: NAVY, cursor: 'pointer' }}>+</button>
+          style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1.5px solid ${GOLD}`, background: 'transparent', fontWeight: 800, fontSize: 19, color: GOLD, cursor: 'pointer', fontFamily: FONT }}>+</button>
       </div>
       {readings.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {readings.map((r, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '6px 10px', fontSize: 13, fontWeight: 700, color: CREAM }}>
               {r.toFixed(2)}s
-              <button type="button" onClick={() => onRemove(i)} style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
+              <button type="button" onClick={() => onRemove(i)} style={{ background: 'none', border: 'none', color: '#f87171', fontWeight: 800, cursor: 'pointer', padding: 0, fontSize: 15, lineHeight: 1 }}>×</button>
             </span>
           ))}
-          <span style={{ fontSize: 11, color: '#888', alignSelf: 'center', marginLeft: 4 }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', alignSelf: 'center', marginLeft: 4 }}>
             avg {(readings.reduce((a, b) => a + b, 0) / readings.length).toFixed(2)}s
           </span>
         </div>
@@ -114,18 +117,18 @@ export default function PitcherScoutPanel({ obs }) {
   }, [r1b, r2b, slideReadings, slideNotes, pickoff, uclaHold1b, uclaHold2b, notes]);
 
   return (
-    <div style={{ maxWidth: 600, background: TINT, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '18px 20px' }}>
+    <div style={{ background: PANEL_HI, border: `1px solid ${LINE_SOFT}`, borderRadius: 12, padding: '18px 20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 16, color: NAVY, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {obs.jersey_number && <span style={{ fontWeight: 700, fontSize: 13, color: '#888' }}>#{obs.jersey_number}</span>}
+        <div style={{ fontWeight: 800, fontSize: 16, color: CREAM, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: FONT }}>
+          {obs.jersey_number && <span style={{ fontWeight: 700, fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>#{obs.jersey_number}</span>}
           {obs.pitcher_name}
-          {obs.pitcher_hand && <span style={{ fontSize: 12, fontWeight: 700, background: '#e8e4d9', borderRadius: 4, padding: '2px 7px', color: '#555' }}>{obs.pitcher_hand}HP</span>}
+          {obs.pitcher_hand && <span style={{ fontSize: 12, fontWeight: 800, background: 'rgba(198,181,131,0.15)', borderRadius: 5, padding: '2px 8px', color: GOLD }}>{obs.pitcher_hand}HP</span>}
         </div>
         <AutosaveTag status={status} pendingCount={pendingCount} />
       </div>
 
       {/* Time to plate row — 3 columns including slide step */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
         <ReadingInput label="Time to Plate — 1B (sec)" readings={r1b}
           onAdd={v => setR1b(p => [...p, v])} onRemove={i => setR1b(p => p.filter((_, j) => j !== i))} />
         <ReadingInput label="Time to Plate — 2B (sec)" readings={r2b}
@@ -135,22 +138,22 @@ export default function PitcherScoutPanel({ obs }) {
       </div>
 
       {/* UCLA Hold */}
-      <div style={{ background: '#fff', border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '14px 16px', marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 11, color: NAVY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>UCLA Hold Position</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={darkSectionBoxStyle}>
+        <div style={darkSectionHeadStyle}>UCLA Hold Position</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <UCLASelector label="Runner on 1st" value={uclaHold1b} onChange={setUclaHold1b} />
           <UCLASelector label="Runner on 2nd" value={uclaHold2b} onChange={setUclaHold2b} />
         </div>
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Pickoff Moves</label>
-        <input value={pickoff} onChange={e => setPickoff(e.target.value)} style={inputStyle} placeholder="balk move, quick pick…" />
+        <label style={darkLabelStyle}>Pickoff Moves</label>
+        <input value={pickoff} onChange={e => setPickoff(e.target.value)} style={darkInputStyle} placeholder="balk move, quick pick…" />
       </div>
 
       <div>
-        <label style={labelStyle}>Notes</label>
-        <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
+        <label style={darkLabelStyle}>Notes</label>
+        <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} style={{ ...darkInputStyle, resize: 'vertical' }} />
       </div>
     </div>
   );

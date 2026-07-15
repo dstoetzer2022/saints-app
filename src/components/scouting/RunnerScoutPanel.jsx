@@ -1,22 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { NAVY, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
+import { GOLD, CREAM, LINE_SOFT, PANEL_HI, GREEN, RED, AMBER, FONT, darkInputStyle, darkLabelStyle } from '@/lib/liveScoutTheme';
 import useOfflineAutosave from '@/hooks/useOfflineAutosave';
 import AutosaveTag from '@/components/scouting/AutosaveTag';
 
 const RUNNER_OBS_ENTITY_MAP = { BaserunnerObservation: base44.entities.BaserunnerObservation };
 
-const speedOpts = [{ val: 'fast', color: '#22c55e' }, { val: 'average', color: '#eab308' }, { val: 'slow', color: '#ef4444' }];
-const aggrOpts = [{ val: 'aggressive', color: '#22c55e' }, { val: 'average', color: '#eab308' }, { val: 'passive', color: '#ef4444' }];
+const speedOpts = [{ val: 'fast', color: GREEN }, { val: 'average', color: AMBER }, { val: 'slow', color: RED }];
+const aggrOpts = [{ val: 'aggressive', color: GREEN }, { val: 'average', color: AMBER }, { val: 'passive', color: 'rgba(255,255,255,0.4)' }];
 
 function Counter({ label, value, onChange }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button type="button" onClick={() => onChange(Math.max(0, value - 1))} style={{ width: 24, height: 26, border: `1.5px solid ${BORDER}`, borderRadius: 4, background: '#fff', fontWeight: 700, cursor: 'pointer' }}>−</button>
-        <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{value}</span>
-        <button type="button" onClick={() => onChange(value + 1)} style={{ width: 24, height: 26, border: `1.5px solid ${BORDER}`, borderRadius: 4, background: '#fff', fontWeight: 700, cursor: 'pointer' }}>+</button>
+      <label style={darkLabelStyle}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" onClick={() => onChange(Math.max(0, value - 1))} style={{ width: 38, height: 38, border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 8, background: 'rgba(255,255,255,0.05)', color: CREAM, fontWeight: 800, fontSize: 17, cursor: 'pointer', fontFamily: FONT }}>−</button>
+        <span style={{ minWidth: 24, textAlign: 'center', fontWeight: 800, fontSize: 15, color: CREAM }}>{value}</span>
+        <button type="button" onClick={() => onChange(value + 1)} style={{ width: 38, height: 38, border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 8, background: 'rgba(255,255,255,0.05)', color: CREAM, fontWeight: 800, fontSize: 17, cursor: 'pointer', fontFamily: FONT }}>+</button>
       </div>
     </div>
   );
@@ -67,84 +67,85 @@ export default function RunnerScoutPanel({ obs, onSaved }) {
   function RatingRow({ label, opts, value, onChange }) {
     return (
       <div>
-        <label style={{ ...labelStyle, marginBottom: 6 }}>{label}</label>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <label style={{ ...darkLabelStyle, marginBottom: 8 }}>{label}</label>
+        <div style={{ display: 'flex', gap: 10 }}>
           {opts.map(o => (
             <button key={o.val} type="button" title={o.val}
               onClick={() => onChange(value === o.val ? '' : o.val)}
-              style={{ width: 26, height: 26, borderRadius: '50%', background: o.color, cursor: 'pointer', border: value === o.val ? `3px solid ${NAVY}` : '2px solid #ccc' }} />
+              style={{
+                width: 40, height: 40, borderRadius: '50%', background: o.color, cursor: 'pointer',
+                border: value === o.val ? '3px solid #fff' : '3px solid rgba(255,255,255,0.15)',
+                boxShadow: value === o.val ? '0 0 0 3px rgba(255,255,255,0.15)' : 'none',
+              }} />
           ))}
         </div>
-        {value && <div style={{ fontSize: 11, color: '#555', marginTop: 3 }}>{value}</div>}
+        {value && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 5, fontWeight: 700 }}>{value}</div>}
       </div>
     );
   }
 
   return (
-    <div style={{ background: TINT, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '14px 18px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, fontSize: 15, color: NAVY, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {obs.jersey_number && <span style={{ fontWeight: 700, fontSize: 13, color: '#888' }}>#{obs.jersey_number}</span>}
+    <div style={{ background: PANEL_HI, border: `1px solid ${LINE_SOFT}`, borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: CREAM, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: FONT }}>
+          {obs.jersey_number && <span style={{ fontWeight: 700, fontSize: 12.5, color: 'rgba(255,255,255,0.4)' }}>#{obs.jersey_number}</span>}
           {obs.runner_name}
-          {obs.position && <span style={{ fontSize: 12, fontWeight: 700, background: '#e8e4d9', borderRadius: 4, padding: '2px 7px', color: '#555' }}>{obs.position}</span>}
+          {obs.position && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(198,181,131,0.15)', borderRadius: 5, padding: '2px 8px', color: GOLD }}>{obs.position}</span>}
         </div>
         <AutosaveTag status={status} pendingCount={pendingCount} />
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', alignItems: 'flex-start', marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 28px', alignItems: 'flex-start', marginBottom: 14 }}>
         <RatingRow label="Speed" opts={speedOpts} value={speed} onChange={setSpeed} />
         <RatingRow label="Aggression" opts={aggrOpts} value={aggr} onChange={setAggr} />
 
         {/* Steal Attempt block */}
         <div style={{ flexBasis: '100%' }}>
-          <label style={labelStyle}>Stolen Base</label>
+          <label style={darkLabelStyle}>Stolen Base</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* Big steal button */}
             {!showStealPrompt ? (
               <button
                 type="button"
                 onClick={() => setShowStealPrompt(true)}
-                style={{ padding: '7px 18px', background: NAVY, color: '#fff', border: 'none', borderRadius: 6, fontWeight: 800, fontSize: 13, cursor: 'pointer', letterSpacing: 0.3 }}
+                style={{ padding: '11px 22px', minHeight: 44, background: GOLD, color: '#07111c', border: 'none', borderRadius: 8, fontWeight: 900, fontSize: 13.5, cursor: 'pointer', letterSpacing: 0.3, fontFamily: FONT }}
               >
                 + Steal Attempt
               </button>
             ) : (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#555', marginRight: 4 }}>Result:</span>
-                <button type="button" onClick={() => handleStealResult('safe')} style={{ padding: '6px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 5, fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>Safe</button>
-                <button type="button" onClick={() => handleStealResult('out')}  style={{ padding: '6px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 5, fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>Out</button>
-                <button type="button" onClick={() => handleStealResult('dead')} style={{ padding: '6px 14px', background: '#92400e', color: '#fff', border: 'none', borderRadius: 5, fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>Dead Ball</button>
-                <button type="button" onClick={() => setShowStealPrompt(false)} style={{ padding: '6px 10px', background: 'none', border: `1px solid ${BORDER}`, borderRadius: 5, fontWeight: 700, fontSize: 12, cursor: 'pointer', color: '#888' }}>✕</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginRight: 4 }}>Result:</span>
+                <button type="button" onClick={() => handleStealResult('safe')} style={{ padding: '10px 16px', minHeight: 42, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', fontFamily: FONT }}>Safe</button>
+                <button type="button" onClick={() => handleStealResult('out')}  style={{ padding: '10px 16px', minHeight: 42, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', fontFamily: FONT }}>Out</button>
+                <button type="button" onClick={() => handleStealResult('dead')} style={{ padding: '10px 16px', minHeight: 42, background: '#92400e', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', fontFamily: FONT }}>Dead Ball</button>
+                <button type="button" onClick={() => setShowStealPrompt(false)} style={{ padding: '10px 12px', minHeight: 42, background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 7, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: 'rgba(255,255,255,0.5)', fontFamily: FONT }}>✕</button>
               </div>
             )}
-            {/* Tally display */}
             {stealAtt > 0 && !editingSteal && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#16a34a', background: '#dcfce7', borderRadius: 4, padding: '2px 8px' }}>Safe {stealSuc}</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#dc2626', background: '#fee2e2', borderRadius: 4, padding: '2px 8px' }}>Out {stealOut}</span>
-                {stealDead > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#92400e', background: '#fef3c7', borderRadius: 4, padding: '2px 8px' }}>DB {stealDead}</span>}
-                <span style={{ fontSize: 11, color: '#888' }}>({stealAtt} att)</span>
-                <button type="button" onClick={() => setEditingSteal(true)} style={{ fontSize: 11, color: '#888', background: 'none', border: `1px solid ${BORDER}`, borderRadius: 4, padding: '1px 7px', cursor: 'pointer' }}>Edit</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: GREEN, background: 'rgba(34,197,94,0.15)', borderRadius: 5, padding: '3px 9px' }}>Safe {stealSuc}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: RED, background: 'rgba(239,68,68,0.15)', borderRadius: 5, padding: '3px 9px' }}>Out {stealOut}</span>
+                {stealDead > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', background: 'rgba(146,64,14,0.25)', borderRadius: 5, padding: '3px 9px' }}>DB {stealDead}</span>}
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>({stealAtt} att)</span>
+                <button type="button" onClick={() => setEditingSteal(true)} style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontFamily: FONT, minHeight: 28 }}>Edit</button>
               </div>
             )}
-            {/* Edit mode */}
             {editingSteal && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'flex-end', marginLeft: 4, background: '#f0f0e8', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px 12px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', alignItems: 'flex-end', marginLeft: 4, background: 'rgba(0,0,0,0.2)', border: `1px solid ${LINE_SOFT}`, borderRadius: 8, padding: '10px 14px' }}>
                 {[
-                  { label: 'Safe', val: stealSuc, set: v => { const diff = v - stealSuc; setStealSuc(Math.max(0, v)); setStealAtt(a => Math.max(0, a + diff)); }, color: '#16a34a' },
-                  { label: 'Out',  val: stealOut, set: v => { const diff = v - stealOut;  setStealOut(Math.max(0, v));  setStealAtt(a => Math.max(0, a + diff)); }, color: '#dc2626' },
-                  { label: 'Dead Ball', val: stealDead, set: v => { const diff = v - stealDead; setStealDead(Math.max(0, v)); setStealAtt(a => Math.max(0, a + diff)); }, color: '#92400e' },
+                  { label: 'Safe', val: stealSuc, set: v => { const diff = v - stealSuc; setStealSuc(Math.max(0, v)); setStealAtt(a => Math.max(0, a + diff)); }, color: GREEN },
+                  { label: 'Out',  val: stealOut, set: v => { const diff = v - stealOut;  setStealOut(Math.max(0, v));  setStealAtt(a => Math.max(0, a + diff)); }, color: RED },
+                  { label: 'Dead Ball', val: stealDead, set: v => { const diff = v - stealDead; setStealDead(Math.max(0, v)); setStealAtt(a => Math.max(0, a + diff)); }, color: '#fbbf24' },
                 ].map(item => (
                   <div key={item.label}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: item.color, marginBottom: 3 }}>{item.label}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <button type="button" onClick={() => item.set(item.val - 1)} style={{ width: 22, height: 24, border: `1.5px solid ${BORDER}`, borderRadius: 4, background: '#fff', fontWeight: 700, cursor: 'pointer' }}>−</button>
-                      <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 800, fontSize: 13 }}>{item.val}</span>
-                      <button type="button" onClick={() => item.set(item.val + 1)} style={{ width: 22, height: 24, border: `1.5px solid ${BORDER}`, borderRadius: 4, background: '#fff', fontWeight: 700, cursor: 'pointer' }}>+</button>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: item.color, marginBottom: 5 }}>{item.label}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button type="button" onClick={() => item.set(item.val - 1)} style={{ width: 32, height: 32, border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'rgba(255,255,255,0.05)', color: CREAM, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>−</button>
+                      <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 800, fontSize: 14, color: CREAM }}>{item.val}</span>
+                      <button type="button" onClick={() => item.set(item.val + 1)} style={{ width: 32, height: 32, border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'rgba(255,255,255,0.05)', color: CREAM, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>+</button>
                     </div>
                   </div>
                 ))}
                 <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                  <button type="button" onClick={() => setEditingSteal(false)} style={{ padding: '4px 12px', background: NAVY, color: '#fff', border: 'none', borderRadius: 5, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Done</button>
+                  <button type="button" onClick={() => setEditingSteal(false)} style={{ padding: '8px 16px', minHeight: 36, background: GOLD, color: '#07111c', border: 'none', borderRadius: 6, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', fontFamily: FONT }}>Done</button>
                 </div>
               </div>
             )}
@@ -154,12 +155,12 @@ export default function RunnerScoutPanel({ obs, onSaved }) {
         <Counter label="Pickoff Att" value={pickoff} onChange={setPickoff} />
         <Counter label="Dirt Ball Adv" value={dirt} onChange={setDirt} />
         <div style={{ flexBasis: '100%' }}>
-          <label style={labelStyle}>Lead Size (1B)</label>
-          <input value={leadSize} onChange={e => setLeadSize(e.target.value)} style={inputStyle} placeholder="e.g. 12 ft, short, average, long" />
+          <label style={darkLabelStyle}>Lead Size (1B)</label>
+          <input value={leadSize} onChange={e => setLeadSize(e.target.value)} style={darkInputStyle} placeholder="e.g. 12 ft, short, average, long" />
         </div>
         <div style={{ flexBasis: '100%' }}>
-          <label style={labelStyle}>Notes</label>
-          <input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} />
+          <label style={darkLabelStyle}>Notes</label>
+          <input value={notes} onChange={e => setNotes(e.target.value)} style={darkInputStyle} />
         </div>
       </div>
     </div>

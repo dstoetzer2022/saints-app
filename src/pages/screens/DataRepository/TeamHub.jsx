@@ -7,6 +7,7 @@ const TABS = [
   { key: 'hitters', label: 'Hitters', desc: 'Zone profiles, spray charts, and hitter reports', icon: '🎯', accent: '#4a90c8' },
   { key: 'rest', label: 'Pitcher Rest Tracker', desc: 'League-wide pitch counts and days rest', icon: '📋', accent: '#21c55d' },
 ];
+const REPORT_TAB = { key: 'report', label: 'Team Report', desc: 'Official stats + baserunner/pitcher/catcher scouting, combined', icon: '🖨', accent: '#b5361f' };
 
 function HubCard({ tab, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -76,7 +77,7 @@ function HubCard({ tab, onClick }) {
   );
 }
 
-export default function TeamHub({ team, onSelectTab, onBack }) {
+export default function TeamHub({ team, onSelectTab, onOpenReport, onBack }) {
   const initials = team?.name ? team.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '??';
 
   return (
@@ -108,6 +109,7 @@ export default function TeamHub({ team, onSelectTab, onBack }) {
           {TABS.map(tab => (
             <HubCard key={tab.key} tab={tab} onClick={() => onSelectTab(tab.key)} />
           ))}
+          <HubCard key={REPORT_TAB.key} tab={REPORT_TAB} onClick={onOpenReport} />
         </div>
       </div>
     </div>
