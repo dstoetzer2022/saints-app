@@ -12,8 +12,6 @@ import { buildScene } from '@/lib/pitch3dEngine';
 import reportError from '@/lib/reportError';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
-import PitcherStatRibbon from '@/components/profiles/PitcherStatRibbon';
-import HitterStatRibbon from '@/components/profiles/HitterStatRibbon';
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
 import PrintProfileReport from '@/components/reports/PrintProfileReport';
@@ -762,15 +760,6 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
           <PlayerInfoBar playerName={trackmanName} team={team.name} isPitcher={isPitcher} onSchoolChange={setSchool} onBatsChange={setHand} />
         </div>
       </div>
-
-      {/* Slim stat ribbon — same header, one thin line (mockup v3 item 2) */}
-      {!loading && tab === 'overview' && (
-        <div className="no-print" style={{ background: '#0e253a', borderBottom: `1px solid ${C.edge}`, paddingBottom: 2, flexShrink: 0 }}>
-          {isPitcher
-            ? <PitcherStatRibbon pitches={scopedPitches} pitcherPool={pitcherPool} />
-            : <HitterStatRibbon pitches={scopedPitches} hitterPool={hitterPool} />}
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="no-print" style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0, padding: '0 32px' }}>

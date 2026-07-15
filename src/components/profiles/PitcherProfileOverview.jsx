@@ -831,6 +831,7 @@ function ResultChip({ label, value, pctile }) {
 }
 
 function PitchFusionCards({ pitches, arsenalPool, videoByType }) {
+  const spinByType = useMemo(() => Object.fromEntries(spinDirectionByType(pitches).map(s => [s.type, s])), [pitches]);
   const cards = useMemo(() => {
     const total = pitches.length;
     if (!total) return [];
@@ -853,7 +854,7 @@ function PitchFusionCards({ pitches, arsenalPool, videoByType }) {
         const cswPct = rows.length ? csw / rows.length : null;
         const pool = arsenalPool?.[pt];
         return {
-          pt, color: pColor(pt),
+          pt, rows, color: pColor(pt),
           usage: rows.length / total, n: rows.length,
           avgVelo: mean(velos), maxVelo: velos.length ? Math.max(...velos) : null,
           avgSpin: mean(spins), ivb: mean(ivbs), hb: mean(hbs),
@@ -880,6 +881,18 @@ function PitchFusionCards({ pitches, arsenalPool, videoByType }) {
             <div style={{ height: 4, background: C.faint, borderRadius: 2, margin: '7px 0 10px', overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.min(100, cd.usage * 160)}%`, background: cd.color, borderRadius: 2 }} />
             </div>
+
+            {/* Location KDE — real ContourCell (same component as the old
+                standalone Locations pane), just sized down to fit the card.
+                Approved mockup, 2026-07-15: fusion cards are the Arsenal
+                tab's focal point, location folded in rather than its own tab. */}
+            <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 10px' }}>
+              <LocationContourPlot
+                groups={[{ label: cd.pt, color: cd.color, pitches: cd.rows, axisDeg: spinByType[cd.pt]?.axisDeg, spinGated: spinByType[cd.pt]?.nullGated }]}
+                cellWidth={150} cellHeight={185} labelSize={0} clockSize={16}
+              />
+            </div>
+
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: C.white, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
@@ -1047,11 +1060,9 @@ function PutawaySequenceList({ pitches }) {
 const PROFILE_PANES = [
   ['overview', 'Overview'],
   ['arsenal', 'Arsenal'],
-  ['locations', 'Locations'],
-  ['contact', 'Contact & Splits'],
   ['sequencing', 'Sequencing'],
+  ['contact', 'Contact'],
   ['trends', 'Trends'],
-  ['notes', 'Notes'],
 ];
 
 function SubTabBar({ pane, setPane }) {
@@ -1104,7 +1115,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
     <div style={FONT_STYLE}>
       <SubTabBar pane={pane} setPane={setPane} />
 
-      {/* ── OVERVIEW: percentiles (untouched rendering) + fusion cards ── */}
+      {/* ── OVERVIEW: percentiles + platoon splits + scout notes (approved mockup, 2026-07-15) ── */}
       {pane === 'overview' && (
         <>
           {hasPercentiles && (
@@ -1117,18 +1128,31 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
           )}
           {hasData && (
             <>
-              {sHead('Arsenal at a Glance', 'traits + results per pitch — full detail in Arsenal tab')}
-              <PitchFusionCards pitches={filteredPitches} arsenalPool={arsenalPool} videoByType={videoByType} />
+              {sHead('Platoon Splits', 'results & pitch mix, vs batter handedness')}
+              <Card style={{ marginBottom: 18 }}>
+                <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" pitchMixByLabel={pitchMixByHand(filteredPitches)} />
+              </Card>
             </>
           )}
-          {!hasData && !hasPercentiles && <EmptyPane>Not enough pitch data in this scope.</EmptyPane>}
+          {(pitcherObs.length > 0 || playerNameKey) && (
+            <>
+              {sHead('Scout Notes')}
+              {pitcherObs.length > 0 && <ScoutNotes pitcherObs={pitcherObs} />}
+              {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
+            </>
+          )}
+          {!hasData && !hasPercentiles && !pitcherObs.length && !playerNameKey && <EmptyPane>Not enough data in this scope.</EmptyPane>}
         </>
       )}
 
-      {/* ── ARSENAL: movement + release + full traits/results table ── */}
+      {/* ── ARSENAL: fusion cards (focal point, location KDE built in) + movement/release + full table ── */}
       {pane === 'arsenal' && (
         hasData ? (
           <>
+            {sHead('Arsenal at a Glance', 'traits + results + location, per pitch')}
+            <div style={{ marginBottom: 18 }}>
+              <PitchFusionCards pitches={filteredPitches} arsenalPool={arsenalPool} videoByType={videoByType} />
+            </div>
             {sHead('Movement · Release Point', `${filteredPitches.length} pitches`)}
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
               <Card style={{ flex: '1 1 340px' }}>
@@ -1146,50 +1170,45 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* ── LOCATIONS: KDE + spin (format unchanged) + count splits ── */}
-      {pane === 'locations' && (
-        hasData ? (
-          <>
-            {sHead('Pitch Location · Spin', 'KDE density contour with spin clock, by pitch type')}
-            <Card style={{ marginBottom: 18 }}>
-              <LocationContourPlot groups={
-                (() => {
-                  const byType = filteredPitches.reduce((m, p) => {
-                    const pt = normalizePitch(p.tagged_pitch_type || p.pitch_type);
-                    (m[pt] = m[pt] || []).push(p);
-                    return m;
-                  }, {});
-                  const spinByType = Object.fromEntries(spinDirectionByType(filteredPitches).map(s => [s.type, s]));
-                  return Object.entries(byType)
-                    .sort((a, b) => b[1].length - a[1].length)
-                    .map(([label, pitches]) => ({
-                      label, pitches,
-                      axisDeg: spinByType[label]?.axisDeg,
-                      color: spinByType[label]?.color,
-                      spinGated: spinByType[label]?.nullGated,
-                    }));
-                })()
-              } />
-            </Card>
-            {sHead('Count Splits', 'pitch selection by count')}
-            <Card style={{ marginBottom: 18 }}>
-              <CountSplitsTable pitches={filteredPitches} />
-            </Card>
-          </>
-        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      {/* ── SEQUENCING: transition matrix, first-pitch tendency, putaway sequences, count splits — synthesized together (approved mockup) ── */}
+      {pane === 'sequencing' && (
+        filteredPitches.length >= 30 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+            <div>
+              {sHead('Transition Matrix', 'thrown pitch → next pitch, same at-bat')}
+              <Card style={{ marginBottom: 18 }}>
+                <TransitionMatrix pitches={filteredPitches} />
+              </Card>
+            </div>
+            <div>
+              {sHead('First-Pitch Tendency', '0-0 count, by batter hand')}
+              <Card style={{ marginBottom: 18 }}>
+                <FirstPitchTendency pitches={filteredPitches} />
+              </Card>
+            </div>
+            <div>
+              {sHead('Putaway Sequences', 'pitch before the strikeout pitch')}
+              <Card style={{ marginBottom: 18 }}>
+                <PutawaySequenceList pitches={filteredPitches} />
+              </Card>
+            </div>
+            <div>
+              {sHead('Count Splits', 'pitch selection by count')}
+              <Card style={{ marginBottom: 18 }}>
+                <CountSplitsTable pitches={filteredPitches} />
+              </Card>
+            </div>
+          </div>
+        ) : <EmptyPane>Sequencing needs at least 30 pitches in this scope.</EmptyPane>
       )}
 
-      {/* ── CONTACT & SPLITS: batted ball + platoon + xHR ── */}
+      {/* ── CONTACT: batted ball + xHR (platoon splits moved to Overview) ── */}
       {pane === 'contact' && (
         hasData ? (
           <>
             {sHead('Contact Against', 'batted ball profile & contact quality')}
             <Card style={{ marginBottom: 18 }}>
               <ContactSection pitches={filteredPitches} />
-            </Card>
-            {sHead('Platoon Splits', 'results & pitch mix, vs batter handedness')}
-            <Card style={{ marginBottom: 18 }}>
-              <PlatoonSplitsTable rows={filteredPitches} side="batter_hand" pitchMixByLabel={pitchMixByHand(filteredPitches)} />
             </Card>
             {sHead('xHR Against by Park', 'approx, distance-only')}
             <Card style={{ marginBottom: 18 }}>
@@ -1199,27 +1218,7 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
         ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* ── SEQUENCING: transition matrix, first-pitch tendency, putaway sequences ── */}
-      {pane === 'sequencing' && (
-        filteredPitches.length >= 30 ? (
-          <>
-            {sHead('Transition Matrix', 'thrown pitch → next pitch, same at-bat')}
-            <Card style={{ marginBottom: 18 }}>
-              <TransitionMatrix pitches={filteredPitches} />
-            </Card>
-            {sHead('First-Pitch Tendency', '0-0 count, by batter hand')}
-            <Card style={{ marginBottom: 18 }}>
-              <FirstPitchTendency pitches={filteredPitches} />
-            </Card>
-            {sHead('Putaway Sequences', 'pitch before the strikeout pitch')}
-            <Card style={{ marginBottom: 18 }}>
-              <PutawaySequenceList pitches={filteredPitches} />
-            </Card>
-          </>
-        ) : <EmptyPane>Sequencing needs at least 30 pitches in this scope.</EmptyPane>
-      )}
-
-      {/* ── TRENDS: season trend + approach, merged under a sub-toggle ── */}
+      {/* ── TRENDS: season trend + approach, merged under a sub-toggle (unchanged) ── */}
       {pane === 'trends' && (
         <>
           <div className="no-print" style={{ display: 'inline-flex', gap: 3, background: C.base, border: `1px solid ${C.edge}`, borderRadius: 7, padding: 3, marginBottom: 14 }}>
@@ -1254,20 +1253,6 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
               </>
             ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
           )}
-        </>
-      )}
-
-      {/* ── NOTES: scout observations + coach annotations ── */}
-      {pane === 'notes' && (
-        <>
-          {pitcherObs.length > 0 && (
-            <>
-              {sHead('Scout Notes')}
-              <ScoutNotes pitcherObs={pitcherObs} />
-            </>
-          )}
-          {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
-          {pitcherObs.length === 0 && !playerNameKey && <EmptyPane>No scout notes for this pitcher.</EmptyPane>}
         </>
       )}
     </div>

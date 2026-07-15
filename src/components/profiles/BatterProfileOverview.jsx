@@ -530,9 +530,8 @@ function HitterKdeZones({ pitches }) {
 const HITTER_PANES = [
   ['overview', 'Overview'],
   ['contact', 'Contact'],
-  ['discipline', 'Discipline & Trends'],
-  ['splits', 'Splits'],
-  ['notes', 'Notes'],
+  ['approach', 'Approach'],
+  ['trends', 'Trends'],
 ];
 
 function SubTabBar({ pane, setPane }) {
@@ -559,6 +558,7 @@ const EmptyPane = ({ children }) => (
 
 export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, hitterPool, playerNameKey }) {
   const [pane, setPane] = useState('overview');
+  const [trendView, setTrendView] = useState('bygame');
 
   if (!pitches.length && !runnerObs.length && !catcherObs.length) {
     return <p style={{ color: C.muted, textAlign: 'center', padding: 40, ...FONT_STYLE }}>No data found for this player.</p>;
@@ -571,7 +571,7 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
     <div style={FONT_STYLE}>
       <SubTabBar pane={pane} setPane={setPane} />
 
-      {/* ── OVERVIEW: percentiles + location zones ── */}
+      {/* ── OVERVIEW: percentiles + platoon splits + scout notes (approved mockup, 2026-07-15) ── */}
       {pane === 'overview' && (
         <>
           {hasPercentiles && (
@@ -584,17 +584,24 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
           )}
           {hasTrackman && (
             <>
-              {sHead('Location Zones', 'KDE density by outcome')}
+              {sHead('Platoon Splits', 'vs pitcher handedness')}
               <Card style={{ marginBottom: 18 }}>
-                <HitterKdeZones pitches={pitches} />
+                <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
               </Card>
             </>
           )}
-          {!hasTrackman && !hasPercentiles && <EmptyPane>Not enough pitch data in this scope.</EmptyPane>}
+          {(catcherObs.length > 0 || runnerObs.length > 0 || playerNameKey) && (
+            <>
+              {sHead('Scout Notes')}
+              {(catcherObs.length > 0 || runnerObs.length > 0) && <ScoutNotes catcherObs={catcherObs} runnerObs={runnerObs} />}
+              {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
+            </>
+          )}
+          {!hasTrackman && !hasPercentiles && !catcherObs.length && !runnerObs.length && !playerNameKey && <EmptyPane>Not enough data in this scope.</EmptyPane>}
         </>
       )}
 
-      {/* ── CONTACT: batted-ball profile + spray + xHR ── */}
+      {/* ── CONTACT: batted-ball profile + spray + xHR (unchanged) ── */}
       {pane === 'contact' && (
         hasTrackman ? (
           <>
@@ -616,66 +623,64 @@ export default function BatterProfileOverview({ pitches, runnerObs, catcherObs, 
         ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* ── DISCIPLINE & TRENDS: the combined discipline / trends / season-trend card ── */}
-      {pane === 'discipline' && (
+      {/* ── APPROACH: plate discipline + vs pitch type + location KDEs, synthesized together (approved mockup) ── */}
+      {pane === 'approach' && (
         hasTrackman ? (
           <>
-            {sHead('Plate Discipline & Trends', `${pitches.length} pitches seen`)}
+            {sHead('Plate Discipline', `${pitches.length} pitches seen`)}
             <Card style={{ marginBottom: 18 }}>
               <PlateDiscipline pitches={pitches} />
-
-              {pitches.length >= 8 && (
-                <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                    <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Contact vs Velo &amp; Two-Strike Approach</span>
-                  </div>
-                  <HitterTrends pitches={pitches} />
-                </div>
-              )}
-
-              {pitches.length >= 30 && (
-                <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.edge}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                    <span style={{ width: 3, height: 10, borderRadius: 2, background: C.gold, display: 'inline-block', flexShrink: 0 }} />
-                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.3, textTransform: 'uppercase', color: C.gold, ...FONT_STYLE }}>Season Trend (by game)</span>
-                  </div>
-                  <HitterRollingTrendSection pitches={pitches} />
-                </div>
-              )}
-            </Card>
-          </>
-        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
-      )}
-
-      {/* ── SPLITS: platoon + vs pitch type ── */}
-      {pane === 'splits' && (
-        hasTrackman ? (
-          <>
-            {sHead('Platoon Splits', 'vs pitcher handedness')}
-            <Card style={{ marginBottom: 18 }}>
-              <PlatoonSplitsTable rows={pitches} side="pitcher_hand" />
             </Card>
             {sHead('vs Pitch Type')}
             <Card style={{ marginBottom: 18, padding: '14px 0' }}>
               <VsPitchType pitches={pitches} />
             </Card>
+            {sHead('Location Zones', 'KDE density by outcome')}
+            <Card style={{ marginBottom: 18 }}>
+              <HitterKdeZones pitches={pitches} />
+            </Card>
           </>
         ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
 
-      {/* ── NOTES: scout observations + coach annotations ── */}
-      {pane === 'notes' && (
-        <>
-          {(catcherObs.length > 0 || runnerObs.length > 0) && (
-            <>
-              {sHead('Scout Notes')}
-              <ScoutNotes catcherObs={catcherObs} runnerObs={runnerObs} />
-            </>
-          )}
-          {playerNameKey && <CoachNoteBox playerNameKey={playerNameKey} />}
-          {catcherObs.length === 0 && runnerObs.length === 0 && !playerNameKey && <EmptyPane>No scout notes for this player.</EmptyPane>}
-        </>
+      {/* ── TRENDS: contact-vs-velo/two-strike approach + season trend, sub-toggle (unchanged) ── */}
+      {pane === 'trends' && (
+        hasTrackman ? (
+          <>
+            <div className="no-print" style={{ display: 'inline-flex', gap: 3, background: C.base, border: `1px solid ${C.edge}`, borderRadius: 7, padding: 3, marginBottom: 14 }}>
+              {[['bygame', 'Season Trend'], ['approach', 'Trends & Approach']].map(([key, label]) => (
+                <button key={key} onClick={() => setTrendView(key)} style={{
+                  border: 'none', cursor: 'pointer', borderRadius: 5, padding: '5px 12px',
+                  fontSize: 11, fontWeight: 800, fontFamily: FONT,
+                  background: trendView === key ? C.gold : 'transparent',
+                  color: trendView === key ? '#080f17' : C.muted,
+                }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {trendView === 'bygame' && (
+              pitches.length >= 30 ? (
+                <>
+                  {sHead('Season Trend', 'by game')}
+                  <Card style={{ marginBottom: 18 }}>
+                    <HitterRollingTrendSection pitches={pitches} />
+                  </Card>
+                </>
+              ) : <EmptyPane>Season trend needs at least 30 pitches in this scope.</EmptyPane>
+            )}
+            {trendView === 'approach' && (
+              pitches.length >= 8 ? (
+                <>
+                  {sHead('Contact vs Velo & Two-Strike Approach')}
+                  <Card style={{ marginBottom: 18 }}>
+                    <HitterTrends pitches={pitches} />
+                  </Card>
+                </>
+              ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+            )}
+          </>
+        ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
       )}
     </div>
   );
