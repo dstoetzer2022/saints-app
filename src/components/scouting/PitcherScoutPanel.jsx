@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { NAVY, GOLD, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
-import useAutosave from '@/hooks/useAutosave';
+import useOfflineAutosave from '@/hooks/useOfflineAutosave';
 import AutosaveTag from '@/components/scouting/AutosaveTag';
+
+const PITCHER_OBS_ENTITY_MAP = { PitcherObservation: base44.entities.PitcherObservation };
 
 const initArr = (v) => Array.isArray(v) ? v : v != null ? [v] : [];
 
@@ -91,11 +93,13 @@ export default function PitcherScoutPanel({ obs }) {
   const [notes, setNotes] = useState(obs.notes || '');
 
   const mounted = useRef(false);
-  const { schedule, status } = useAutosave();
+  const { schedule, status, pendingCount } = useOfflineAutosave(
+    `PitcherObservation:${obs.id}`, 'PitcherObservation', obs.id, PITCHER_OBS_ENTITY_MAP
+  );
 
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    schedule(() => base44.entities.PitcherObservation.update(obs.id, {
+    const payload = {
       time_to_plate_1b: r1b,
       time_to_plate_2b: r2b,
       time_to_plate_slide: slideReadings,
@@ -105,7 +109,8 @@ export default function PitcherScoutPanel({ obs }) {
       ucla_hold_2b: uclaHold2b || null,
       ucla_hold_end: null,
       notes: notes || null,
-    }));
+    };
+    schedule(payload, () => base44.entities.PitcherObservation.update(obs.id, payload));
   }, [r1b, r2b, slideReadings, slideNotes, pickoff, uclaHold1b, uclaHold2b, notes]);
 
   return (
@@ -116,7 +121,7 @@ export default function PitcherScoutPanel({ obs }) {
           {obs.pitcher_name}
           {obs.pitcher_hand && <span style={{ fontSize: 12, fontWeight: 700, background: '#e8e4d9', borderRadius: 4, padding: '2px 7px', color: '#555' }}>{obs.pitcher_hand}HP</span>}
         </div>
-        <AutosaveTag status={status} />
+        <AutosaveTag status={status} pendingCount={pendingCount} />
       </div>
 
       {/* Time to plate row — 3 columns including slide step */}

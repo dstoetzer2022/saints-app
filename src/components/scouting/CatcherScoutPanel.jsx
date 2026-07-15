@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { NAVY, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
-import useAutosave from '@/hooks/useAutosave';
+import useOfflineAutosave from '@/hooks/useOfflineAutosave';
 import AutosaveTag from '@/components/scouting/AutosaveTag';
+
+const CATCHER_OBS_ENTITY_MAP = { CatcherObservation: base44.entities.CatcherObservation };
 
 export default function CatcherScoutPanel({ obs }) {
   const [warmup, setWarmup] = useState(obs.warmup_pop_time ?? '');
@@ -11,16 +13,19 @@ export default function CatcherScoutPanel({ obs }) {
   const [notes, setNotes] = useState(obs.notes || '');
 
   const mounted = useRef(false);
-  const { schedule, status } = useAutosave();
+  const { schedule, status, pendingCount } = useOfflineAutosave(
+    `CatcherObservation:${obs.id}`, 'CatcherObservation', obs.id, CATCHER_OBS_ENTITY_MAP
+  );
 
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    schedule(() => base44.entities.CatcherObservation.update(obs.id, {
+    const payload = {
       warmup_pop_time: warmup !== '' ? parseFloat(warmup) : null,
       between_innings_throws: biThrows.map(t => ({ base: t.base, time: t.time ? parseFloat(t.time) : null, notes: t.notes || '' })),
       blocking_notes: blockingNotes || null,
       notes: notes || null,
-    }));
+    };
+    schedule(payload, () => base44.entities.CatcherObservation.update(obs.id, payload));
   }, [warmup, biThrows, blockingNotes, notes]);
 
   function addBiThrow() { setBiThrows(t => [...t, { base: '2B', time: '', notes: '' }]); }
@@ -37,7 +42,7 @@ export default function CatcherScoutPanel({ obs }) {
           {obs.catcher_name}
           <span style={{ fontSize: 12, fontWeight: 700, background: '#e8e4d9', borderRadius: 4, padding: '2px 7px', color: '#555' }}>C</span>
         </div>
-        <AutosaveTag status={status} />
+        <AutosaveTag status={status} pendingCount={pendingCount} />
       </div>
 
       {/* Between innings throws */}

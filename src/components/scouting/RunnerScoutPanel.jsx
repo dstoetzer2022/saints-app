@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { NAVY, BORDER, TINT, inputStyle, labelStyle } from '@/lib/ds';
-import useAutosave from '@/hooks/useAutosave';
+import useOfflineAutosave from '@/hooks/useOfflineAutosave';
 import AutosaveTag from '@/components/scouting/AutosaveTag';
+
+const RUNNER_OBS_ENTITY_MAP = { BaserunnerObservation: base44.entities.BaserunnerObservation };
 
 const speedOpts = [{ val: 'fast', color: '#22c55e' }, { val: 'average', color: '#eab308' }, { val: 'slow', color: '#ef4444' }];
 const aggrOpts = [{ val: 'aggressive', color: '#22c55e' }, { val: 'average', color: '#eab308' }, { val: 'passive', color: '#ef4444' }];
@@ -35,18 +37,21 @@ export default function RunnerScoutPanel({ obs, onSaved }) {
   const [editingSteal, setEditingSteal] = useState(false);
 
   const mounted = useRef(false);
-  const { schedule, status } = useAutosave();
+  const { schedule, status, pendingCount } = useOfflineAutosave(
+    `BaserunnerObservation:${obs.id}`, 'BaserunnerObservation', obs.id, RUNNER_OBS_ENTITY_MAP
+  );
 
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    schedule(async () => {
-      const updated = await base44.entities.BaserunnerObservation.update(obs.id, {
-        speed_rating: speed || null, aggression_rating: aggr || null,
-        lead_size_1b: leadSize || null,
-        steal_attempts: stealAtt, steals_successful: stealSuc,
-        steal_dead_ball: stealDead, steal_out: stealOut,
-        pickoff_attempts: pickoff, dirt_ball_advances: dirt, notes: notes || null,
-      });
+    const payload = {
+      speed_rating: speed || null, aggression_rating: aggr || null,
+      lead_size_1b: leadSize || null,
+      steal_attempts: stealAtt, steals_successful: stealSuc,
+      steal_dead_ball: stealDead, steal_out: stealOut,
+      pickoff_attempts: pickoff, dirt_ball_advances: dirt, notes: notes || null,
+    };
+    schedule(payload, async () => {
+      const updated = await base44.entities.BaserunnerObservation.update(obs.id, payload);
       if (onSaved) onSaved(updated);
     });
   }, [speed, aggr, leadSize, stealAtt, stealSuc, stealDead, stealOut, pickoff, dirt, notes]);
@@ -83,7 +88,7 @@ export default function RunnerScoutPanel({ obs, onSaved }) {
           {obs.runner_name}
           {obs.position && <span style={{ fontSize: 12, fontWeight: 700, background: '#e8e4d9', borderRadius: 4, padding: '2px 7px', color: '#555' }}>{obs.position}</span>}
         </div>
-        <AutosaveTag status={status} />
+        <AutosaveTag status={status} pendingCount={pendingCount} />
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', alignItems: 'flex-start', marginBottom: 12 }}>
         <RatingRow label="Speed" opts={speedOpts} value={speed} onChange={setSpeed} />
