@@ -7,6 +7,7 @@ import {
   pitcherProfile, percentileRank, fmtStat,
   releasePoints, extensionBreakdown, spinDirectionByType, rollingGameTrend, maxFastballVelo,
   leagueMovementProfile, runValue, xERA, xStatsForRows,
+  pitchTransitionMatrix, firstPitchTendencyByHand, putawaySequences,
 } from '@/lib/profileStats';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -908,11 +909,147 @@ function PitchFusionCards({ pitches, arsenalPool, videoByType }) {
 }
 
 // ── Sub-tab bar (mockup v3, item 4) ────────────────────────────
+// ── Pitch sequencing (Phase 5) ───────────────────────────────────
+const SEQ_BUCKETS = [[null, 'All Counts'], ['ahead', 'Ahead'], ['even', 'Even'], ['behind', 'Behind']];
+
+function heatBg(pct) {
+  const t = Math.min(1, pct / 50);
+  return `rgba(200,146,12,${(t * 0.65).toFixed(2)})`;
+}
+
+function TransitionMatrix({ pitches }) {
+  const [bucket, setBucket] = useState(null);
+  const matrix = useMemo(() => pitchTransitionMatrix(pitches, bucket), [pitches, bucket]);
+  const types = useMemo(() => {
+    return Object.entries(matrix).sort((a, b) => b[1].n - a[1].n).map(([t]) => t);
+  }, [matrix]);
+
+  if (!types.length) return <p style={{ color: C.muted, fontSize: 12, ...FONT_STYLE }}>Not enough sequential pitch data for this count.</p>;
+
+  return (
+    <div>
+      <div style={{ display: 'inline-flex', gap: 3, background: C.base, border: `1px solid ${C.edge}`, borderRadius: 7, padding: 3, marginBottom: 14 }}>
+        {SEQ_BUCKETS.map(([key, label]) => (
+          <button key={label} onClick={() => setBucket(key)} style={{
+            border: 'none', cursor: 'pointer', borderRadius: 5, padding: '5px 12px',
+            fontSize: 11, fontWeight: 800, fontFamily: FONT,
+            background: bucket === key ? C.gold : 'transparent',
+            color: bucket === key ? '#080f17' : C.muted,
+          }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `70px repeat(${types.length}, 1fr)`, gap: 3 }}>
+        <div />
+        {types.map(t => (
+          <div key={t} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.3, color: pColor(t), textAlign: 'center', padding: '6px 2px' }}>{t}</div>
+        ))}
+        {types.map(rowT => (
+          <React.Fragment key={rowT}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', color: pColor(rowT), padding: '8px 4px', display: 'flex', alignItems: 'center' }}>{rowT} →</div>
+            {types.map(colT => {
+              const n = matrix[rowT][colT] || 0;
+              const total = matrix[rowT].n || 1;
+              const p = Math.round((n / total) * 100);
+              return (
+                <div key={colT} style={{ borderRadius: 5, padding: '8px 2px', textAlign: 'center', fontWeight: 900, fontSize: 13, fontFamily: FONT, background: heatBg(p), color: p > 25 ? C.white : C.cream }}>
+                  {p}%
+                  <div style={{ fontSize: 8, fontWeight: 700, opacity: 0.65, marginTop: 1 }}>n={n}</div>
+                </div>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, fontSize: 9.5, color: C.muted, ...FONT_STYLE }}>
+        Rows = pitch thrown · Columns = next pitch in the same PA
+      </div>
+    </div>
+  );
+}
+
+function FirstPitchTendency({ pitches }) {
+  const byHand = useMemo(() => firstPitchTendencyByHand(pitches), [pitches]);
+  const hands = ['Right', 'Left'].filter(h => byHand[h]?.n);
+  if (!hands.length) return <p style={{ color: C.muted, fontSize: 12, ...FONT_STYLE }}>Not enough first-pitch data.</p>;
+
+  return (
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+      {hands.map(hand => {
+        const data = byHand[hand];
+        const types = Object.keys(data).filter(k => k !== 'n').sort((a, b) => data[b] - data[a]);
+        return (
+          <div key={hand} style={{ flex: '1 1 240px', minWidth: 220 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.cream, marginBottom: 8, ...FONT_STYLE }}>
+              vs {hand === 'Right' ? 'RHB' : 'LHB'} <span style={{ color: C.muted, fontWeight: 600 }}>(n={data.n})</span>
+            </div>
+            <div style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', fontSize: 10, fontWeight: 900, color: '#08131e' }}>
+              {types.map(t => {
+                const p = Math.round((data[t] / data.n) * 100);
+                if (!p) return null;
+                return <div key={t} style={{ width: `${p}%`, background: pColor(t), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{p >= 8 ? `${p}%` : ''}</div>;
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 7, fontSize: 9.5, color: C.muted, flexWrap: 'wrap', ...FONT_STYLE }}>
+              {types.map(t => (
+                <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: pColor(t), display: 'inline-block' }} />{t}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PutawaySequenceList({ pitches }) {
+  const { pairs, totalK } = useMemo(() => putawaySequences(pitches), [pitches]);
+  const rows = useMemo(() => {
+    const total = Object.values(pairs).reduce((a, b) => a + b, 0);
+    return Object.entries(pairs)
+      .map(([key, n]) => {
+        const [from, to] = key.split('|');
+        return { from, to, n, pct: total ? Math.round((n / total) * 100) : 0 };
+      })
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 8);
+  }, [pairs]);
+
+  if (!rows.length) return <p style={{ color: C.muted, fontSize: 12, ...FONT_STYLE }}>No strikeout sequences with a prior pitch in this data.</p>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {rows.map(({ from, to, pct: p }) => (
+          <div key={`${from}-${to}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: 150, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 900, padding: '3px 8px', borderRadius: 5, background: `${pColor(from)}22`, color: pColor(from) }}>{from}</span>
+              <span style={{ color: C.muted, fontSize: 12 }}>→</span>
+              <span style={{ fontSize: 11, fontWeight: 900, padding: '3px 8px', borderRadius: 5, background: `${pColor(to)}22`, color: pColor(to) }}>{to}</span>
+            </div>
+            <div style={{ flex: 1, height: 16, background: C.base, borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${p}%`, borderRadius: 4, background: 'linear-gradient(90deg, #8a6308, #c8920c)' }} />
+            </div>
+            <div style={{ width: 42, textAlign: 'right', fontSize: 11, fontWeight: 800, color: C.cream, fontVariantNumeric: 'tabular-nums' }}>{p}%</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, fontSize: 9.5, color: C.muted, ...FONT_STYLE }}>
+        {totalK} strikeouts in this scope · pitch immediately before the putaway pitch
+      </div>
+    </div>
+  );
+}
+
 const PROFILE_PANES = [
   ['overview', 'Overview'],
   ['arsenal', 'Arsenal'],
   ['locations', 'Locations'],
   ['contact', 'Contact & Splits'],
+  ['sequencing', 'Sequencing'],
   ['trends', 'Trends'],
   ['notes', 'Notes'],
 ];
@@ -1060,6 +1197,26 @@ export default function PitcherProfileOverview({ pitches, pitcherObs, pitcherPoo
             </Card>
           </>
         ) : <EmptyPane>Not enough pitch data in this scope.</EmptyPane>
+      )}
+
+      {/* ── SEQUENCING: transition matrix, first-pitch tendency, putaway sequences ── */}
+      {pane === 'sequencing' && (
+        filteredPitches.length >= 30 ? (
+          <>
+            {sHead('Transition Matrix', 'thrown pitch → next pitch, same at-bat')}
+            <Card style={{ marginBottom: 18 }}>
+              <TransitionMatrix pitches={filteredPitches} />
+            </Card>
+            {sHead('First-Pitch Tendency', '0-0 count, by batter hand')}
+            <Card style={{ marginBottom: 18 }}>
+              <FirstPitchTendency pitches={filteredPitches} />
+            </Card>
+            {sHead('Putaway Sequences', 'pitch before the strikeout pitch')}
+            <Card style={{ marginBottom: 18 }}>
+              <PutawaySequenceList pitches={filteredPitches} />
+            </Card>
+          </>
+        ) : <EmptyPane>Sequencing needs at least 30 pitches in this scope.</EmptyPane>
       )}
 
       {/* ── TRENDS: season trend + approach, merged under a sub-toggle ── */}

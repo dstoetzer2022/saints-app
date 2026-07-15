@@ -416,3 +416,81 @@ describe('multi-word surname handling (Del Villar incident)', () => {
     expect(toTrackmanName('Van Smith')).toBe('Smith, Van');
   });
 });
+
+// ── Pitch sequencing (Phase 5) ────────────────────────────────────────────
+import { pitchTransitionMatrix, firstPitchTendencyByHand, putawaySequences } from '@/lib/profileStats';
+
+function mkPA(gameId, startPitchNo, seq) {
+  // seq: [{type, balls, strikes, korBB?, batterHand?}]
+  return seq.map((s, i) => ({
+    game_id: gameId, pitch_no: startPitchNo + i,
+    tagged_pitch_type: s.type, pitch_type: s.type,
+    balls: s.balls, strikes: s.strikes,
+    kor_bb: s.korBB, batter_hand: s.batterHand || 'Right',
+  }));
+}
+
+describe('pitch sequencing', () => {
+  it('pitchTransitionMatrix pairs consecutive pitches within a PA, never across PA boundaries', () => {
+    const rows = [
+      ...mkPA('g1', 1, [{ type: 'Four-Seam', balls: 0, strikes: 0 }, { type: 'Slider', balls: 0, strikes: 1 }]),
+      ...mkPA('g1', 3, [{ type: 'Slider', balls: 0, strikes: 0 }, { type: 'Slider', balls: 0, strikes: 1 }]),
+    ];
+    const matrix = pitchTransitionMatrix(rows);
+    expect(matrix['Four-Seam'].n).toBe(1);
+    expect(matrix['Four-Seam'].Slider).toBe(1);
+    // second PA's leadoff Slider must NOT pair with the first PA's trailing Slider
+    expect(matrix.Slider.n).toBe(1);
+  });
+
+  it('pitchTransitionMatrix respects the bucketFilter (ahead/even/behind of the FROM pitch)', () => {
+    const rows = mkPA('g1', 1, [
+      { type: 'Four-Seam', balls: 0, strikes: 0 },   // even
+      { type: 'Slider', balls: 0, strikes: 1 },       // this is the "to" of pair 1
+      { type: 'Four-Seam', balls: 1, strikes: 1 },     // "to" of pair 2, "from" of pair 3 (even)
+      { type: 'Curveball', balls: 1, strikes: 2 },
+    ]);
+    const evenOnly = pitchTransitionMatrix(rows, 'even');
+    // Only FROM-pitches thrown on an even count should be counted: pitch 1 (0-0) and pitch 3 (1-1)
+    const totalPairs = Object.values(evenOnly).reduce((a, m) => a + m.n, 0);
+    expect(totalPairs).toBe(2);
+  });
+
+  it('firstPitchTendencyByHand only counts the first pitch (0-0) of each PA, split by hand', () => {
+    const rows = [
+      ...mkPA('g1', 1, [{ type: 'Four-Seam', balls: 0, strikes: 0, batterHand: 'Right' }, { type: 'Slider', balls: 0, strikes: 1, batterHand: 'Right' }]),
+      ...mkPA('g1', 3, [{ type: 'ChangeUp', balls: 0, strikes: 0, batterHand: 'Left' }]),
+    ];
+    const byHand = firstPitchTendencyByHand(rows);
+    expect(byHand.Right.n).toBe(1);
+    expect(byHand.Right['Four-Seam']).toBe(1);
+    expect(byHand.Right.Slider).toBeUndefined(); // not a first pitch
+    expect(byHand.Left.n).toBe(1);
+    expect(byHand.Left.ChangeUp).toBe(1);
+  });
+
+  it('putawaySequences pairs the pitch before a strikeout-ending PA with the putaway pitch', () => {
+    const rows = [
+      ...mkPA('g1', 1, [
+        { type: 'Four-Seam', balls: 0, strikes: 0 },
+        { type: 'Slider', balls: 0, strikes: 1 },
+        { type: 'Slider', balls: 0, strikes: 2, korBB: 'Strikeout' },
+      ]),
+      ...mkPA('g1', 4, [
+        { type: 'Four-Seam', balls: 0, strikes: 0 },
+        { type: 'Four-Seam', balls: 1, strikes: 0, korBB: 'Walk' }, // not a K — excluded
+      ]),
+    ];
+    const { pairs, totalK } = putawaySequences(rows);
+    expect(totalK).toBe(1);
+    expect(pairs['Slider|Slider']).toBe(1);
+    expect(Object.keys(pairs)).toHaveLength(1);
+  });
+
+  it('putawaySequences ignores a strikeout with no prior pitch in the PA (edge case)', () => {
+    const rows = mkPA('g1', 1, [{ type: 'Four-Seam', balls: 0, strikes: 0, korBB: 'Strikeout' }]);
+    const { pairs, totalK } = putawaySequences(rows);
+    expect(totalK).toBe(1);
+    expect(Object.keys(pairs)).toHaveLength(0);
+  });
+});

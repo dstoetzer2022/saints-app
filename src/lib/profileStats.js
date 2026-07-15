@@ -1320,3 +1320,98 @@ export const HITTER_LEADERBOARD_METRICS = [
   { key: 'kPct', label: 'K%', category: 'Plate Discipline', decimals: 0, invert: true, pct: true },
   { key: 'bbPct', label: 'BB%', category: 'Plate Discipline', decimals: 0, invert: false, pct: true },
 ];
+
+// ── Pitch sequencing (Phase 5) ────────────────────────────────────────────
+// Reconstructs plate appearances from a pitcher's raw pitch rows (any
+// order) by grouping into games, sorting each game by pitch_no, and
+// splitting into PAs at every 0-0 count (the first pitch of any at-bat).
+// Pure derivation — no new field or schema change needed.
+function groupIntoPAs(rows) {
+  const byGame = {};
+  rows.forEach(r => {
+    if (!r.game_id) return;
+    (byGame[r.game_id] = byGame[r.game_id] || []).push(r);
+  });
+  const pas = [];
+  Object.values(byGame).forEach(gameRows => {
+    const sorted = [...gameRows].sort((a, b) => (a.pitch_no ?? 0) - (b.pitch_no ?? 0));
+    let current = [];
+    sorted.forEach(r => {
+      const isFirstPitch = (r.balls ?? 0) === 0 && (r.strikes ?? 0) === 0;
+      if (isFirstPitch && current.length) { pas.push(current); current = []; }
+      current.push(r);
+    });
+    if (current.length) pas.push(current);
+  });
+  return pas;
+}
+
+// Same 3-bucket convention as CountSplitsTable (ahead/even/behind, from the
+// PITCHER's perspective — strikes > balls means the pitcher is ahead).
+function countBucket(p) {
+  const b = p.balls ?? 0, s = p.strikes ?? 0;
+  if (s > b) return 'ahead';
+  if (b > s) return 'behind';
+  return 'even';
+}
+
+// Transition matrix: for every consecutive in-PA pair (never crossing a PA
+// boundary), tally fromType -> toType. Optional bucketFilter restricts to
+// pairs where the FIRST pitch of the pair falls in that count bucket
+// ('ahead' | 'even' | 'behind'); omit for all counts.
+// Returns { [fromType]: { n: <total pairs from this type>, [toType]: count } }
+export function pitchTransitionMatrix(rows, bucketFilter = null) {
+  const pas = groupIntoPAs(rows);
+  const matrix = {};
+  pas.forEach(pa => {
+    for (let i = 0; i < pa.length - 1; i++) {
+      const from = pa[i], to = pa[i + 1];
+      if (bucketFilter && countBucket(from) !== bucketFilter) continue;
+      const ft = normalizePitch(from.tagged_pitch_type || from.pitch_type);
+      const tt = normalizePitch(to.tagged_pitch_type || to.pitch_type);
+      if (!matrix[ft]) matrix[ft] = { n: 0 };
+      matrix[ft][tt] = (matrix[ft][tt] || 0) + 1;
+      matrix[ft].n++;
+    }
+  });
+  return matrix;
+}
+
+// First-pitch (0-0) type breakdown, split by batter hand.
+// Returns { Right: { n, [type]: count }, Left: { n, [type]: count } }
+export function firstPitchTendencyByHand(rows) {
+  const pas = groupIntoPAs(rows);
+  const byHand = {};
+  pas.forEach(pa => {
+    const first = pa[0];
+    if (!first) return;
+    const hand = first.batter_hand === 'Left' ? 'Left' : first.batter_hand === 'Right' ? 'Right' : null;
+    if (!hand) return;
+    const t = normalizePitch(first.tagged_pitch_type || first.pitch_type);
+    if (!byHand[hand]) byHand[hand] = { n: 0 };
+    byHand[hand][t] = (byHand[hand][t] || 0) + 1;
+    byHand[hand].n++;
+  });
+  return byHand;
+}
+
+// For every plate appearance ending in a strikeout, pairs the pitch
+// immediately before the final pitch with the final (putaway) pitch itself.
+// Returns { pairs: { "FROM|TO": count }, totalK: <PAs ending in K> }
+export function putawaySequences(rows) {
+  const pas = groupIntoPAs(rows);
+  const pairs = {};
+  let totalK = 0;
+  pas.forEach(pa => {
+    const last = pa[pa.length - 1];
+    if (!last || last.kor_bb !== 'Strikeout') return;
+    totalK++;
+    if (pa.length < 2) return; // no prior pitch in this PA to pair with
+    const prev = pa[pa.length - 2];
+    const ft = normalizePitch(prev.tagged_pitch_type || prev.pitch_type);
+    const tt = normalizePitch(last.tagged_pitch_type || last.pitch_type);
+    const key = `${ft}|${tt}`;
+    pairs[key] = (pairs[key] || 0) + 1;
+  });
+  return { pairs, totalK };
+}
