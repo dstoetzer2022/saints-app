@@ -9,6 +9,7 @@ import PlayerProfile from './PlayerProfile';
 import BaserunnerReport from '@/components/reports/BaserunnerReport';
 import PitcherCatcherReport from '@/components/reports/PitcherCatcherReport';
 import BatchPrintReport from '@/components/reports/BatchPrintReport';
+import TeamReportBuilder from '@/components/reports/TeamReportBuilder';
 import { C, FONT } from '@/lib/darkTheme';
 
 // Which sources a player has data in
@@ -300,6 +301,7 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const [showBatchPrint, setShowBatchPrint] = useState(false);
+  const [showTeamReport, setShowTeamReport] = useState(false);
 
   const teamName = team.name;
   const trackmanCode = team.trackman_code || teamName;
@@ -706,6 +708,16 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
                 >
                   🖨 {reportLabel}
                 </button>
+                <button
+                  onClick={() => setShowTeamReport(true)}
+                  style={{
+                    flexShrink: 0, background: C.raised, border: `1px solid ${C.edge}`,
+                    borderRadius: 5, padding: '7px 12px', fontSize: 11, fontWeight: 700, color: C.cream,
+                    fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2, whiteSpace: 'nowrap',
+                  }}
+                >
+                  📋 Team Report
+                </button>
               </div>
             </div>
 
@@ -800,6 +812,16 @@ export default function RosterView({ team, onSelectPlayer, onBack, initialTab })
         onClose={() => setShowBatchPrint(false)}
         players={selectedPlayers}
         team={team}
+        pitches={pitches}
+        batterPitches={batterPitches}
+      />
+
+      <TeamReportBuilder
+        open={showTeamReport}
+        onClose={() => setShowTeamReport(false)}
+        team={team}
+        pitchers={pitchers}
+        hitters={hitters}
         pitches={pitches}
         batterPitches={batterPitches}
       />
