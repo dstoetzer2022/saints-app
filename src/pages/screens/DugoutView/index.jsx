@@ -107,15 +107,105 @@ function statTier(value, avgThresh, goodThresh) {
   if (value == null) return null;
   return Math.max(0, Math.min(1, (value - avgThresh) / (goodThresh - avgThresh)));
 }
-function HeaderStatPill({ label, value, suffix = '%', avg: avgThresh, good, last }) {
+function HeaderStatPill({ label, value, suffix = '%', avg: avgThresh, good, compact }) {
   const t = statTier(value, avgThresh, good);
   const bg = t != null ? (() => { const [r, g, b] = colorAt(t); return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},.22)`; })() : 'transparent';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: last ? 'none' : '1px solid #1c3f5e', background: bg, transition: 'background 0.3s' }}>
-      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: compact ? '1px 6px' : '2px 10px', background: bg, borderRadius: compact ? 4 : 0, transition: 'background 0.3s' }}>
+      <span style={{ fontSize: compact ? 12 : 17, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
         {value == null ? '—' : `${Math.round(value)}${suffix}`}
       </span>
-      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>{label}</span>
+      <span style={{ fontSize: compact ? 6 : 9, letterSpacing: compact ? 0.4 : 1, textTransform: 'uppercase', color: '#c6b583', fontWeight: 800, marginTop: compact ? 1 : 2, fontFamily: FONT }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Pitcher header — approved mockup, 2026-07-15. Single line in both
+// orientations (never wraps — wrapping was the actual source of the height
+// problem in vertical). CSW%/Whiff% dropped from both: they're redundant
+// with the active-pitch hero card below. One divider separates "command"
+// stats (Strike%/1st-K%/Zone%/Chase%, still quality-tiered via HeaderStatPill)
+// from context (Time to Plate/Season Pitches, never tiered — no thresholds
+// make sense for those). Vertical additionally: smaller logo, tighter
+// 2-line identity with ellipsis overflow, abbreviated stat keys — there's
+// roughly a third of the horizontal width to work with. ──
+function PitcherHeader({ pitcherObs, teamLogoUrl, teamDisplayName, pitcherDisplayName, handLabel, playerRecord, ttpVal, seasonRates, seasonArsenal, orientation }) {
+  if (!pitcherObs) {
+    return (
+      <div style={{ padding: orientation === 'vertical' ? '8px 12px' : '14px 20px 12px', borderBottom: '2px solid #b8860b', flexShrink: 0, background: 'rgba(14,37,58,.6)' }}>
+        <div style={{ fontSize: orientation === 'vertical' ? 12 : 16, color: 'rgba(255,255,255,.25)', fontStyle: 'italic', fontFamily: FONT }}>Waiting for active pitcher…</div>
+      </div>
+    );
+  }
+
+  const totalPitches = seasonArsenal.length > 0 ? seasonArsenal[0]?.total_pitches : null;
+
+  if (orientation === 'vertical') {
+    return (
+      <div style={{ padding: '8px 12px', borderBottom: '2px solid #b8860b', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(14,37,58,.6)' }}>
+        <TeamLogo logoUrl={teamLogoUrl} teamName={teamDisplayName} size={26} />
+        <div style={{ flexShrink: 0, minWidth: 0, maxWidth: '38%' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#f4f2ec', fontFamily: FONT, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pitcherDisplayName}</div>
+          <div style={{ fontSize: 8, fontWeight: 700, color: '#c6b583', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: FONT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
+            {teamDisplayName || '—'} · {handLabel || 'RHP'}
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0, minWidth: 0, justifyContent: 'flex-end' }}>
+          <HeaderStatPill label="STR"  value={seasonRates?.strike_pct}             avg={58} good={64} compact />
+          <HeaderStatPill label="1K"   value={seasonRates?.first_pitch_strike_pct} avg={52} good={60} compact />
+          <HeaderStatPill label="ZONE" value={seasonRates?.zone_pct}                avg={45} good={52} compact />
+          <HeaderStatPill label="CHS"  value={seasonRates?.chase_pct}               avg={24} good={30} compact />
+          <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,.12)', margin: '2px 5px' }} />
+          {ttpVal != null && (
+            <div style={{ textAlign: 'center', padding: '0 5px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(234,229,216,.6)', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>{ttpVal.toFixed(2)}</div>
+              <div style={{ fontSize: 6, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase', color: 'rgba(125,147,166,.9)', marginTop: 1 }}>TTP</div>
+            </div>
+          )}
+          {totalPitches != null && (
+            <div style={{ textAlign: 'center', padding: '0 5px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(234,229,216,.6)', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>{totalPitches}</div>
+              <div style={{ fontSize: 6, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase', color: 'rgba(125,147,166,.9)', marginTop: 1 }}>PIT</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '14px 20px 12px', borderBottom: '2px solid #b8860b', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(14,37,58,.6)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <TeamLogo logoUrl={teamLogoUrl} teamName={teamDisplayName} size={54} />
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 30, fontWeight: 800, color: '#f4f2ec', fontFamily: FONT, lineHeight: 1.1 }}>{pitcherDisplayName}</div>
+            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: '#b8860b', background: 'rgba(184,134,11,0.15)', border: '0.5px solid rgba(184,134,11,0.4)', borderRadius: 4, padding: '2px 6px', fontFamily: FONT }}>SEASON</span>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#c6b583', textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: FONT, marginTop: 2 }}>
+            {teamDisplayName || '—'} · {handLabel || 'RHP'}{playerRecord?.school ? <span style={{ color: 'rgba(198,181,131,.55)', fontWeight: 600, letterSpacing: 1 }}> · {playerRecord.school}</span> : null}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <HeaderStatPill label="Strike%" value={seasonRates?.strike_pct}             avg={58} good={64} />
+        <HeaderStatPill label="1st-K%"  value={seasonRates?.first_pitch_strike_pct} avg={52} good={60} />
+        <HeaderStatPill label="Zone%"   value={seasonRates?.zone_pct}                avg={45} good={52} />
+        <HeaderStatPill label="Chase%"  value={seasonRates?.chase_pct}               avg={24} good={30} />
+        <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,.1)', margin: '0 12px' }} />
+        {ttpVal != null && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 10px', opacity: 0.7 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
+            <span style={{ fontSize: 8, letterSpacing: 0.7, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Time to Plate</span>
+          </div>
+        )}
+        {totalPitches != null && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 10px', opacity: 0.7 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{totalPitches}</span>
+            <span style={{ fontSize: 8, letterSpacing: 0.7, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Season Pitches</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -305,59 +395,85 @@ function HandSplitStrip({ pitch }) {
   );
 }
 
-function PitchMetricsRow({ pitch, isActive, colorHex }) {
+// ── Pitch board (horizontal) — approved mockup, 2026-07-15. Previously
+// PitchMetricsRow/Board rendered one full-weight row per pitch type, all
+// identical visual weight — for a 4-5 pitch arsenal this could overflow
+// into the maxHeight:46vh scroll below, which defeats a glanceable TV
+// display. Now: the pitch actually being thrown (`activePitchType`, driven
+// live by the 3D trail) gets a large hero card; everything else drops to a
+// lightweight reference strip. ──
+function ArsenalHeroCard({ pitch, colorHex }) {
   const usagePct = pitch.usage_pct == null ? null : (pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100);
   const cells = [
-    { label: 'velo', value: pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—' },
-    { label: 'ivb / hb', value: `${sign(pitch.vert_break_mean)} / ${sign(pitch.horz_break_mean)}` },
-    { label: 'strike%', value: pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—', color: '#4ade80' },
-    { label: 'whiff%', value: pitch.whiff_pct != null ? Number(pitch.whiff_pct).toFixed(0) + '%' : '—' },
+    { label: 'Velo', value: pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—' },
+    { label: 'IVB / HB', value: `${sign(pitch.vert_break_mean)} / ${sign(pitch.horz_break_mean)}` },
+    { label: 'Strike%', value: pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—', color: '#4ade80' },
+    { label: 'Whiff%', value: pitch.whiff_pct != null ? Number(pitch.whiff_pct).toFixed(0) + '%' : '—' },
   ];
   return (
     <div style={{
-      display: 'flex', gap: 16, alignItems: 'stretch', borderRadius: 10, padding: 18,
-      background: isActive ? 'rgba(198,146,12,.06)' : 'rgba(255,255,255,.02)',
-      border: isActive ? '1px solid #c6b583' : '1px solid rgba(255,255,255,.06)',
-      transition: 'background 0.3s, border 0.3s',
+      display: 'flex', gap: 20, alignItems: 'stretch', borderRadius: 14, padding: '18px 22px',
+      background: 'linear-gradient(135deg, rgba(198,146,12,.14), rgba(198,146,12,.04))',
+      border: '1.5px solid #c6b583', boxShadow: '0 0 30px rgba(198,146,12,.12)',
     }}>
-      <div style={{ width: 130, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: 8, padding: '10px 4px', background: `${colorHex}33`, border: `1px solid ${colorHex}` }}>
-        <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.5px', color: colorHex, fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#c6b583', fontFamily: FONT, lineHeight: 1.2 }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</div>
+      <div style={{ width: 150, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: 12, padding: 10, background: `${colorHex}33`, border: `1px solid ${colorHex}` }}>
+        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 1.5, color: '#4ade80', marginBottom: 4 }}>● NOW THROWING</div>
+        <div style={{ fontSize: 38, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.5px', color: colorHex, fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#c6b583', fontFamily: FONT, marginTop: 4 }}>{usagePct != null ? Math.round(usagePct) + '% usage' : '—'}</div>
       </div>
-      <PitchHeatmap zoneCounts={pitch.zone_counts} colorHex={colorHex} />
-      <div style={{ flex: 1, display: 'flex', gap: 6, minWidth: 0 }}>
+      <div style={{ alignSelf: 'center' }}><PitchHeatmap zoneCounts={pitch.zone_counts} colorHex={colorHex} size={100} /></div>
+      <div style={{ flex: 1, display: 'flex', gap: 10, minWidth: 0, alignSelf: 'center' }}>
         {cells.map(c => (
-          <div key={c.label} style={{ flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 7, background: 'rgba(198,146,12,.08)', border: '1px solid rgba(198,146,12,.25)' }}>
-            <div style={{ fontSize: 27, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.3px', color: c.color || '#f0d68a', fontFamily: FONT }}>{c.value}</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#c6b583', fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 0.4, lineHeight: 1.3, marginTop: 4 }}>{c.label}</div>
+          <div key={c.label} style={{ flex: 1, textAlign: 'center', padding: '12px 6px', borderRadius: 9, background: 'rgba(198,146,12,.1)', border: '1px solid rgba(198,146,12,.3)' }}>
+            <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.3px', color: c.color || '#fff', fontFamily: FONT }}>{c.value}</div>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#c6b583', fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 3 }}>{c.label}</div>
           </div>
         ))}
       </div>
-      <HandSplitStrip pitch={pitch} />
+      <div style={{ width: 160, flexShrink: 0, alignSelf: 'center' }}><HandSplitStrip pitch={pitch} /></div>
     </div>
   );
 }
-
+function ArsenalStripChip({ pitch, colorHex }) {
+  const usagePct = pitch.usage_pct == null ? null : (pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100);
+  const velo = pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—';
+  const strike = pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—';
+  return (
+    <div style={{ flex: '1 1 130px', minWidth: 130, display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)' }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: colorHex }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#eae5d8', fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</div>
+        <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.35)', fontWeight: 700, fontFamily: FONT }}>{velo} mph · {strike} K</div>
+      </div>
+      <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#c6b583', fontFamily: FONT }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</span>
+    </div>
+  );
+}
 function PitchMetricsBoard({ pitches, activePitchType, colorOverrides }) {
   if (!pitches.length) return null;
   const sorted = [...pitches].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0));
+  const colorFor = p => (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
+  const activeIdx = sorted.findIndex(p => normalizePitch(p.pitch_type) === normalizePitch(activePitchType));
+  const active = activeIdx >= 0 ? sorted[activeIdx] : sorted[0];
+  const rest = sorted.filter((_, i) => i !== (activeIdx >= 0 ? activeIdx : 0));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {sorted.map((p, i) => {
-        const colorHex = (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
-        const isActive = normalizePitch(p.pitch_type) === normalizePitch(activePitchType);
-        return <PitchMetricsRow key={p.pitch_type + i} pitch={p} isActive={isActive} colorHex={colorHex} />;
-      })}
+      <ArsenalHeroCard pitch={active} colorHex={colorFor(active)} />
+      {rest.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {rest.map((p, i) => <ArsenalStripChip key={p.pitch_type + i} pitch={p} colorHex={colorFor(p)} />)}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Compact arsenal card (vertical-orientation layout, mockup-approved) ──
-// PitchMetricsRow is a wide single row (130px chip + 62px heatmap + 4 stat
-// cells + 168px hand-split ≈ 740px minimum) — it can't fit next to the 3D
-// canvas in portrait mode. This stacks the same data (chip/usage, mini
-// heatmap + stats, hand-split bars) vertically in a much smaller footprint
-// instead of trying to shrink a horizontal row past its floor width.
+// ArsenalHeroCard (horizontal) is wide (150px chip + 100px heatmap + 4 stat
+// cells + 160px hand-split) — it can't fit next to the 3D canvas in portrait
+// mode. This stacks the same data (chip/usage, mini heatmap + stats,
+// hand-split bars) vertically in a much smaller footprint instead of trying
+// to shrink a horizontal card past its floor width.
 function CompactHandSplitBars({ pitch }) {
   const rhhPct = pctBar(null, pitch?.rhh_count, pitch?.rhh_count + pitch?.lhh_count) ?? pctBar(null, pitch?.rhh_count, pitch?.count);
   const lhhPct = pctBar(null, pitch?.lhh_count, pitch?.rhh_count + pitch?.lhh_count) ?? pctBar(null, pitch?.lhh_count, pitch?.count);
@@ -378,31 +494,32 @@ function CompactHandSplitBars({ pitch }) {
   );
 }
 
-function CompactArsenalCard({ pitch, isActive, colorHex }) {
+function CompactArsenalHero({ pitch, colorHex }) {
   const usagePct = pitch.usage_pct == null ? null : (pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100);
   const cells = [
     { label: 'Velo', value: pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—' },
     { label: 'IVB', value: sign(pitch.vert_break_mean) },
-    { label: 'Strk', value: pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—' },
-    { label: 'Whf', value: pitch.whiff_pct != null ? Number(pitch.whiff_pct).toFixed(0) + '%' : '—' },
+    { label: 'Strike%', value: pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—', color: '#4ade80' },
+    { label: 'Whiff%', value: pitch.whiff_pct != null ? Number(pitch.whiff_pct).toFixed(0) + '%' : '—' },
   ];
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', gap: 5, borderRadius: 8, padding: '7px 8px',
-      background: `${colorHex}12`, border: `1px solid ${isActive ? colorHex : colorHex + '55'}`,
-      boxShadow: isActive ? `0 0 0 1px ${colorHex}55` : 'none',
+      display: 'flex', flexDirection: 'column', gap: 7, borderRadius: 11, padding: '9px 10px', flexShrink: 0,
+      background: 'linear-gradient(135deg, rgba(198,146,12,.16), rgba(198,146,12,.04))',
+      border: `1.5px solid ${colorHex}`, boxShadow: '0 0 16px rgba(198,146,12,.14)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 15, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.3px', color: colorHex, fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</span>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#c6b583', marginLeft: 'auto', fontFamily: FONT }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</span>
+        <span style={{ fontSize: 7, fontWeight: 900, letterSpacing: 1, color: '#4ade80' }}>● NOW</span>
+        <span style={{ fontSize: 22, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.3px', color: colorHex, fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</span>
+        <span style={{ fontSize: 10, fontWeight: 800, color: '#c6b583', marginLeft: 'auto', fontFamily: FONT }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</span>
       </div>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-        <PitchHeatmap zoneCounts={pitch.zone_counts} colorHex={colorHex} size={26} />
-        <div style={{ flex: 1, display: 'flex', gap: 3, minWidth: 0 }}>
+      <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+        <PitchHeatmap zoneCounts={pitch.zone_counts} colorHex={colorHex} size={40} />
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, minWidth: 0 }}>
           {cells.map(c => (
-            <div key={c.label} style={{ flex: 1, textAlign: 'center', padding: '2px 1px', borderRadius: 4, background: 'rgba(198,146,12,.08)', border: '1px solid rgba(198,146,12,.22)' }}>
-              <div style={{ fontSize: 11, fontWeight: 900, lineHeight: 1.05, color: '#f0d68a', fontFamily: FONT }}>{c.value}</div>
-              <div style={{ fontSize: 6, fontWeight: 700, color: '#c6b583', textTransform: 'uppercase', letterSpacing: 0.3 }}>{c.label}</div>
+            <div key={c.label} style={{ textAlign: 'center', padding: '3px 2px', borderRadius: 5, background: 'rgba(198,146,12,.1)', border: '1px solid rgba(198,146,12,.3)' }}>
+              <div style={{ fontSize: 13, fontWeight: 900, lineHeight: 1.1, color: c.color || '#fff', fontFamily: FONT }}>{c.value}</div>
+              <div style={{ fontSize: 6.5, fontWeight: 800, color: '#c6b583', textTransform: 'uppercase' }}>{c.label}</div>
             </div>
           ))}
         </div>
@@ -411,17 +528,39 @@ function CompactArsenalCard({ pitch, isActive, colorHex }) {
     </div>
   );
 }
-
+function ArsenalStripChipVertical({ pitch, colorHex }) {
+  const usagePct = pitch.usage_pct == null ? null : (pitch.usage_pct > 1 ? pitch.usage_pct : pitch.usage_pct * 100);
+  const velo = pitch.velo_mean != null ? Number(pitch.velo_mean).toFixed(1) : '—';
+  const strike = pitch.strike_pct != null ? Number(pitch.strike_pct).toFixed(0) + '%' : '—';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)' }}>
+      <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: colorHex }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: '#eae5d8', fontFamily: FONT }}>{abbrPitch(pitch.pitch_type)}</div>
+        <div style={{ fontSize: 8, color: 'rgba(255,255,255,.35)', fontWeight: 700, fontFamily: FONT }}>{velo} mph · {strike} K</div>
+      </div>
+      <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: '#c6b583', fontFamily: FONT }}>{usagePct != null ? Math.round(usagePct) + '%' : '—'}</span>
+    </div>
+  );
+}
 function CompactArsenalBoard({ pitches, activePitchType, colorOverrides }) {
   if (!pitches.length) return null;
   const sorted = [...pitches].sort((a, b) => (b.usage_pct || 0) - (a.usage_pct || 0));
+  const colorFor = p => (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
+  const activeIdx = sorted.findIndex(p => normalizePitch(p.pitch_type) === normalizePitch(activePitchType));
+  const active = activeIdx >= 0 ? sorted[activeIdx] : sorted[0];
+  const rest = sorted.filter((_, i) => i !== (activeIdx >= 0 ? activeIdx : 0));
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
-      {sorted.map((p, i) => {
-        const colorHex = (colorOverrides && colorOverrides[p.pitch_type]) || p._color || pitchHex(p.pitch_type);
-        const isActive = normalizePitch(p.pitch_type) === normalizePitch(activePitchType);
-        return <CompactArsenalCard key={p.pitch_type + i} pitch={p} isActive={isActive} colorHex={colorHex} />;
-      })}
+      <CompactArsenalHero pitch={active} colorHex={colorFor(active)} />
+      {rest.length > 0 && (
+        <>
+          <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: 0.9, textTransform: 'uppercase', color: 'rgba(255,255,255,.3)', margin: '1px 2px' }}>Rest of Arsenal</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {rest.map((p, i) => <ArsenalStripChipVertical key={p.pitch_type + i} pitch={p} colorHex={colorFor(p)} />)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -457,7 +596,16 @@ function abbrPitch(pt) {
   return map[pt] || pt.slice(0, 2).toUpperCase();
 }
 
-function CountSplitsPanel({ arsenal }) {
+// ── Count Splits — approved mockup, 2026-07-15. Previously each card showed
+// pitch abbreviation + % TWICE (once inline in the segmented bar, once again
+// in a legend row below it) plus 5 differently-tinted card backgrounds all
+// competing for attention. Now: the bar is the single source of truth (no
+// legend), one consistent card surface, accent color lives only on the
+// bucket label. Vertical additionally: single row instead of a multi-row
+// grid (height was the scarce resource there, not width) — cards are only
+// ~80px wide at that point, so only the dominant pitch per bucket gets a
+// label; the rest stay color-coded but unlabeled. ──
+function CountSplitsPanel({ arsenal, orientation }) {
   const splits = arsenal
     .filter(p => p.pitch_type && ((p.ahead_count || 0) + (p.even_count || 0) + (p.behind_count || 0) + (p.first_pitch_count || 0)) > 0)
     .sort((a, b) => (b.ahead_count || 0) + (b.even_count || 0) + (b.behind_count || 0)
@@ -474,60 +622,52 @@ function CountSplitsPanel({ arsenal }) {
   };
 
   const rows = [
-    { label: '1ST PITCH', sub: '0-0 count',     key: 'first_pitch_count', total: totals.firstPitch, accent: '#93c5fd', dim: 'rgba(147,197,253,.12)' },
-    { label: 'AHEAD',  sub: 'More strikes',  key: 'ahead_count',  total: totals.ahead,  accent: '#4ade80', dim: 'rgba(74,222,128,.12)' },
-    { label: 'EVEN',   sub: 'Balls = strikes', key: 'even_count',   total: totals.even,   accent: '#c6b583', dim: 'rgba(198,181,131,.12)' },
-    { label: 'BEHIND', sub: 'More balls',    key: 'behind_count', total: totals.behind, accent: '#f87171', dim: 'rgba(248,113,113,.12)' },
+    { label: '1ST PITCH', sub: '0-0 count',     key: 'first_pitch_count', total: totals.firstPitch, accent: '#93c5fd' },
+    { label: 'AHEAD',  sub: 'More strikes',  key: 'ahead_count',  total: totals.ahead,  accent: '#4ade80' },
+    { label: 'EVEN',   sub: 'Balls = strikes', key: 'even_count',   total: totals.even,   accent: '#c6b583' },
+    { label: 'BEHIND', sub: 'More balls',    key: 'behind_count', total: totals.behind, accent: '#f87171' },
     // Cross-cuts the four buckets above rather than replacing one (0-2/1-2
     // count as both "Ahead" and "2 Strikes" — see PitcherArsenal.two_strike_count's
     // own field description) — violet keeps it visually distinct as an
     // overlapping "putaway chances" lens rather than a 5th exclusive bucket.
-    { label: '2 STRIKES', sub: 'Putaway chances', key: 'two_strike_count', total: totals.twoStrike, accent: '#a78bfa', dim: 'rgba(167,139,250,.14)' },
+    { label: '2 STRIKES', sub: 'Putaway chances', key: 'two_strike_count', total: totals.twoStrike, accent: '#a78bfa' },
   ].filter(r => r.total > 0);
 
+  const isVertical = orientation === 'vertical';
+
   return (
-    <div style={{ flexShrink: 0, padding: '0 16px 14px', display: 'flex', gap: 10 }}>
-      {rows.map(({ label, sub, key, total, accent, dim }) => {
+    <div style={{ flexShrink: 0, padding: isVertical ? '0 12px 10px' : '0 16px 14px', display: 'flex', gap: isVertical ? 5 : 10 }}>
+      {rows.map(({ label, sub, key, total, accent }) => {
         const ordered = [...splits]
           .filter(p => (p[key] || 0) > 0)
           .sort((a, b) => (b[key] || 0) - (a[key] || 0));
+        const segs = ordered
+          .map(p => ({ pt: p.pitch_type, pct: total > 0 ? (p[key] || 0) / total : 0, col: pitchHex(p.pitch_type) }))
+          .filter(s => s.pct >= 0.02);
+        const topSeg = segs.length ? segs.reduce((a, b) => (b.pct > a.pct ? b : a)) : null;
+
         return (
-          <div key={label} style={{ flex: 1, background: dim, border: `1px solid ${accent}30`, borderRadius: 10, padding: '10px 12px', minWidth: 0 }}>
-            {/* Count situation label */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 900, color: accent, letterSpacing: 1.5, fontFamily: FONT }}>{label}</span>
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', fontFamily: FONT, fontWeight: 600 }}>{total} pitches</span>
+          <div key={label} style={{
+            flex: 1, minWidth: 0, borderRadius: 10, padding: isVertical ? '6px 7px' : '10px 12px',
+            background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: isVertical ? 4 : 8 }}>
+              <span style={{ fontSize: isVertical ? 9 : 13, fontWeight: 900, color: accent, letterSpacing: isVertical ? 0.5 : 1.5, fontFamily: FONT }}>{label}</span>
+              {!isVertical && <span style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', fontFamily: FONT, fontWeight: 600 }}>{total} pitches</span>}
             </div>
-            {/* Segmented bar — tall and bold */}
-            <div style={{ display: 'flex', height: 36, borderRadius: 6, overflow: 'hidden', marginBottom: 10, gap: 1 }}>
-              {ordered.map(p => {
-                const pct = total > 0 ? (p[key] || 0) / total : 0;
-                if (pct < 0.02) return null;
-                const col = pitchHex(p.pitch_type);
+            <div style={{ display: 'flex', height: isVertical ? 24 : 36, borderRadius: 6, overflow: 'hidden', gap: 1 }}>
+              {segs.map(s => {
+                // Vertical: only the single dominant pitch per bucket gets a
+                // label — an ~80px-wide card can't fit 3-4 text labels.
+                // Horizontal: any segment ≥8% gets abbreviation + %, one
+                // consistent threshold instead of the old two-tier version.
+                const showLabel = isVertical ? s.pt === topSeg?.pt : s.pct >= 0.08;
                 return (
-                  <div key={p.pitch_type} style={{ flex: pct, background: col, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 0, overflow: 'hidden', borderRadius: 3 }}>
-                    {pct >= 0.10 && <>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: '#fff', fontFamily: FONT, lineHeight: 1, textShadow: '0 1px 4px rgba(0,0,0,.7)' }}>{abbrPitch(p.pitch_type)}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,.85)', fontFamily: FONT, lineHeight: 1, marginTop: 2, textShadow: '0 1px 4px rgba(0,0,0,.7)' }}>{Math.round(pct * 100)}%</span>
+                  <div key={s.pt} style={{ flex: s.pct, background: s.col, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 0, overflow: 'hidden', borderRadius: 3 }}>
+                    {showLabel && <>
+                      <span style={{ fontSize: isVertical ? 11 : 14, fontWeight: 900, color: '#fff', fontFamily: FONT, lineHeight: 1.15, textShadow: '0 1px 3px rgba(0,0,0,.7)' }}>{abbrPitch(s.pt)}</span>
+                      <span style={{ fontSize: isVertical ? 9 : 12, fontWeight: 700, color: 'rgba(255,255,255,.85)', fontFamily: FONT, lineHeight: 1, textShadow: '0 1px 3px rgba(0,0,0,.7)' }}>{Math.round(s.pct * 100)}%</span>
                     </>}
-                    {pct >= 0.05 && pct < 0.10 && (
-                      <span style={{ fontSize: 12, fontWeight: 900, color: 'rgba(255,255,255,.9)', fontFamily: FONT, textShadow: '0 1px 3px rgba(0,0,0,.7)' }}>{Math.round(pct * 100)}%</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {/* Pitch legend row */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {ordered.map(p => {
-                const pct = total > 0 ? (p[key] || 0) / total : 0;
-                if (pct < 0.03) return null;
-                const col = pitchHex(p.pitch_type);
-                return (
-                  <div key={p.pitch_type} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: col, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: FONT }}>{abbrPitch(p.pitch_type)}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,.55)', fontFamily: FONT }}>{Math.round(pct * 100)}%</span>
                   </div>
                 );
               })}
@@ -842,50 +982,12 @@ export default function DugoutView({ setScreen }) {
       {dugoutMode === 'pitcher' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
-          {/* Pitcher header */}
-          <div style={{ padding: '14px 20px 12px', borderBottom: '2px solid #b8860b', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(14,37,58,.6)' }}>
-            {!pitcherObs ? (
-              <div style={{ fontSize: 16, color: 'rgba(255,255,255,.25)', fontStyle: 'italic', fontFamily: FONT }}>Waiting for active pitcher…</div>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <TeamLogo logoUrl={teamLogoUrl} teamName={teamDisplayName} size={54} />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ fontSize: 30, fontWeight: 800, color: '#f4f2ec', fontFamily: FONT, lineHeight: 1.1 }}>{pitcherDisplayName}</div>
-                      <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: '#b8860b', background: 'rgba(184,134,11,0.15)', border: '0.5px solid rgba(184,134,11,0.4)', borderRadius: 4, padding: '2px 6px', fontFamily: FONT }}>SEASON</span>
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#c6b583', textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: FONT, marginTop: 2 }}>
-                      {teamDisplayName || '—'} · {handLabel || 'RHP'}{playerRecord?.school ? <span style={{ color: 'rgba(198,181,131,.55)', fontWeight: 600, letterSpacing: 1 }}> · {playerRecord.school}</span> : null}
-                    </div>
-                  </div>
-                </div>
-                {/* AUDIT (mockup-approved): stat pills WRAP into rows on portrait
-                    monitors instead of overflowX:auto — a non-touch TV had no
-                    way to scroll a clipped row. */}
-                <div style={{ display: 'flex', alignItems: 'center', flexWrap: orientation === 'vertical' ? 'wrap' : 'nowrap', rowGap: orientation === 'vertical' ? 6 : 0, overflowX: 'visible' }}>
-                  {ttpVal != null && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px', borderRight: '1px solid #1c3f5e' }}>
-                      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{ttpVal.toFixed(2)}s</span>
-                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Time to Plate</span>
-                    </div>
-                  )}
-                  <HeaderStatPill label="Strike%"      value={seasonRates?.strike_pct}             avg={58} good={64} />
-                  <HeaderStatPill label="1st-K%"       value={seasonRates?.first_pitch_strike_pct} avg={52} good={60} />
-                  <HeaderStatPill label="CSW%"         value={seasonRates?.csw_pct}                avg={24} good={30} />
-                  <HeaderStatPill label="Whiff%"       value={seasonRates?.whiff_pct}               avg={21} good={28} />
-                  <HeaderStatPill label="Zone%"        value={seasonRates?.zone_pct}                avg={45} good={52} />
-                  <HeaderStatPill label="Chase%"       value={seasonRates?.chase_pct}               avg={24} good={30} />
-                  {seasonArsenal.length > 0 && seasonArsenal[0]?.total_pitches && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px 12px' }}>
-                      <span style={{ fontSize: 18, fontWeight: 800, color: '#eae5d8', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{seasonArsenal[0].total_pitches}</span>
-                      <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: '#7d93a6', fontWeight: 700, marginTop: 2, fontFamily: FONT }}>Season Pitches</span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          {/* Pitcher header — approved mockup, 2026-07-15 */}
+          <PitcherHeader
+            pitcherObs={pitcherObs} teamLogoUrl={teamLogoUrl} teamDisplayName={teamDisplayName}
+            pitcherDisplayName={pitcherDisplayName} handLabel={handLabel} playerRecord={playerRecord}
+            ttpVal={ttpVal} seasonRates={seasonRates} seasonArsenal={seasonArsenal} orientation={orientation}
+          />
 
           {/* Body: horizontal (landscape) keeps the original 3D+video side-by-side
               layout with PitchMetricsBoard full-width below, unchanged.
@@ -933,7 +1035,7 @@ export default function DugoutView({ setScreen }) {
               </div>
 
               {/* Count splits — full width, bottom */}
-              <CountSplitsPanel arsenal={seasonArsenal} />
+              <CountSplitsPanel arsenal={seasonArsenal} orientation={orientation} />
             </div>
           ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
@@ -988,7 +1090,7 @@ export default function DugoutView({ setScreen }) {
               </div>
             </div>
             {/* Count splits — full width below, always visible */}
-            <CountSplitsPanel arsenal={seasonArsenal} />
+            <CountSplitsPanel arsenal={seasonArsenal} orientation={orientation} />
           </div>
           )}
         </div>
