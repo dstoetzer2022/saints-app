@@ -122,7 +122,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
   const [includeStats, setIncludeStats] = useState(true);
   const [includeComprehensive, setIncludeComprehensive] = useState(true);
   const [excludedKeys, setExcludedKeys] = useState(() => new Set());
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState(null); // null | 'team' | 'players'
   const [hitterPool, setHitterPool] = useState(null);
   const [arsenalPool, setArsenalPool] = useState(null);
   const [poolsLoading, setPoolsLoading] = useState(true);
@@ -211,7 +211,63 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
 
   if (!open) return null;
 
-  if (generating) {
+  // Team Stats Report prints as its own landscape document — this swaps the
+  // WHOLE print job's @page to landscape via a temporary stylesheet, then
+  // reverts it after. Deliberately not using named/mixed @page selectors
+  // (page: landscape on individual elements): that technique has patchy
+  // cross-browser support for actually switching physical page orientation
+  // mid-document. A single unnamed @page override, active for one
+  // single-orientation print job at a time, is much more reliably
+  // supported. Player Reports (portrait) never call this — they just use
+  // the default @page already set in index.css.
+  function printLandscape() {
+    const style = document.createElement('style');
+    style.id = 'landscape-print-override';
+    style.textContent = '@media print { @page { size: letter landscape; margin: 0.4in; } }';
+    document.head.appendChild(style);
+    const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+  }
+
+  if (generating === 'team') {
+    return createPortal(
+      <div className="print-report-overlay" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: '#3f4348', overflowY: 'auto', padding: '56px 0 40px', fontFamily: REPORT_FONT, color: INK }}>
+        <div className="no-print" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 20px', background: '#2b2e32' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#ccc', fontFamily: REPORT_FONT }}>
+            {team.name} — Team Stats Report ({teamPageCount} page{teamPageCount === 1 ? '' : 's'}, landscape)
+          </span>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={printLandscape} style={{ background: '#c6b583', border: 'none', color: '#1a1a1a', borderRadius: 6, padding: '8px 18px', fontSize: 12, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', cursor: 'pointer', fontFamily: REPORT_FONT }}>
+              Print / Save PDF
+            </button>
+            <button onClick={() => setGenerating(null)} style={{ background: 'transparent', border: '1px solid #888', color: '#ccc', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: REPORT_FONT }}>
+              Back
+            </button>
+          </div>
+        </div>
+
+        {includeStats && officialStats && (
+          <div className="print-report-page print-report-page--landscape-preview">
+            <TeamStatsSheet team={team} officialStats={officialStats} />
+          </div>
+        )}
+        {includeComprehensive && officialStats && (
+          <>
+            <div className="print-report-page print-report-page--landscape-preview">
+              <ComprehensiveHitterPage team={team} officialStats={officialStats} runnerObs={runnerObs} catcherObs={catcherObs} />
+            </div>
+            <div className="print-report-page print-report-page--landscape-preview">
+              <ComprehensivePitcherPage team={team} officialStats={officialStats} pitcherObs={pitcherObs} />
+            </div>
+          </>
+        )}
+      </div>,
+      document.body
+    );
+  }
+
+  if (generating === 'players') {
     const pageFor = (player, isPitcher) => {
       const key = canonicalNameKey(player.name);
       const nameField = isPitcher ? 'pitcher_name' : 'batter_name';
@@ -242,33 +298,18 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
       <div className="print-report-overlay" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: '#3f4348', overflowY: 'auto', padding: '56px 0 40px', fontFamily: REPORT_FONT, color: INK }}>
         <div className="no-print" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 20px', background: '#2b2e32' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: '#ccc', fontFamily: REPORT_FONT }}>
-            {team.name} — Team Report ({selectedCount} player profile{selectedCount === 1 ? '' : 's'})
+            {team.name} — Player Reports ({selectedCount} player profile{selectedCount === 1 ? '' : 's'}, portrait)
           </span>
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => window.print()} style={{ background: '#c6b583', border: 'none', color: '#1a1a1a', borderRadius: 6, padding: '8px 18px', fontSize: 12, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', cursor: 'pointer', fontFamily: REPORT_FONT }}>
               Print / Save PDF
             </button>
-            <button onClick={() => setGenerating(false)} style={{ background: 'transparent', border: '1px solid #888', color: '#ccc', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: REPORT_FONT }}>
+            <button onClick={() => setGenerating(null)} style={{ background: 'transparent', border: '1px solid #888', color: '#ccc', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: REPORT_FONT }}>
               Back
             </button>
           </div>
         </div>
 
-        {includeStats && officialStats && (
-          <div className="print-report-page">
-            <TeamStatsSheet team={team} officialStats={officialStats} />
-          </div>
-        )}
-        {includeComprehensive && officialStats && (
-          <>
-            <div className="print-report-page print-report-page--full-bleed">
-              <ComprehensiveHitterPage team={team} officialStats={officialStats} runnerObs={runnerObs} catcherObs={catcherObs} />
-            </div>
-            <div className="print-report-page print-report-page--full-bleed">
-              <ComprehensivePitcherPage team={team} officialStats={officialStats} pitcherObs={pitcherObs} />
-            </div>
-          </>
-        )}
         {includedPitchers.map(p => pageFor(p, true))}
         {includedHitters.map(h => pageFor(h, false))}
       </div>,
@@ -332,7 +373,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 9 }}>Team Reports</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, opacity: officialStats ? 1 : 0.45 }}>
                 <SectionToggle icon="◆" title="Team Stats Sheet" desc="Official box score, full column set — leaders, hitters, pitchers" on={includeStats && !!officialStats} onToggle={() => officialStats && setIncludeStats(v => !v)} />
-                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="2 pages — Hitters + Pitchers, table content rotated to print landscape-style on portrait paper" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
+                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="2 landscape pages — Hitters + Pitchers, with baserunner/catcher/pickoff scouting merged in" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
               </div>
 
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 2 }}>
@@ -358,21 +399,32 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
           )}
         </div>
 
-        <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 24px', background: C.surface, borderTop: `1px solid ${C.edge}` }}>
-          <span style={{ fontSize: 12, color: C.muted, fontFamily: FONT }}>
-            Will generate <b style={{ color: C.white }}>{teamPageCount} team page{teamPageCount === 1 ? '' : 's'}</b> + <b style={{ color: C.white }}>{selectedCount} player profile{selectedCount === 1 ? '' : 's'}</b>
-          </span>
-          <div style={{ marginLeft: 'auto' }}>
+        <div style={{ position: 'sticky', bottom: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 24px', background: C.surface, borderTop: `1px solid ${C.edge}` }}>
+          <div style={{ fontSize: 10.5, color: C.muted, fontFamily: FONT }}>
+            Two separate documents, printed independently — Team Stats Report is landscape, Player Reports stays portrait.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
-              onClick={() => setGenerating(true)}
-              disabled={poolsLoading || (selectedCount === 0 && teamPageCount === 0)}
+              onClick={() => setGenerating('team')}
+              disabled={poolsLoading || teamPageCount === 0}
               style={{
-                background: poolsLoading ? C.faint : C.gold, color: poolsLoading ? C.muted : '#080f17', border: 'none', borderRadius: 6, padding: '9px 20px',
-                fontSize: 12.5, fontWeight: 800, fontFamily: FONT, cursor: poolsLoading ? 'default' : 'pointer',
-                opacity: (selectedCount === 0 && teamPageCount === 0) ? 0.4 : 1,
+                background: (poolsLoading || teamPageCount === 0) ? C.faint : C.gold, color: (poolsLoading || teamPageCount === 0) ? C.muted : '#080f17', border: 'none', borderRadius: 6, padding: '9px 20px',
+                fontSize: 12.5, fontWeight: 800, fontFamily: FONT, cursor: (poolsLoading || teamPageCount === 0) ? 'default' : 'pointer',
+                opacity: teamPageCount === 0 ? 0.4 : 1,
               }}
             >
-              {poolsLoading ? 'Loading league data…' : 'Generate Report →'}
+              Team Stats Report ({teamPageCount} pg) →
+            </button>
+            <button
+              onClick={() => setGenerating('players')}
+              disabled={poolsLoading || selectedCount === 0}
+              style={{
+                background: (poolsLoading || selectedCount === 0) ? C.faint : C.gold, color: (poolsLoading || selectedCount === 0) ? C.muted : '#080f17', border: 'none', borderRadius: 6, padding: '9px 20px',
+                fontSize: 12.5, fontWeight: 800, fontFamily: FONT, cursor: (poolsLoading || selectedCount === 0) ? 'default' : 'pointer',
+                opacity: selectedCount === 0 ? 0.4 : 1,
+              }}
+            >
+              {poolsLoading ? 'Loading league data…' : `Player Reports (${selectedCount}) →`}
             </button>
           </div>
         </div>

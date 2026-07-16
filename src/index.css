@@ -80,13 +80,15 @@
   flex-direction: column;
   box-sizing: border-box;
 }
-/* For pages that compute their own exact-inch geometry (currently: the
-   rotated Comprehensive Team Report pages) — the standard 0.4in padding
-   above would shrink the content box the page's own math assumes it owns,
-   clipping/overflowing content. This removes that padding in both screen
-   preview and print, so what you see in-app matches the printed page. */
-.print-report-page--full-bleed {
-  padding: 0 !important;
+/* Screen-preview sizing only for the Team Stats Report document (Team
+   Stats Sheet + Comprehensive Team Report pages), which prints as its own
+   single-orientation landscape print job — see TeamReportBuilder's
+   printLandscape() helper. Print-time orientation is handled by a
+   temporarily-injected @page rule, not by this class; in print,
+   .print-report-page always goes to width:auto (below) and fills whatever
+   @page is active at that moment. */
+.print-report-page--landscape-preview {
+  width: 10.2in;
 }
 
 @media print {

@@ -45,7 +45,9 @@ export default function TeamStatsSheet({ team, officialStats }) {
   const rec = [record?.overall, record?.home && `Home ${record.home}`, record?.away && `Away ${record.away}`, record?.conf && `Conf ${record.conf}`].filter(Boolean).join('  ·  ');
 
   return (
-    <div style={{ fontFamily: REPORT_FONT, color: INK }}>
+    // Print CSS zeroes .print-report-page's padding at print time — margin
+    // needs to live here instead, same fix as ComprehensiveTeamReport.jsx.
+    <div style={{ fontFamily: REPORT_FONT, color: INK, padding: '0.2in' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: `2.5px solid ${INK}`, paddingBottom: 10, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 2.5, textTransform: 'uppercase', color: GOLD }}>Team Stats Sheet</div>
