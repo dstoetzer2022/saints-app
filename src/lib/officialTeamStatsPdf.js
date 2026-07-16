@@ -14,11 +14,12 @@ export const H_COLS = ['AVG', 'GP', 'GS', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI
 export const P_COLS = ['ERA', 'W', 'L', 'APP', 'GS', 'CG', 'SHO', 'SV', 'IP', 'H', 'R', 'ER', 'BB', 'SO', '2B', '3B', 'HR', 'AB', 'BAVG', 'WP', 'HBP', 'BK', 'SFA', 'SHA'];
 
 // Trimmed column set for the Comprehensive Team Report (landscape) — approved
-// mockup (2026-07-15): removes columns superseded/unneeded once baserunner,
-// catcher, and pickoff scouting data merges directly into these same rows.
-// Standalone Team Stats Sheet (portrait) keeps the full H_COLS/P_COLS above.
-export const H_COLS_CONSOLIDATED = ['AVG', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'SLG', 'BB', 'HBP', 'SO', 'OB', 'SB', 'CS'];
-export const P_COLS_CONSOLIDATED = ['ERA', 'CG', 'SHO', 'IP', 'H', 'R', 'ER', 'BB', 'SO', '2B', '3B', 'HR', 'AB', 'BAVG', 'WP', 'HBP', 'BK', 'SFA', 'SHA'];
+// mockup (2026-07-15), refined per Derek's note (2026-07-16): AVG/OBP/SLG
+// grouped together right after the name (slash-line style); pitcher table
+// drops CG/SHO/BK/SFA/SHA/AB and moves BAVG next to ERA. Standalone Team
+// Stats Sheet (portrait) keeps the full H_COLS/P_COLS above.
+export const H_COLS_CONSOLIDATED = ['AVG', 'OB', 'SLG', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'HBP', 'SO', 'SB', 'CS'];
+export const P_COLS_CONSOLIDATED = ['ERA', 'BAVG', 'IP', 'H', 'R', 'ER', 'BB', 'SO', '2B', '3B', 'HR', 'WP', 'HBP'];
 
 // Speed fill colors — the only place red/yellow/green scheming is used in
 // the app (per Derek's instruction, 2026-07-15). speed_rating on
@@ -119,7 +120,7 @@ export function hitterLeaders(hitters) {
   // Rank by OPS (OB + SLG) — best all-around production
   const scored = pool.map(h => ({ h, ops: N(h.OB) + N(h.SLG) }));
   scored.sort((a, b) => b.ops - a.ops);
-  return { list: scored.slice(0, 3), gate: `min ${gateAB} AB · 5+ GP` };
+  return { list: scored.slice(0, 5), gate: `min ${gateAB} AB · 5+ GP` };
 }
 export function pitcherLeaders(pitchers) {
   // Gate: require IP >= max(10, 25% of team-leading IP) and APP>=3.
@@ -129,7 +130,7 @@ export function pitcherLeaders(pitchers) {
   // Rank by ERA asc, then K/9 desc as tiebreak
   const scored = pool.map(p => ({ p, era: N(p.ERA), k9: trueIP(p.IP) > 0 ? N(p.SO) / trueIP(p.IP) * 9 : 0 }));
   scored.sort((a, b) => a.era - b.era || b.k9 - a.k9);
-  return { list: scored.slice(0, 3), gate: `min ${gateIP} IP · 3+ APP` };
+  return { list: scored.slice(0, 5), gate: `min ${gateIP} IP · 3+ APP` };
 }
 
 // Convenience: File -> parsed data, one call.

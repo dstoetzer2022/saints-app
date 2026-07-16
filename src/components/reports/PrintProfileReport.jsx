@@ -622,7 +622,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
             <th style={thS}>Pitch</th><th style={thS}>Usage</th><th style={thS}>Velo</th><th style={thS}>Spin</th><th style={thS}>IVB</th><th style={thS}>HB</th><th style={thS}>Whiff%</th>
           </tr></thead>
           <tbody>
-            {arsenal.map(a => (
+            {arsenal.filter(a => realTypes.includes(a.t)).map(a => (
               <tr key={a.t}>
                 <td style={{ ...tdS, fontWeight: 700 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: getPitchColor(a.t), display: 'inline-block', marginRight: 5 }} />{a.t}
