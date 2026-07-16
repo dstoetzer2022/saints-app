@@ -261,10 +261,10 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
         )}
         {includeComprehensive && officialStats && (
           <>
-            <div className="print-report-page print-report-page--landscape">
+            <div className="print-report-page">
               <ComprehensiveHitterPage team={team} officialStats={officialStats} runnerObs={runnerObs} catcherObs={catcherObs} />
             </div>
-            <div className="print-report-page print-report-page--landscape">
+            <div className="print-report-page">
               <ComprehensivePitcherPage team={team} officialStats={officialStats} pitcherObs={pitcherObs} />
             </div>
           </>
@@ -332,7 +332,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 9 }}>Team Reports</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, opacity: officialStats ? 1 : 0.45 }}>
                 <SectionToggle icon="◆" title="Team Stats Sheet" desc="Official box score, full column set — leaders, hitters, pitchers" on={includeStats && !!officialStats} onToggle={() => officialStats && setIncludeStats(v => !v)} />
-                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="2 landscape pages — Hitters + Pitchers, each rotated to fill the sheet, with scouting merged in" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
+                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="2 pages — Hitters + Pitchers, table content rotated to print landscape-style on portrait paper" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
               </div>
 
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 2 }}>
