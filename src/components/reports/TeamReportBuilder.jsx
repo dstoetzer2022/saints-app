@@ -7,7 +7,7 @@ import { getLeaguePitches } from '@/lib/leagueCache';
 import { C, FONT } from '@/lib/darkTheme';
 import { PitcherPage, HitterPage, REPORT_FONT, INK } from '@/components/reports/PrintProfileReport';
 import TeamStatsSheet from '@/components/reports/TeamStatsSheet';
-import ComprehensiveTeamReport from '@/components/reports/ComprehensiveTeamReport';
+import { ComprehensiveHitterPage, ComprehensivePitcherPage } from '@/components/reports/ComprehensiveTeamReport';
 import { parseOfficialStatsPdf } from '@/lib/officialTeamStatsPdf';
 
 // ── Team Report Builder (Phase 5) ───────────────────────────────────────────
@@ -199,7 +199,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
   const includedPitchers = pitchers.filter(p => !excludedKeys.has(canonicalNameKey(p.name)));
   const includedHitters = hitters.filter(h => !excludedKeys.has(canonicalNameKey(h.name)));
   const selectedCount = includedPitchers.length + includedHitters.length;
-  const teamPageCount = officialStats ? [includeStats, includeComprehensive].filter(Boolean).length : 0;
+  const teamPageCount = officialStats ? (includeStats ? 1 : 0) + (includeComprehensive ? 2 : 0) : 0;
 
   const toggle = key => setExcludedKeys(prev => {
     const next = new Set(prev);
@@ -260,9 +260,14 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
           </div>
         )}
         {includeComprehensive && officialStats && (
-          <div className="print-report-page print-report-page--landscape">
-            <ComprehensiveTeamReport team={team} officialStats={officialStats} runnerObs={runnerObs} pitcherObs={pitcherObs} catcherObs={catcherObs} />
-          </div>
+          <>
+            <div className="print-report-page print-report-page--landscape">
+              <ComprehensiveHitterPage team={team} officialStats={officialStats} runnerObs={runnerObs} catcherObs={catcherObs} />
+            </div>
+            <div className="print-report-page print-report-page--landscape">
+              <ComprehensivePitcherPage team={team} officialStats={officialStats} pitcherObs={pitcherObs} />
+            </div>
+          </>
         )}
         {includedPitchers.map(p => pageFor(p, true))}
         {includedHitters.map(h => pageFor(h, false))}
@@ -327,7 +332,7 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 9 }}>Team Reports</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, opacity: officialStats ? 1 : 0.45 }}>
                 <SectionToggle icon="◆" title="Team Stats Sheet" desc="Official box score, full column set — leaders, hitters, pitchers" on={includeStats && !!officialStats} onToggle={() => officialStats && setIncludeStats(v => !v)} />
-                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="Landscape — hitters/pitchers with baserunner, catcher & pickoff scouting merged in" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
+                <SectionToggle icon="▦" title="Comprehensive Team Report" desc="2 landscape pages — Hitters + Pitchers, each rotated to fill the sheet, with scouting merged in" on={includeComprehensive && !!officialStats} onToggle={() => officialStats && setIncludeComprehensive(v => !v)} />
               </div>
 
               <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, color: C.gold, fontFamily: FONT, marginBottom: 2 }}>
