@@ -261,10 +261,10 @@ export default function TeamReportBuilder({ open, onClose, team, pitchers, hitte
         )}
         {includeComprehensive && officialStats && (
           <>
-            <div className="print-report-page">
+            <div className="print-report-page print-report-page--full-bleed">
               <ComprehensiveHitterPage team={team} officialStats={officialStats} runnerObs={runnerObs} catcherObs={catcherObs} />
             </div>
-            <div className="print-report-page">
+            <div className="print-report-page print-report-page--full-bleed">
               <ComprehensivePitcherPage team={team} officialStats={officialStats} pitcherObs={pitcherObs} />
             </div>
           </>
