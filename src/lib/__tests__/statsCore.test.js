@@ -188,6 +188,55 @@ describe('arsenalCorrection', () => {
     expect(changes).toBe(0);
   });
 
+  // Regression test for the sparse-type fallback (2026-07-17): a tagged
+  // type with fewer than minTypeCount pitches previously got no stats at
+  // all, so correctMistaggedPitches skipped every pitch under that label
+  // unconditionally — no matter how implausible. Real case that surfaced
+  // this: Dylan Adams had only 6 pitches tagged "Curveball" for the
+  // season, one of which was actually an 84mph, backspun (+15 IVB)
+  // fastball-shaped pitch, sitting well inside his real Four-Seam cluster.
+  it('correctMistaggedPitches catches a mistag in a sparse (<minTypeCount) type', () => {
+    const rows = [
+      // Deterministic spread (not Math.random() — this needs to be a
+      // stable regression test) that still reflects realistic natural
+      // variance in a fastball/slider cluster, which is what determines
+      // the MAD-based tolerance the sparse-fallback check compares against.
+      ...Array.from({ length: 25 }, (_, i) => mk('Four-Seam', 82 + (i % 10) * 0.3, 8 + (i % 10) * 1.3, 5 + (i % 10) * 1.4, 2000 + (i % 10) * 25)),
+      ...Array.from({ length: 20 }, (_, i) => mk('Slider', 75 + (i % 10) * 0.4, 2 + (i % 10) * 1.0, -19 + (i % 10) * 1.2, 2300 + (i % 10) * 30)),
+      // Only 6 "Curveball" pitches — below minTypeCount (10), so this type
+      // gets no robust stats of its own under the standard path.
+      mk('Curveball', 77.2, 10.1, -10.8, 2248),
+      mk('Curveball', 77.5, 8.9, -0.7, 2420),
+      mk('Curveball', 84.4, 15.3, 7.7, 2173),  // the mistag — matches Derek's report exactly
+      mk('Curveball', 76.9, 1.8, -5.9, 2208),
+      mk('Curveball', 77.0, 4.1, -9.2, 2361),
+      mk('Curveball', 77.7, 3.6, -12.9, 2423),
+    ];
+    const { data, changes } = correctMistaggedPitches(rows);
+    expect(changes).toBeGreaterThanOrEqual(1);
+    const fixed = data.find(r => r.pitch_type === 'Curveball' && r.rel_speed === 84.4);
+    expect(fixed.tagged_pitch_type).toBe('Four-Seam');
+    expect(fixed.pitch_type).toBe('Curveball'); // reversibility preserved
+  });
+
+  // The sparse-fallback path must stay just as conservative about
+  // legitimate rare pitches as the standard path — a pitch whose shape
+  // resembles another type but whose spin flatly contradicts it (the
+  // documented Wyatt Toth ~777rpm cut splitter case) must not get
+  // reassigned just because its own type is sparse.
+  it('correctMistaggedPitches sparse fallback still respects the spin veto', () => {
+    const rows = [
+      ...Array.from({ length: 15 }, (_, i) => mk('Slider', 78 + (i % 5) * 0.1, 4 + (i % 5) * 0.1, -12 + (i % 5) * 0.1, 2350 + (i % 5))),
+      ...Array.from({ length: 15 }, (_, i) => mk('Four-Seam', 90 + (i % 5) * 0.1, 15 + (i % 5) * 0.1, 8 + (i % 5) * 0.1, 2200 + (i % 5))),
+      // 4 real cut splitters: shape matches Slider closely, but spin is
+      // wildly different (777 vs ~2350) — should stay put.
+      ...Array.from({ length: 4 }, () => mk('Splitter', 78.5, 3.8, -11.5, 777)),
+    ];
+    const { data, changes } = correctMistaggedPitches(rows);
+    const splitters = data.filter(r => r.spin_rate === 777);
+    expect(splitters.every(s => s.tagged_pitch_type === 'Splitter')).toBe(true);
+  });
+
   it('buildTypeStats uses median (robust to a single outlier)', () => {
     const rows = [
       ...Array.from({ length: 20 }, () => mk('Four-Seam', 92, 17, 8, 2280)),

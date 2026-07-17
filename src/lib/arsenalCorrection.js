@@ -160,7 +160,10 @@ export function applyArsenalCorrection(rows, opts = {}) {
 export const MISTAG_DEFAULTS = {
   outlierZ: 3.0,       // must be at least this far from own type
   nearZ: 1.5,          // and at least this close to the target type
-  spinVetoZ: 3.0,      // veto reassignment if spin flagrantly contradicts target
+  sparseNearZ: 1.0,    // tighter bar for the sparse-type fallback below —
+                        // no "outlier from own type" double-confirmation
+                        // available, so the target match has to be tighter.
+  spinVetoZ: 3.0,       // veto reassignment if spin flagrantly contradicts target
   minTypeCount: 10,    // both source and target types need this many pitches
   stdFloors: { velo: 1.5, ivb: 2.0, hb: 2.0, spin: 150 },
 };
@@ -236,28 +239,59 @@ export function correctMistaggedPitches(rows, opts = {}) {
   if (types.length < 2) return { data: rows, changes: 0, details: [] };
 
   const zDist = (r, s) => zDistToType(r, s);
+  const nearestOtherType = (r, exclude) => {
+    let best = null, dBest = Infinity;
+    for (const t of types) {
+      if (t === exclude) continue;
+      const d = zDist(r, stats[t]);
+      if (d != null && d < dBest) { dBest = d; best = t; }
+    }
+    return { best, dBest };
+  };
+  const spinVetoed = (r, targetType) => {
+    const spin = num(r.spin_rate);
+    const ts = stats[targetType].spin;
+    return spin != null && ts && Math.abs(spin - ts.center) / ts.spread > o.spinVetoZ;
+  };
 
   let changes = 0;
   const details = [];
   const data = rows.map(r => {
     const own = canonPitchType(r.tagged_pitch_type || r.pitch_type);
-    if (!stats[own]) return r;
-    const dOwn = zDist(r, stats[own]);
-    if (dOwn == null || dOwn < o.outlierZ) return r;
-    let best = null, dBest = Infinity;
-    for (const t of types) {
-      if (t === own) continue;
-      const d = zDist(r, stats[t]);
-      if (d != null && d < dBest) { dBest = d; best = t; }
+
+    if (stats[own]) {
+      // Standard path: both source and target have >= minTypeCount, so we
+      // get the full two-sided check (outlier from own type AND fits a
+      // target tightly).
+      const dOwn = zDist(r, stats[own]);
+      if (dOwn == null || dOwn < o.outlierZ) return r;
+      const { best, dBest } = nearestOtherType(r, own);
+      if (best == null || dBest > o.nearZ) return r;
+      if (spinVetoed(r, best)) return r;
+      changes++;
+      details.push({ from: own, to: best, zOwn: +dOwn.toFixed(2), zNew: +dBest.toFixed(2),
+        velo: num(r.rel_speed), ivb: num(r.induced_vert_break), hb: num(r.horz_break) });
+      return { ...r, tagged_pitch_type: best };
     }
-    if (best == null || dBest > o.nearZ) return r; // outlier, but fits nothing: leave it
-    // Spin veto: shape/velo can match a target while spin says otherwise
-    // (e.g. a cut splitter at 777 rpm landing on a 2,350-rpm slider cluster).
-    const spin = num(r.spin_rate);
-    const ts = stats[best].spin;
-    if (spin != null && ts && Math.abs(spin - ts.center) / ts.spread > o.spinVetoZ) return r;
+
+    // Sparse-type fallback: `own` didn't clear minTypeCount, so
+    // buildTypeStats never gave it robust stats — there simply aren't
+    // enough of its own peers to prove this pitch is an outlier among
+    // them. Previously that meant these pitches were skipped entirely, no
+    // matter how implausible the tag: a handful of one-off mistags parked
+    // under a rare/wrong label (or a label the pitcher doesn't actually
+    // throw) could never be caught, since the type could never reach 10
+    // "real" pitches when most or all of its pitches are mistags to begin
+    // with. Instead: check straight against the established types with a
+    // TIGHTER bar (sparseNearZ, not nearZ) — we're not getting the normal
+    // double-confirmation from the outlier-from-own-type test, so the
+    // target fit has to be closer to justify reassignment on its own.
+    if (!isCorrectable(own)) return r;
+    const { best, dBest } = nearestOtherType(r, own);
+    if (best == null || dBest > o.sparseNearZ) return r;
+    if (spinVetoed(r, best)) return r;
     changes++;
-    details.push({ from: own, to: best, zOwn: +dOwn.toFixed(2), zNew: +dBest.toFixed(2),
+    details.push({ from: own, to: best, zOwn: null, zNew: +dBest.toFixed(2), sparse: true,
       velo: num(r.rel_speed), ivb: num(r.induced_vert_break), hb: num(r.horz_break) });
     return { ...r, tagged_pitch_type: best };
   });
