@@ -222,7 +222,7 @@ function SplitsTable({ splits, isPitcher, pools }) {
   );
 }
 
-function ReportHeader({ player, team, school, isPitcher, hand }) {
+function ReportHeader({ player, team, school, isPitcher, hand, scopeLabel }) {
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: `2.5px solid ${NAVY}`, paddingBottom: 6, marginBottom: 8 }}>
@@ -232,6 +232,18 @@ function ReportHeader({ player, team, school, isPitcher, hand }) {
             <span style={{ fontSize: 24, fontWeight: 900, color: GOLD, letterSpacing: -1, fontVariantNumeric: 'tabular-nums' }}>#{player.jerseyNumber}</span>
           )}
           <span style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.5 }}>{player.name}</span>
+          {/* Makes the active data window explicit on the printed page itself
+              — this used to always print the full season regardless of
+              which scope (Season/Last 3/vs LHB/vs RHB) was selected on
+              screen, so a printed report could silently show different
+              numbers than what the person was looking at when they hit
+              print. Fixed alongside passing the actual scoped pitches
+              through (see PlayerProfile.jsx). */}
+          {scopeLabel && scopeLabel !== 'Season' && (
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: GOLD, background: 'rgba(184,134,11,0.12)', border: `1px solid ${GOLD}55`, borderRadius: 4, padding: '2px 7px' }}>
+              {scopeLabel}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 10.5, color: MUT }}>
           {[isPitcher ? 'Pitcher' : 'Hitter', hand ? `${isPitcher ? 'Throws' : 'Bats'} ${hand}` : null, school].filter(Boolean).join(' · ')}
@@ -383,7 +395,7 @@ function PrintVsPitchType({ pitches }) {
   );
 }
 
-function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
+function HitterPage({ player, team, school, hand, pitches, hitterPool, scopeLabel }) {
   const tm = useMemo(() => hitterTrackmanProfile(pitches), [pitches]);
   const sl = useMemo(() => slashLine(pitches), [pitches]);
   const splits = useMemo(() => platoonSplitRows(pitches, 'pitcher_hand'), [pitches]);
@@ -411,7 +423,7 @@ function HitterPage({ player, team, school, hand, pitches, hitterPool }) {
 
   return (
     <div className="print-report-page">
-      <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={false} />
+      <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={false} scopeLabel={scopeLabel} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginBottom: 8 }}>
         <StatCard label="AVG / OBP / SLG" value={`${n3(sl.avg)} / ${n3(sl.obp)} / ${n3(sl.slg)}`} />
         <StatCard label="K% / BB%" value={tm ? `${pct(tm.kPct)} / ${pct(tm.bbPct)}` : '—'} />
@@ -531,7 +543,7 @@ function PrintTendencies({ pitches, typeOrder }) {
   );
 }
 
-function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalPool }) {
+function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalPool, scopeLabel }) {
   const prof = useMemo(() => pitcherProfile(pitches), [pitches]);
   // Same shared export as the profile's "Max FB" percentile bar — max over
   // ALL true-fastball tags, not just the primary FB type — so the pill here
@@ -607,7 +619,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
 
   return (
     <div className="print-report-page">
-      <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={true} />
+      <ReportHeader player={player} team={team} school={school} hand={hand} isPitcher={true} scopeLabel={scopeLabel} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginBottom: 10 }}>
         <StatCard label="FB velo (avg / max)" value={prof?.fb ? `${n1(prof.fb.avgVelo)} / ${n1(maxFbVelo)}` : '—'} />
         <StatCard label="K% / BB%" value={prof ? `${pct(prof.kPct)} / ${pct(prof.bbPct)}` : '—'} />
@@ -686,7 +698,7 @@ function PitcherPage({ player, team, school, hand, pitches, hitterPool, arsenalP
 export { PitcherPage, HitterPage, REPORT_FONT, INK };
 
 // ── Overlay shell ────────────────────────────────────────────────────────
-export default function PrintProfileReport({ open, onClose, player, team, school, hand, isPitcher, pitches, hitterPool, arsenalPool }) {
+export default function PrintProfileReport({ open, onClose, player, team, school, hand, isPitcher, pitches, hitterPool, arsenalPool, scopeLabel }) {
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('print-report-open');
@@ -711,8 +723,8 @@ export default function PrintProfileReport({ open, onClose, player, team, school
         </button>
       </div>
       {isPitcher
-        ? <PitcherPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} arsenalPool={arsenalPool} />
-        : <HitterPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} />}
+        ? <PitcherPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} arsenalPool={arsenalPool} scopeLabel={scopeLabel} />
+        : <HitterPage player={player} team={team} school={school} hand={hand} pitches={pitches} hitterPool={hitterPool} scopeLabel={scopeLabel} />}
     </div>,
     document.body
   );

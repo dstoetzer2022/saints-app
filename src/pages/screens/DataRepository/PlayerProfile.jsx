@@ -836,9 +836,10 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         school={school}
         hand={isPitcher ? (player.throws || hand) : (player.bats || hand)}
         isPitcher={isPitcher}
-        pitches={pitches}
+        pitches={scopedPitches}
         hitterPool={hitterPool}
         arsenalPool={arsenalPool}
+        scopeLabel={SCOPES.find(([key]) => key === scope)?.[1]}
       />
       <FloatingPlayerNav player={player} roster={roster} onNavigate={onNavigate} />
     </div>
