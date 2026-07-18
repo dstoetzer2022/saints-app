@@ -75,6 +75,23 @@ const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v', 'jr.', 'sr.']);
 // discovered — same pattern as NICKNAME_CANON above.
 const SURNAME_PARTICLES = new Set(['de', 'del', 'des', 'der', 'den', 'di', 'da', 'do', 'dos', 'la', 'le', 'las', 'los', 'van', 'von', 'st', 'san', 'santa']);
 
+// ── Manual name merges (coach-reviewed) ─────────────────────────────────────
+// canonicalNameKey() below can't safely auto-merge these on its own:
+// NICKNAME_CANON only covers common, unambiguous nickname pairs (mapping
+// "Nick"→"Nikolas" or "Aj"→"Aidan" generally would risk merging two
+// genuinely different players elsewhere in the league). These are
+// per-player, explicitly confirmed by Derek — same pattern as
+// MANUAL_ARSENAL_OVERRIDES in arsenalCorrection.js. Keys are the raw
+// canonicalNameKey() output for the misspelled/variant name (computed
+// without this override in effect); values are the target key to merge into.
+// Add more pairs here as they're found and confirmed — never auto-detected.
+const MANUAL_NAME_KEY_OVERRIDES = {
+  // Nick Halochits (misspelled surname) → Nikolas Halouchits, San Diego Bombers. Derek, 2026-07-17.
+  'halochits|nicholas': 'halouchits|nikolas',
+  // Aj Cappell (initials) → Aidan Cappell, San Diego Bombers. Derek, 2026-07-17.
+  'cappell|aj': 'cappell|aidan',
+};
+
 function canonFirst(first) {
   if (!first) return '';
   const f = first.toLowerCase();
@@ -152,7 +169,8 @@ export function canonicalNameKey(name) {
     }
     ({ first, last } = splitFirstLastNoComma(parts));
   }
-  return `${scrub(last)}|${scrub(canonFirst(first))}`;
+  const key = `${scrub(last)}|${scrub(canonFirst(first))}`;
+  return MANUAL_NAME_KEY_OVERRIDES[key] || key;
 }
 
 // Strip diacritics, punctuation, and spaces; lowercase. "O'Regan" → "oregan".

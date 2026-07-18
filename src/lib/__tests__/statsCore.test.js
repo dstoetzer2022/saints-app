@@ -28,6 +28,22 @@ describe('canonicalNameKey', () => {
     expect(canonicalNameKey('')).toBe('');
     expect(canonicalNameKey(null)).toBe('');
   });
+  // Manual overrides — coach-confirmed misspelling/nickname merges that
+  // NICKNAME_CANON can't safely handle generally (mapping Nick→Nikolas or
+  // Aj→Aidan for every player would risk merging unrelated people).
+  // San Diego Bombers, confirmed by Derek 2026-07-17.
+  it('merges Nick Halochits (misspelled) into Nikolas Halouchits', () => {
+    expect(canonicalNameKey('Nick Halochits')).toBe(canonicalNameKey('Nikolas Halouchits'));
+    expect(canonicalNameKey('Halochits, Nick')).toBe(canonicalNameKey('Halouchits, Nikolas'));
+  });
+  it('merges Aj Cappell into Aidan Cappell', () => {
+    expect(canonicalNameKey('Aj Cappell')).toBe(canonicalNameKey('Aidan Cappell'));
+    expect(canonicalNameKey('Cappell, AJ')).toBe(canonicalNameKey('Cappell, Aidan'));
+  });
+  it('manual overrides stay scoped to the specific surname, not other Nick/Aj players', () => {
+    expect(canonicalNameKey('Nick Smith')).not.toBe(canonicalNameKey('Nikolas Halouchits'));
+    expect(canonicalNameKey('Aj Johnson')).not.toBe(canonicalNameKey('Aidan Cappell'));
+  });
 });
 
 describe('normalizeName', () => {
