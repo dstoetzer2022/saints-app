@@ -15,6 +15,7 @@ import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
 import PrintProfileReport from '@/components/reports/PrintProfileReport';
+import PrintGameReport from '@/components/reports/PrintGameReport';
 import ProfileCompareTab from '@/components/shared/ProfileCompareTab';
 import PasswordGate from '@/components/shared/PasswordGate';
 import { C, FONT } from '@/lib/darkTheme';
@@ -96,7 +97,7 @@ const tdS = {
   whiteSpace: 'nowrap', fontSize: 12, color: C.cream,
 };
 
-function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
+function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data, onPrintGame }) {
   const [expanded, setExpanded] = useState(false);
   const pitches = data[0] || [];
 
@@ -120,6 +121,18 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
         }
         <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.white, fontFamily: FONT }}>vs {opponent || '—'}</span>
         <span style={{ fontSize: 11, color: C.muted, fontFamily: FONT }}>{summary}</span>
+        {isPitcher && onPrintGame && pitches.length > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); onPrintGame(game, opponent, pitches); }}
+            style={{
+              background: 'transparent', border: '1px solid #c6b583', color: '#c6b583',
+              borderRadius: 5, padding: '4px 10px', fontSize: 10, fontWeight: 700,
+              letterSpacing: 0.3, textTransform: 'uppercase', cursor: 'pointer', fontFamily: FONT,
+            }}
+          >
+            Game Report
+          </button>
+        )}
         <span style={{ color: C.faint, fontSize: 11 }}>{expanded ? '▲' : '▼'}</span>
       </div>
       {expanded && pitches.length > 0 && (
@@ -160,7 +173,7 @@ function GameEntry({ game, opponent, oppTeam, summary, isPitcher, data }) {
   );
 }
 
-function GameLog({ isPitcher, team, allTeams, games, pitches, pitcherObs, catcherObs, runnerObs }) {
+function GameLog({ isPitcher, team, allTeams, games, pitches, pitcherObs, catcherObs, runnerObs, onPrintGame }) {
   // AUDIT: this component used to independently re-fetch TrackmanPitch with
   // its own exact-match query, which had two bugs:
   //  1. For hitters, it queried batter_name using the raw "First Last" player
@@ -209,7 +222,7 @@ function GameLog({ isPitcher, team, allTeams, games, pitches, pitcherObs, catche
         const summary = isPitcher
           ? `${pitchesInGame.length} pitches, ${[...new Set(pitchesInGame.map(p => p.inning))].length} inn`
           : `${pitchesInGame.length} pitches seen`;
-        return <GameEntry key={g.id} game={g} opponent={opponent} oppTeam={oppTeam} summary={summary} isPitcher={isPitcher} data={d} />;
+        return <GameEntry key={g.id} game={g} opponent={opponent} oppTeam={oppTeam} summary={summary} isPitcher={isPitcher} data={d} onPrintGame={onPrintGame} />;
       })}
     </div>
   );
@@ -541,6 +554,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const [school, setSchool] = useState(player.school || '');
   const [hand, setHand] = useState(player.hand || '');
   const [printOpen, setPrintOpen] = useState(false);
+  const [gameReportCtx, setGameReportCtx] = useState(null);
 
   const isPitcher = player.role === 'Pitcher';
   const trackmanName = toTrackmanName(player.name);
@@ -813,7 +827,11 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
               </PasswordGate>
             )}
             {tab === 'gamelog' && (
-              <GameLog isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} pitches={pitches} pitcherObs={pitcherObs} catcherObs={catcherObs} runnerObs={runnerObs} />
+              <GameLog
+                isPitcher={isPitcher} team={team} allTeams={allTeams} games={games} pitches={pitches}
+                pitcherObs={pitcherObs} catcherObs={catcherObs} runnerObs={runnerObs}
+                onPrintGame={isPitcher ? (game, opponent, gamePitches) => setGameReportCtx({ game, opponent, pitches: gamePitches }) : undefined}
+              />
             )}
             {tab === 'compare' && (
               <ProfileCompareTab
@@ -841,6 +859,21 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         arsenalPool={arsenalPool}
         scopeLabel={SCOPES.find(([key]) => key === scope)?.[1]}
       />
+      {isPitcher && (
+        <PrintGameReport
+          open={!!gameReportCtx}
+          onClose={() => setGameReportCtx(null)}
+          player={player}
+          team={team}
+          school={school}
+          hand={player.throws || hand}
+          pitches={gameReportCtx?.pitches || []}
+          hitterPool={hitterPool}
+          arsenalPool={arsenalPool}
+          opponent={gameReportCtx?.opponent}
+          gameDate={gameReportCtx?.game?.date}
+        />
+      )}
       <FloatingPlayerNav player={player} roster={roster} onNavigate={onNavigate} />
     </div>
   );
