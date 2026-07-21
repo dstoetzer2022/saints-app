@@ -209,6 +209,45 @@ export default function MovementPlotCorrector({ pitcherName, team, allTeams, onR
     });
   }
 
+  // Trail Curation lets a coach pin one CuratedDugoutTrail per pitch type as a
+  // frozen snapshot (its own pitch_type/display_label/trail_color, linked back
+  // to the source TrackmanPitch only via source_game_id + source_pitch_no —
+  // there's no live reference). If a corrected pitch here is the source of a
+  // pinned trail, that trail's label is now wrong everywhere it's rendered
+  // (Dugout View, Pitch3DTab) unless it's brought in line with the correction.
+  async function syncCuratedTrails(entries) {
+    const trails = await fetchAllFiltered(base44.entities.CuratedDugoutTrail, { pitcher_name: pitcherName }, 'display_order');
+    if (!trails.length) return;
+
+    const correctionByKey = new Map();
+    for (const [id, newType] of entries) {
+      const pt = pointsById.get(id);
+      if (!pt || !pt.game_id) continue;
+      correctionByKey.set(`${pt.game_id}|${pt.pitch_no}`, newType);
+    }
+    if (!correctionByKey.size) return;
+
+    for (const trail of trails) {
+      const newType = correctionByKey.get(`${trail.source_game_id}|${trail.source_pitch_no}`);
+      if (!newType || normalizePitch(trail.pitch_type) === normalizePitch(newType)) continue;
+
+      // One trail per type is only a client-side convention, not a DB
+      // constraint — if another trail already claims the corrected type,
+      // this one's frozen snapshot is no longer a trustworthy example of
+      // EITHER type, so drop it rather than create a duplicate-type trail.
+      const conflict = trails.find(t => t.id !== trail.id && normalizePitch(t.pitch_type) === normalizePitch(newType));
+      if (conflict) {
+        await base44.entities.CuratedDugoutTrail.delete(trail.id).catch(() => {});
+      } else {
+        await base44.entities.CuratedDugoutTrail.update(trail.id, {
+          pitch_type: newType,
+          display_label: newType,
+          trail_color: getPitchColor(newType),
+        }).catch(() => {});
+      }
+    }
+  }
+
   // A manual correction here is just a tagged_pitch_type write — it is not
   // "locked" against a future auto-cleaner run. In practice this is stable:
   // correctMistaggedPitches only reassigns pitches that are outliers from
@@ -229,6 +268,9 @@ export default function MovementPlotCorrector({ pitcherName, team, allTeams, onR
         ));
         setProgress(`Saving corrections… ${Math.min(i + CHUNK, entries.length)}/${entries.length}`);
       }
+
+      setProgress('Syncing curated trails…');
+      await syncCuratedTrails(entries);
 
       setProgress(`Rebuilding arsenal for ${pitcherName}…`);
       const teamCode = team?.trackman_code || team?.name || '';
