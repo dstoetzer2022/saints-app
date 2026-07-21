@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { cldImg } from '@/lib/cloudinaryImg';
 import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
@@ -11,6 +11,7 @@ import { loadPools } from '@/lib/poolCache';
 import { buildScene } from '@/lib/pitch3dEngine';
 import reportError from '@/lib/reportError';
 import PitcherProfileOverview from '@/components/profiles/PitcherProfileOverview';
+import MovementPlotCorrector from '@/components/profiles/MovementPlotCorrector';
 import BatterProfileOverview from '@/components/profiles/BatterProfileOverview';
 import PlayerInfoBar from '@/components/shared/PlayerInfoBar';
 import ExportProfileButton from '@/components/shared/ExportProfileButton';
@@ -537,6 +538,39 @@ function TrailCurationTab({ pitcherName }) {
   );
 }
 
+// ── Curation Tools Tab (Trail Curation + Movement Plot Corrector) ──────────
+const CURATION_TOOLS = [
+  ['trail', 'Trail Curation'],
+  ['movement', 'Movement Plot Corrector'],
+];
+
+function CurationToolsTab({ pitcherName, team, allTeams, onRebuilt }) {
+  const [tool, setTool] = useState('trail');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div className="no-print" style={{ display: 'flex', gap: 7, padding: '10px 16px', borderBottom: `1px solid ${C.edge}`, background: C.surface, flexShrink: 0 }}>
+        {CURATION_TOOLS.map(([key, label]) => (
+          <button key={key} onClick={() => setTool(key)} style={{
+            cursor: 'pointer', fontFamily: FONT,
+            border: `1px solid ${tool === key ? C.gold : C.edge}`,
+            background: tool === key ? 'rgba(200,146,12,0.1)' : C.raised,
+            color: tool === key ? C.gold : C.muted,
+            borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '8px 16px',
+          }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {tool === 'trail' && <TrailCurationTab pitcherName={pitcherName} />}
+        {tool === 'movement' && (
+          <MovementPlotCorrector pitcherName={pitcherName} team={team} allTeams={allTeams} onRebuilt={onRebuilt} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main PlayerProfile ─────────────────────────────────────────
 export default function PlayerProfile({ player, team, onBack, roster, onNavigate }) {
   const [tab, setTab] = useState('overview');
@@ -560,7 +594,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
   const trackmanName = toTrackmanName(player.name);
   const normalizedName = normalizeName(player.name);
 
-  useEffect(() => {
+  const loadPlayerData = useCallback((opts = {}) => {
     // ── Two-stage load (Phase 4.1) ────────────────────────────────────
     // Stage A: the player's own rows + games/teams/player record + the
     // precomputed LeaguePool snapshot. If the snapshot exists, the profile
@@ -572,6 +606,10 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
     // existed, pools are built here exactly as before.
     // AUDIT: player fetches paginate (the old 1000/500 caps silently
     // truncated any player past that many pitches).
+    // `opts.forceLeagueRefresh` bypasses the league cache's 10-min TTL —
+    // used right after the Movement Plot Corrector saves a tag correction,
+    // so the Arsenal tab / PDF export / Compare tab reflect it immediately
+    // instead of showing stale labels for up to 10 minutes.
     let cancelled = false;
     const playerFetch = isPitcher
       ? [
@@ -593,7 +631,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
         base44.entities.Game.list('-date', 200),
         base44.entities.Team.list('name', 100),
         base44.entities.Player.filter({ name: trackmanName }, undefined, 1).catch(() => []),
-        loadPools(),
+        opts.forceLeagueRefresh ? Promise.resolve(null) : loadPools(),
       ]);
       if (cancelled) return;
 
@@ -643,7 +681,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       }
 
       // ── Stage B: league pull (background when pools were precomputed) ──
-      const leaguePitches = await getLeaguePitches();
+      const leaguePitches = await getLeaguePitches({ force: !!opts.forceLeagueRefresh });
       if (cancelled) return;
 
       // The exact-match server query (pitcher_name/batter_name = trackmanName)
@@ -689,10 +727,12 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [normalizedName, trackmanName, isPitcher]);
+  }, [normalizedName, trackmanName, isPitcher, player.name]);
 
-  const tabs = isPitcher ? ['overview', 'trailcuration', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
-  const tabLabels = { overview: 'Overview', trailcuration: 'Trail Curation', gamelog: 'Game Log', compare: 'Compare' };
+  useEffect(() => loadPlayerData(), [loadPlayerData]);
+
+  const tabs = isPitcher ? ['overview', 'curation', 'gamelog', 'compare'] : ['overview', 'gamelog', 'compare'];
+  const tabLabels = { overview: 'Overview', curation: 'Curation Tools', gamelog: 'Game Log', compare: 'Compare' };
 
   // ── Global data scope (mockup v3, item 3) ─────────────────────────────
   // Filters the pitch rows feeding the Overview tab. Season = everything;
@@ -808,7 +848,7 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
       </div>
 
       {/* Content */}
-      <div data-print-root style={{ flex: 1, overflowY: tab === 'trailcuration' ? 'hidden' : 'auto', padding: tab === 'trailcuration' ? 0 : '28px 32px 80px', display: tab === 'trailcuration' ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
+      <div data-print-root style={{ flex: 1, overflowY: tab === 'curation' ? 'hidden' : 'auto', padding: tab === 'curation' ? 0 : '28px 32px 80px', display: tab === 'curation' ? 'flex' : 'block', flexDirection: 'column', minHeight: 0 }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
             <div style={{ width: 26, height: 26, border: `3px solid ${C.faint}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -821,9 +861,14 @@ export default function PlayerProfile({ player, team, onBack, roster, onNavigate
             {tab === 'overview' && !isPitcher && (
               <BatterProfileOverview pitches={scopedPitches} runnerObs={runnerObs} catcherObs={catcherObs} hitterPool={hitterPool} playerNameKey={normalizedName} />
             )}
-            {tab === 'trailcuration' && isPitcher && (
+            {tab === 'curation' && isPitcher && (
               <PasswordGate>
-                <TrailCurationTab pitcherName={trackmanName} />
+                <CurationToolsTab
+                  pitcherName={trackmanName}
+                  team={team}
+                  allTeams={allTeams}
+                  onRebuilt={() => loadPlayerData({ forceLeagueRefresh: true })}
+                />
               </PasswordGate>
             )}
             {tab === 'gamelog' && (
