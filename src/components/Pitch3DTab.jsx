@@ -346,8 +346,8 @@ function LiveScene({pitcher,mode,list,activeIdx,playing,tunnelMode,camAngle,visi
 // ── Trail Curation helpers ────────────────────────────────────────────────────
 const TRAIL_COLORS_MAP = {
   fastball:'#E24B4A',fourseam:'#E24B4A',sinker:'#BA7517',twoseam:'#BA7517',
-  cutter:'#EF9F27',slider:'#378ADD',sweeper:'#534AB7',curveball:'#1D9E75',
-  knucklecurve:'#0F6E56',changeup:'#D4537E',splitter:'#993C1D',
+  cutter:'#EF9F27',slider:'#D4537E',sweeper:'#534AB7',curveball:'#1D9E75',
+  knucklecurve:'#0F6E56',changeup:'#378ADD',splitter:'#993C1D',
 };
 function trailColorFor(type) {
   if (!type) return '#888780';

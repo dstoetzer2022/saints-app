@@ -162,10 +162,10 @@ export function ReleasePointPlot({ pitches }) {
 const DARK_PITCH_COLORS = {
   Fastball:  '#ff6b6b',
   Sinker:    '#ff6b6b',
-  Slider:    '#74b9ff',
+  Slider:    '#55efc4',
   Cutter:    '#74b9ff',
-  Changeup:  '#55efc4',
-  ChangeUp:  '#55efc4',
+  Changeup:  '#74b9ff',
+  ChangeUp:  '#74b9ff',
   Splitter:  '#55efc4',
   Curveball: '#ffeaa7',
   Sweeper:   '#a29bfe',

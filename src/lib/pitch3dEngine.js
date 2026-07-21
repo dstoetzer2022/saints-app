@@ -9,13 +9,13 @@ const PITCH_COLORS = {
   // Cutter / FC
   "Cutter":"#EF9F27",
   // Slider / SL
-  "Slider":"#378ADD",
+  "Slider":"#D4537E",
   // Sweeper / ST
   "Sweeper":"#534AB7",
   // Curveball / CB
   "Curveball":"#1D9E75","Curve":"#1D9E75",
   // Changeup / CH
-  "Changeup":"#D4537E","ChangeUp":"#D4537E",
+  "Changeup":"#378ADD","ChangeUp":"#378ADD",
   // Splitter / FS
   "Splitter":"#993C1D","Split-Finger":"#993C1D",
   // Knuckleball
